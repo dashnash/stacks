@@ -153,31 +153,67 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
 
   const redirectUri = `${deps.config.appOrigin}/api/auth/callback`;
 
+  /** A PKCE login: state + verifier kept in a short-lived HttpOnly cookie, challenge sent to the platform. */
+  async function startLogin(platformPath: string, ret: string) {
+    const state = randomToken();
+    const verifier = randomToken();
+    const url = new URL(platformPath, deps.config.authOrigin);
+    url.search = new URLSearchParams({
+      app: manifest.slug,
+      state,
+      redirect_uri: redirectUri,
+      code_challenge: await codeChallenge(verifier),
+      code_challenge_method: 'S256',
+    }).toString();
+    return { url: url.toString(), state, loginCookie: cookie(LOGIN_COOKIE, btoa(JSON.stringify({ state, verifier, ret })), LOGIN_TTL_SECONDS) };
+  }
+
+  /** Check the state, swap the code (with the verifier) for the user, start an app session. */
+  async function finishLogin(loginCookieValue: string | undefined, state: string, code: string) {
+    let pending: { state?: string; verifier?: string } = {};
+    try {
+      pending = JSON.parse(atob(loginCookieValue ?? '')) as typeof pending;
+    } catch {
+      // missing or malformed: refused below
+    }
+    if (!pending.state || !pending.verifier || state !== pending.state || !code) {
+      throw badRequest('Sign-in expired or was started in another browser. Please try again.');
+    }
+    const { user, role } = await deps.platform.exchangeCode({ code, codeVerifier: pending.verifier, redirectUri });
+    if (!knownRoles.has(role)) throw forbidden(`The platform granted an unknown role "${role}"`);
+    const token = await createSession(deps, user, role);
+    await recordAudit(deps, user, { action: 'auth.login', details: { role } });
+    return { token, user, role };
+  }
+
   router
     .add('GET', '/health', async () => ({ body: { ok: true, app: manifest.slug } }))
     // Step 2 of the handshake: send the browser to the platform with a PKCE challenge.
     .add('GET', '/auth/login', async (req) => {
-      const state = randomToken();
-      const verifier = randomToken();
-      const ret = safeReturnPath(req.query.return);
-      const login = btoa(JSON.stringify({ state, verifier, ret }));
-      const url = new URL('/authorize', deps.config.authOrigin);
-      url.search = new URLSearchParams({
-        app: manifest.slug,
-        state,
-        redirect_uri: redirectUri,
-        code_challenge: await codeChallenge(verifier),
-        code_challenge_method: 'S256',
-      }).toString();
-      return { redirect: url.toString(), cookies: [cookie(LOGIN_COOKIE, login, LOGIN_TTL_SECONDS)] };
+      const { url, loginCookie } = await startLogin('/authorize', safeReturnPath(req.query.return));
+      return { redirect: url, cookies: [loginCookie] };
+    })
+    // Silent sign-in, step 1: the page gets a URL to ask the platform with (fetch, portal cookie).
+    .add('GET', '/auth/silent-start', async () => {
+      const { url, state, loginCookie } = await startLogin('/api/silent-authorize', '/');
+      return { body: { url, state }, cookies: [loginCookie] };
+    })
+    // Silent sign-in, step 2: the page hands over the platform's code; same checks as the callback.
+    .add('POST', '/auth/silent-finish', async (req) => {
+      if (req.headers[CSRF_HEADER] !== '1') throw forbidden('Missing request header', 'CSRF');
+      const { token, user, role } = await finishLogin(req.cookies[LOGIN_COOKIE], String(req.body.state ?? ''), String(req.body.code ?? ''));
+      return {
+        body: { user, role, canManageAccess: canManageAccess(manifest, role) },
+        cookies: [clearCookie(LOGIN_COOKIE), sessionCookie(token)],
+      };
     })
     // Steps 8-9: swap the one-time code for the user, start an app session, go back to the deep link.
     .add('GET', '/auth/callback', async (req) => {
-      let pending: { state?: string; verifier?: string; ret?: string } = {};
+      let pending: { ret?: string } = {};
       try {
         pending = JSON.parse(atob(req.cookies[LOGIN_COOKIE] ?? '')) as typeof pending;
       } catch {
-        // missing or malformed: handled below
+        // missing or malformed: finishLogin refuses it
       }
       const clear = clearCookie(LOGIN_COOKIE);
       const ret = safeReturnPath(pending.ret);
@@ -186,13 +222,7 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
         const code = req.query.error.replace(/[^a-z_]/g, '').slice(0, 40);
         return { redirect: `/?stacks_access=${code}`, cookies: [clear] };
       }
-      if (!pending.state || !pending.verifier || req.query.state !== pending.state || !req.query.code) {
-        throw badRequest('Sign-in expired or was started in another browser. Please try again.');
-      }
-      const { user, role } = await deps.platform.exchangeCode({ code: req.query.code, codeVerifier: pending.verifier, redirectUri });
-      if (!knownRoles.has(role)) throw forbidden(`The platform granted an unknown role "${role}"`);
-      const token = await createSession(deps, user, role);
-      await recordAudit(deps, user, { action: 'auth.login', details: { role } });
+      const { token } = await finishLogin(req.cookies[LOGIN_COOKIE], req.query.state ?? '', req.query.code ?? '');
       return { redirect: ret, cookies: [clear, sessionCookie(token)] };
     })
     .add('GET', '/auth/session', async (req) => {

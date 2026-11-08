@@ -122,7 +122,9 @@ The handshake is a minimal OAuth-style authorization-code flow that the SDK impl
 - **Public pages** need no session. A signed-out visitor on a private app sees its public pages and a sign-in or Request access button.
 - **Grant check (step 6)**: public app with no grant → auto-grant `defaultRole`; private app with no grant → the portal's request-access page, then back to the app's public view with a pending notice.
 - **Lifetimes**: master and app sessions both slide to 90 days of inactivity (Book Club's rule); the app session also stores the user's `createdAt` so deleting a user ends every session.
-- **Sign-out**: there is one "Sign out", in the account menu of the portal and every app. It ends the master session and every app session for that user (an app-only sign-out would silently sign people back in on their next click).
+- **Silent sign-in**: signed in to the platform means signed in to every app. When an app page loads without an app session, `@stacks/web` asks the platform in the background (`GET /api/silent-authorize`, a credentialed `fetch` that only the app's own origin may read, CORS), with the same PKCE state as the redirect flow; a code comes back, the page hands it to the app's `/api/auth/silent-finish`, and the app session starts with no click or redirect. It re-asks when the person returns to the tab (at most every 30 s). It never files a request: for a private app without a role it answers `access_required`, and the account control offers **Request access**, which goes through `/authorize` (and files the request) only when clicked. Public apps grant their default role as before.
+- **Signing in to an app signs in to the platform** (the redirect flow goes through the portal's Google sign-in).
+- **Sign-out**: there is one "Sign out", in the account menu of the portal and every app. It ends the master session and every app session for that user (an app-only sign-out would silently sign people back in). From an app it returns to the page you were on (`/logout?return=<url>`, accepted only for the platform's own apps), now signed out; from the portal it stays on the portal.
 
 ## Access model
 
@@ -242,8 +244,9 @@ control at the top right of the portal's header and of every app's header.
 
 | State | What it shows |
 | --- | --- |
-| Loading | A placeholder of the same size, so the header doesn't jump |
-| Signed out | **Sign in**: through the platform and back to the same page (silent if the portal session is alive) |
+| Loading (incl. the silent sign-in check) | A placeholder of the same size, so the header doesn't jump or flash "Sign in" |
+| Signed out (no platform session) | **Sign in**: through the platform and back to the same page |
+| Signed in to the platform, no role in this private app | **Request access** (files the request only when clicked) |
 | Request pending (private app) | **Access requested · check again** |
 | Signed in | Avatar chip (name on wide screens, a count of unread + requests waiting) opening the menu |
 

@@ -32,7 +32,7 @@ function DemoBridge({ demo, children }: { demo: Demo; children: ReactNode }) {
  */
 export function DemoApp({ demo, children }: { demo: Demo; children: ReactNode }) {
   return (
-    <StacksProvider client={demo.client} navigator={demo.navigator}>
+    <StacksProvider client={demo.client} navigator={demo.navigator} silentSignIn={false}>
       <DemoBridge demo={demo}>{children}</DemoBridge>
     </StacksProvider>
   );

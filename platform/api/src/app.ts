@@ -96,6 +96,40 @@ export function createPlatformApp(deps: PlatformDeps) {
     };
   }
 
+  /** A single-use, 60-second code for this user and app, bound to the redirect URI and PKCE challenge. */
+  async function issueCode(user: PlatformUser, slug: string, redirectUri: string, challenge: string): Promise<string> {
+    const code = randomToken('stc_');
+    const now = deps.now();
+    await deps.store.put({
+      PK: `CODE#${await sha256Hex(code)}`,
+      SK: 'CODE',
+      app: slug,
+      email: user.email,
+      redirectUri,
+      challenge,
+      notAfter: now.getTime() + CODE_TTL_MS,
+      expiresAt: Math.floor(now.getTime() / 1000) + 300,
+    });
+    const recent = [slug, ...(user.recent ?? []).filter((s) => s !== slug)].slice(0, 8);
+    if (recent.join() !== (user.recent ?? []).join()) await saveUser(deps, { ...user, recent });
+    return code;
+  }
+
+  /** Where to land after signing out: a page of a registered app or the portal; anything else is refused. */
+  async function safeLogoutReturn(raw: string): Promise<string | null> {
+    if (!raw) return null;
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== 'https:') return null;
+    if (url.origin === new URL(deps.config.authOrigin).origin) return url.toString();
+    const apps = await listApps(deps);
+    return apps.some((a) => appOrigin(deps.config, a.manifest.slug) === url.origin) ? url.toString() : null;
+  }
+
   const catalogEntry = (app: AppEntry, access: string | null, favorite: boolean) => ({
     slug: app.manifest.slug,
     name: app.manifest.name,
@@ -142,7 +176,9 @@ export function createPlatformApp(deps: PlatformDeps) {
         await signOutEverywhere(deps, user.email);
         await audit(deps, user, 'platform', { action: 'auth.logout' });
       }
-      return { redirect: portalUrl('/?signedOut=1'), cookies: [clearCookie(PORTAL_COOKIE)] };
+      // Back to where they signed out: an app page (it then shows its signed-out view), else the portal.
+      const ret = await safeLogoutReturn(String(req.query.return ?? ''));
+      return { redirect: ret ?? portalUrl('/?signedOut=1'), cookies: [clearCookie(PORTAL_COOKIE)] };
     })
 
     /* ---------- The handshake: steps 3-7 ---------- */
@@ -163,22 +199,28 @@ export function createPlatformApp(deps: PlatformDeps) {
       let grant = await getGrant(deps, slug, user.email);
       if (!grant) grant = await requestAccess(deps, user, app.manifest); // public: default role; private: pending request
       if (grant.role === PENDING) return back({ error: 'access_pending' });
-
-      const code = randomToken('stc_');
-      const now = deps.now();
-      await deps.store.put({
-        PK: `CODE#${await sha256Hex(code)}`,
-        SK: 'CODE',
-        app: slug,
-        email: user.email,
-        redirectUri,
-        challenge,
-        notAfter: now.getTime() + CODE_TTL_MS,
-        expiresAt: Math.floor(now.getTime() / 1000) + 300,
-      });
-      const recent = [slug, ...(user.recent ?? []).filter((s) => s !== slug)].slice(0, 8);
-      if (recent.join() !== (user.recent ?? []).join()) await saveUser(deps, { ...user, recent });
+      const code = await issueCode(user, slug, redirectUri, challenge);
       return back({ code });
+    })
+    // Silent sign-in: an app page asks (fetch, with the portal cookie) whether the person is already
+    // signed in to the platform. Never redirects, never files a request: a private app the person
+    // has no role in answers access_required, and the app offers "Request access".
+    .add('GET', '/silent-authorize', async (req) => {
+      const { app: slug, state, redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: method } = req.query;
+      const app = slug ? await getApp(deps, slug).catch(() => null) : null;
+      const origin = app ? appOrigin(deps.config, app.manifest.slug) : null;
+      // CORS: only the app's own origin may read the answer (with the cookie).
+      if (!app || !origin || req.headers.origin !== origin) throw forbidden('Not allowed from this origin');
+      const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
+      const answer = (body: Record<string, unknown>, status = 200) => ({ status, body, headers: cors });
+      if (!state || !challenge || method !== 'S256' || redirectUri !== `${origin}/api/auth/callback`) return answer({ error: 'invalid_request' }, 400);
+      const user = await readPortalSession(deps, req.cookies[PORTAL_COOKIE]);
+      if (!user) return answer({ error: 'login_required' });
+      let grant = await getGrant(deps, app.manifest.slug, user.email);
+      if (!grant && app.manifest.visibility === 'public') grant = await requestAccess(deps, user, app.manifest);
+      if (!grant) return answer({ error: 'access_required' });
+      if (grant.role === PENDING) return answer({ error: 'access_pending' });
+      return answer({ code: await issueCode(user, app.manifest.slug, redirectUri!, challenge), state });
     })
     // Step 8: the app's server swaps the code for the user and their role.
     .add('POST', '/apps/:slug/token', async (req) => {

@@ -155,6 +155,12 @@ export function RequestAccess({
   if (children) return <>{children(state)}</>;
   if (state.signedIn) return null;
   if (accessNotice === 'access_pending') return <p role="status">Your request for access has been sent. You will get in once someone approves it.</p>;
+  if (accessNotice === 'access_required')
+    return (
+      <button type="button" onClick={state.signIn}>
+        Request access
+      </button>
+    );
   if (accessNotice === 'access_denied') return <p role="status">You don't have access to this app.</p>;
   return (
     <button type="button" onClick={state.signIn}>

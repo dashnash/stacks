@@ -21,7 +21,8 @@ export function buildCsp(manifest: AppManifest, opts: { authOrigin: string }): s
     'style-src': ["'self'", "'unsafe-inline'"],
     'font-src': ["'self'"],
     'img-src': ["'self'", 'data:', 'blob:', 'https://lh3.googleusercontent.com'],
-    'connect-src': ["'self'"],
+    // The platform: silent sign-in asks it from the page.
+    'connect-src': ["'self'", opts.authOrigin],
     'frame-src': ["'none'"],
     'media-src': ["'self'"],
     'object-src': ["'none'"],
