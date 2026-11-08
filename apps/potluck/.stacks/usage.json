@@ -26,6 +26,19 @@
       "minutes": 1.2,
       "filesChanged": 30,
       "note": "all checks passed; fixed demo times (UTC vs local); event page screenshotted by hand"
+    },
+    {
+      "step": "stage",
+      "at": "2026-11-08T22:20:37.853Z",
+      "minutes": 6.5,
+      "filesChanged": 0,
+      "note": "gh workflow run blocked (GraphQL); used REST dispatch"
+    },
+    {
+      "step": "ship",
+      "at": "2026-11-08T22:20:38.251Z",
+      "minutes": 0,
+      "filesChanged": 1
     }
   ]
 }
