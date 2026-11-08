@@ -15,3 +15,5 @@ export {
 } from './config';
 export type { EnvConfig, EnvName, StacksConfig } from './config';
 export { checkAssembly } from './assembly-check';
+export { PlatformStack, PORTAL_CSP, portalRouterCode } from './platform-stack';
+export type { PlatformStackProps } from './platform-stack';

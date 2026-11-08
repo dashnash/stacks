@@ -1,12 +1,13 @@
-name: Deploy production
+name: Deploy
 
-# Every merge to main deploys all app stacks (CloudFormation skips stacks with no changes).
+# Every merge to main: the staging platform first (so a broken platform change stops there), then
+# the production platform, then every production app (CloudFormation skips stacks with no changes).
 on:
   push:
     branches: [main]
 
 concurrency:
-  group: deploy-production
+  group: deploy-main
   cancel-in-progress: false
 
 permissions:
@@ -24,17 +25,44 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - name: Synth production
+      - name: Synth
         working-directory: infra
-        run: npx cdk synth -q -c env=production -o ../cdk.out
+        run: |
+          npx cdk synth -q -c env=production -o ../cdk.out
+          npx cdk synth -q -c env=staging -c only=platform -o ../cdk.out-staging
       - uses: actions/upload-artifact@v4
         with:
           name: cdk-out
-          path: cdk.out
+          path: |
+            cdk.out
+            cdk.out-staging
           retention-days: 7
 
-  deploy:
+  staging-platform:
     needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: cdk-out
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: npx cdk deploy --app cdk.out-staging stacks-test-platform --require-approval never
+
+  production:
+    needs: staging-platform
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -50,13 +78,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: cdk-out
-          path: cdk.out
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PRODUCTION_ROLE_ARN }}
           aws-region: us-east-1
-      - name: Deploy
+      - name: Platform first (apps read its certificate from SSM)
+        run: npx cdk deploy --app cdk.out stacks-prod-platform --require-approval never
+      - name: Apps
         run: npx cdk deploy --app cdk.out --all --require-approval never --concurrency 4 --outputs-file outputs.json
       - name: Summary
         run: |
-          node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??''))" >> "$GITHUB_STEP_SUMMARY"
+          node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"

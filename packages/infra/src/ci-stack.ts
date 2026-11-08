@@ -77,7 +77,7 @@ export class CiStack extends cdk.Stack {
           sid: 'AppRuntime',
           actions: [
             'dynamodb:*', 's3:*', 'logs:*', 'secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret',
-            'ssm:GetParameter', 'ssm:GetParameters', 'kms:Decrypt', 'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation',
+            'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'kms:Decrypt', 'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation',
             'lambda:InvokeFunction', 'lambda:GetFunction', 'events:PutEvents', 'xray:PutTraceSegments', 'xray:PutTelemetryRecords',
           ],
           resources: ['*'],

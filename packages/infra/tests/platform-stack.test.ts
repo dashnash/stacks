@@ -1,0 +1,83 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as cdk from 'aws-cdk-lib';
+import { Match, Template } from 'aws-cdk-lib/assertions';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { AppManifest } from '@stacks/manifest';
+import { AppStack, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
+
+const env: EnvConfig = { rootDomain: 'test.example.com', hostedZoneId: 'Z123', hostedZoneName: 'example.com', googleClientId: 'gid', platformAdmins: ['root@x.dev', 'two@x.dev'] };
+const repoRoot = path.resolve(__dirname, '../../..');
+let webDist: string;
+
+beforeAll(() => {
+  webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-portal-'));
+  fs.writeFileSync(path.join(webDist, 'index.html'), '<!doctype html>');
+  fs.mkdirSync(path.join(webDist, 'assets'));
+  fs.writeFileSync(path.join(webDist, 'assets', 'a.js'), '1');
+});
+
+function synth(e = env) {
+  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+  const stack = new PlatformStack(app, { envName: 'staging', env: e, region: 'us-east-1', repoRoot, webDistPath: webDist, apiEntry: path.join(__dirname, 'fake-entry.ts') });
+  return Template.fromStack(stack);
+}
+
+describe('PlatformStack', () => {
+  it('creates the wildcard certificate and shares its ARN through SSM', () => {
+    const t = synth();
+    t.hasResourceProperties('AWS::CertificateManager::Certificate', { DomainName: '*.test.example.com', SubjectAlternativeNames: ['test.example.com'] });
+    t.hasResourceProperties('AWS::SSM::Parameter', { Name: '/stacks/test/certificate-arn' });
+  });
+
+  it('serves the portal at auth.<domain> and the bare domain, with sign-in routes going to the API', () => {
+    const t = synth();
+    t.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Aliases: ['auth.test.example.com', 'test.example.com'],
+        CacheBehaviors: Match.arrayWith([Match.objectLike({ PathPattern: '/api/*' }), Match.objectLike({ PathPattern: '/authorize' }), Match.objectLike({ PathPattern: '/logout' })]),
+      }),
+    });
+    for (const key of ['GET /authorize', 'GET /logout', 'ANY /api/{proxy+}']) t.hasResourceProperties('AWS::ApiGatewayV2::Route', { RouteKey: key });
+    t.hasResourceProperties('AWS::Route53::RecordSet', { Name: 'auth.test.example.com.', Type: 'A' });
+    t.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+      ResponseHeadersPolicyConfig: Match.objectLike({ SecurityHeadersConfig: Match.objectLike({ ContentSecurityPolicy: { ContentSecurityPolicy: PORTAL_CSP, Override: true } }) }),
+    });
+    expect(portalRouterCode('test.example.com')).toContain("'https://auth.test.example.com' + request.uri");
+  });
+
+  it('configures the Lambda and limits it to the registry, app credentials and app session items', () => {
+    const t = synth();
+    t.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: { Variables: Match.objectLike({ STACKS_ENV_TAG: 'test', STACKS_ROOT_DOMAIN: 'test.example.com', GOOGLE_CLIENT_ID: 'gid', PLATFORM_ADMINS: 'root@x.dev,two@x.dev' }) },
+    });
+    const policies = JSON.stringify(t.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain('parameter/stacks/test/apps/*');
+    expect(policies).toContain('secret:stacks-test-app-*');
+    expect(policies).toContain('table/stacks-test-app-*');
+    expect(policies).toContain('"dynamodb:LeadingKeys":["SESSION#*","USERSESSIONS#*"]');
+  });
+
+  it('works without a hosted zone (CloudFront domain, no certificate)', () => {
+    const t = synth({ ...env, hostedZoneId: '' });
+    t.resourceCountIs('AWS::CertificateManager::Certificate', 0);
+    t.resourceCountIs('AWS::Route53::RecordSet', 0);
+  });
+});
+
+describe('AppStack registry entries', () => {
+  it('registers the manifest and table name with the platform', () => {
+    const manifest: AppManifest = {
+      slug: 'hello', name: 'Hello', tagline: 't', description: 'd', visibility: 'public',
+      roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }],
+      topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['o@x.dev'],
+    };
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const t = Template.fromStack(
+      new AppStack(app, { manifest, envName: 'staging', env, region: 'us-east-1', repoRoot, appDir: '/nowhere', webDistPath: webDist, apiEntry: path.join(__dirname, 'fake-entry.ts') }),
+    );
+    t.hasResourceProperties('AWS::SSM::Parameter', { Name: '/stacks/test/apps/hello/manifest', Value: JSON.stringify(manifest) });
+    t.hasResourceProperties('AWS::SSM::Parameter', { Name: '/stacks/test/apps/hello/table' });
+  });
+});

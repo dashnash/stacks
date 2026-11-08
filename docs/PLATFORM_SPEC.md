@@ -375,15 +375,21 @@ Five phases; each ends with a gate the build agent must demonstrate before start
 
 Gate: a hello-world app synthesizes, its tests pass, and its demo build runs in a browser.
 
-**Phase 2 — Platform**
+**Phase 2 — Platform** (built; staging gate pending first deploy)
 
-- [ ] `platform` stack: cert, DNS, platform table, platform API, portal web
-- [ ] Google sign-in at `auth.<domain>`, master session, app handshake, `GET /me`
-- [ ] Registry, catalog, public app pages, request access, grants, auto-grant for public apps
-- [ ] Access grid, notifications and badges, central audit feed
-- [ ] Portal bar web component
+- [x] `platform` stack: cert, DNS, platform table, platform API, portal web
+- [x] Google sign-in at `auth.<domain>`, master session, app handshake, `GET /me`
+- [x] Registry, catalog, public app pages, request access, grants, auto-grant for public apps
+- [x] Access grid, notifications and badges, central audit feed
+- [x] Portal bar web component
 
 Gate on staging: sign in once, open two apps on different subdomains with no second prompt; request access to a private app, approve it from the grid, and the user gets in; revoking ends their app session within one request.
+
+Phase 2 build notes:
+- The same gate runs in memory in `platform/api/tests/e2e.test.ts` (two real apps, the real platform, a browser with per-host cookies). It needs repeating on staging once `docs/SETUP.md` is done.
+- **Registry**: each app stack writes `/stacks/<env>/apps/<slug>/manifest` and `/table` to SSM. The platform reads these (cached a minute) and registers an app the first time it sees it, giving the manifest's `owners` the top role.
+- **Portal bar**: a React component in `@stacks/web`, rendered by `<StacksProvider>`. It gets its data from the app's own `/api/stacks/bar`, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed.
+- **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
 
 **Phase 3 — Book Club migration**
 
@@ -412,7 +418,7 @@ Gate: a non-technical user builds one app end to end in a single Claude Code ses
 
 These are defaulted as written above; change any by editing this spec or commenting on the Claude Doc.
 
-- [ ] Portal address: `apps.<domain>` for the catalog and `auth.<domain>` for sign-in, or the catalog at the apex `<domain>`? Default: catalog at the apex, sign-in at `auth.`.
+- [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
 - [ ] Does Book Club keep a vanity host (e.g. `books.<domain>`) or use its slug `book-club.<domain>`?
 - [ ] Session lifetime: keep Book Club's 90-day sliding expiry for both master and app sessions?
 - [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.

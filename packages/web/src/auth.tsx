@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, createClient, type Client, type Session } from './client';
+import { PortalBar, type PortalBarMode } from './PortalBar';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 
@@ -50,8 +51,11 @@ export function StacksProvider({
   children,
   client,
   navigator = browserNavigator,
+  portalBar = 'minimized',
 }: {
   children: ReactNode;
+  /** The platform overlay for signed-in users (usually the manifest's `portalBar`). */
+  portalBar?: PortalBarMode;
   /** Defaults to `createClient()`; the demo passes one backed by the in-browser API. */
   client?: Client;
   navigator?: Navigator;
@@ -106,7 +110,12 @@ export function StacksProvider({
     [status, session, api, accessNotice, refresh, navigator],
   );
 
-  return <StacksContext.Provider value={value}>{children}</StacksContext.Provider>;
+  return (
+    <StacksContext.Provider value={value}>
+      {children}
+      <PortalBar mode={portalBar} />
+    </StacksContext.Provider>
+  );
 }
 
 export function useStacks(): StacksContextValue {

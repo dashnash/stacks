@@ -235,6 +235,12 @@ export class AppStack extends cdk.Stack {
     });
     site.node.addDependency(assets);
 
+    // 7. Register with the platform: it reads these to list the app, check its credential and end sessions.
+    const manifestJson = JSON.stringify(manifest);
+    if (manifestJson.length > 4000) throw new Error(`${slug}: app.manifest.json is ${manifestJson.length} characters; the registry allows 4000`);
+    new ssm.StringParameter(this, 'RegistryManifest', { parameterName: `/stacks/${envTag(envName)}/apps/${slug}/manifest`, stringValue: manifestJson });
+    new ssm.StringParameter(this, 'RegistryTable', { parameterName: `/stacks/${envTag(envName)}/apps/${slug}/table`, stringValue: this.table.tableName });
+
     this.siteUrl = useDomain ? origin : `https://${this.distribution.distributionDomainName}`;
     new cdk.CfnOutput(this, 'SiteURL', { value: this.siteUrl });
     new cdk.CfnOutput(this, 'TableName', { value: this.table.tableName });

@@ -10,6 +10,14 @@ export interface PlatformClient {
   exchangeCode(input: { code: string; codeVerifier: string; redirectUri: string }): Promise<{ user: StacksUser; role: string }>;
   /** Mirror an activity-log event into the platform's central feed. */
   recordAudit(event: AuditEvent): Promise<void>;
+  /** What the portal bar shows a user: their apps and unread notifications. */
+  portalBar(email: string): Promise<PortalBarData>;
+}
+
+export interface PortalBarData {
+  portalUrl: string;
+  unread: number;
+  apps: { slug: string; name: string; url: string }[];
 }
 
 export class PlatformError extends Error {
@@ -39,11 +47,11 @@ export class HttpPlatformClient implements PlatformClient {
     this.doFetch = opts.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T>(path: string, body?: unknown): Promise<T> {
     const res = await this.doFetch(`${this.opts.baseUrl}/apps/${encodeURIComponent(this.opts.appSlug)}${path}`, {
-      method: 'POST',
+      method: body === undefined ? 'GET' : 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await this.opts.credential()}` },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
@@ -57,5 +65,9 @@ export class HttpPlatformClient implements PlatformClient {
 
   async recordAudit(event: AuditEvent): Promise<void> {
     await this.post('/audit', event);
+  }
+
+  portalBar(email: string): Promise<PortalBarData> {
+    return this.post<PortalBarData>(`/bar?email=${encodeURIComponent(email)}`);
   }
 }

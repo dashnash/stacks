@@ -199,6 +199,16 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       return { body: { ok: true, platformLogoutUrl: new URL('/logout', deps.config.authOrigin).toString() }, cookies: [clearCookie(SESSION_COOKIE)] };
     });
 
+  // The portal bar: the viewer's other apps and unread count, fetched from the platform server-side.
+  api.member('GET', '/stacks/bar', async (_req, v) => {
+    try {
+      return { body: await v.deps.platform.portalBar(v.user.email) };
+    } catch (err) {
+      console.error('Portal bar unavailable', err);
+      return { body: { portalUrl: v.deps.config.authOrigin, unread: 0, apps: [] } };
+    }
+  });
+
   api.approver('GET', '/admin/audit', async (req, v) => {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     return { body: await listAudit(v.deps, { before: req.query.before, actor: req.query.actor, action: req.query.action, limit }) };

@@ -127,6 +127,19 @@ describe('route guards', () => {
   });
 });
 
+describe('portal bar', () => {
+  it('serves the viewer\'s apps from the platform, and degrades to empty if the platform fails', async () => {
+    const t = harness();
+    t.platform.bar = { portalUrl: 'https://auth.stacks.test/#/', unread: 2, apps: [{ slug: 'x', name: 'X', url: 'https://x.stacks.test/' }] };
+    expect((await t.call('GET', '/stacks/bar', { as: 'r@test.dev' })).body.unread).toBe(2);
+    t.platform.portalBar = async () => {
+      throw new Error('down');
+    };
+    expect((await t.call('GET', '/stacks/bar', { as: 'r@test.dev' })).body).toEqual({ portalUrl: 'https://auth.stacks.test', unread: 0, apps: [] });
+    expect((await t.call('GET', '/stacks/bar')).status).toBe(401);
+  });
+});
+
 describe('activity log', () => {
   it('records audited actions with label and input, mirrors them, and shows them to approvers only', async () => {
     const t = harness();
