@@ -19,7 +19,7 @@
   "secrets": [
     {
       "name": "GOOGLE_BOOKS_API_KEY",
-      "description": "Google Books API key (Google Cloud Console, APIs & Services, Credentials; restrict it to the Books API). Raises the book search quota.",
+      "description": "Google Books API key (Google Cloud Console, APIs & Services, Credentials; restrict it to the Books API, with no website restrictions). Raises the book search quota.",
       "optional": true
     }
   ],

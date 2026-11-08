@@ -265,6 +265,31 @@ describe('createExternalBookSource.search', () => {
     expect(results).toEqual([{ isbn: '9780441172719', title: 'Dune', author: 'Frank Herbert', coverUrl: undefined, year: 1990 }]);
   });
 
+  it('retries anonymously when Google rejects the key, and logs why once (never the key)', async () => {
+    const warnings: string[] = [];
+    const { fn, calls } = fakeFetch((url) => {
+      if (url.includes('search.json')) return jsonRes({ docs: [] });
+      if (url.includes('googleapis.com') && url.includes('key='))
+        return new Response(JSON.stringify({ error: { code: 403, message: 'Requests from referer <empty> are blocked.', details: [{ reason: 'API_KEY_HTTP_REFERRER_BLOCKED' }] } }), { status: 403 });
+      if (url.includes('googleapis.com'))
+        return jsonRes({ items: [{ volumeInfo: { title: 'Dune', authors: ['Frank Herbert'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9780441172719' }] } }] });
+    });
+    const source = createExternalBookSource({ fetch: fn, googleApiKey: 'secret-key', warn: (m) => warnings.push(m) });
+    expect((await source.search('dune')).map((b) => b.title)).toEqual(['Dune']);
+    await source.search('dune again');
+    expect(calls.some((u) => u.includes('googleapis.com') && !u.includes('key='))).toBe(true);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('API_KEY_HTTP_REFERRER_BLOCKED');
+    expect(warnings[0]).not.toContain('secret-key');
+  });
+
+  it('logs when the key cannot be read', async () => {
+    const warnings: string[] = [];
+    const { fn } = fakeFetch((url) => (url.includes('search.json') ? jsonRes({ docs: [] }) : url.includes('googleapis.com') ? jsonRes({ items: [] }) : undefined));
+    await createExternalBookSource({ fetch: fn, googleApiKey: () => Promise.reject(Object.assign(new Error('not authorized'), { name: 'AccessDeniedException' })), warn: (m) => warnings.push(m) }).search('dune');
+    expect(warnings).toEqual([expect.stringContaining('AccessDeniedException')]);
+  });
+
   it('adds the API key (from the app secret) to Google Books calls only, and works without one', async () => {
     const responder: Responder = (url) => (url.includes('search.json') ? jsonRes({ docs: [] }) : url.includes('googleapis.com') ? jsonRes({ items: [] }) : undefined);
     const withKey = fakeFetch(responder);
@@ -275,7 +300,7 @@ describe('createExternalBookSource.search', () => {
     // Not set yet, or SSM unreachable: Google is still asked, anonymously.
     for (const googleApiKey of [async () => undefined, async () => Promise.reject(new Error('ssm down'))]) {
       const anon = fakeFetch(responder);
-      await createExternalBookSource({ fetch: anon.fn, googleApiKey }).search('dune');
+      await createExternalBookSource({ fetch: anon.fn, googleApiKey, warn: () => undefined }).search('dune');
       expect(anon.calls.some((u) => u.includes('googleapis.com') && !u.includes('key='))).toBe(true);
     }
   });
