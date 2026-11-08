@@ -15,6 +15,7 @@ migrated with `tools/migrate-book-club` (`docs/BOOK_CLUB_MIGRATION.md`). Next is
 ## Commands
 
 - `npm test`, `npm run typecheck`, `npm run lint` (import rule), `npm run build`
+- `npm run new-app -- <slug> [--owner you@gmail.com]`: scaffold `apps/<slug>/` from `templates/app/` (green tests, no feature code)
 - `npm run demo -w apps/<slug>`: the app's in-browser demo; `npm run demo -w platform/web`: the portal's
 - `cd infra && npx cdk synth -c env=staging [-c app=<slug>]`: no AWS credentials needed
 

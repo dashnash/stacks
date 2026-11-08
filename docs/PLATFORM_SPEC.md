@@ -307,13 +307,13 @@ stacks/
   apps/
     mofobookklub/
       app.manifest.json
-      api/  web/  content/  tests/
-      stack.ts               # new PlatformApp(this, { manifest }) and nothing else by default
+      api/  web/  content/  tests/   # no stack file: infra/ builds one AppStack per manifest
   infra/
     bin/stacks.ts            # instantiates platform + one stack per apps/*/app.manifest.json
-  scripts/
-    new-app.ts               # deterministic scaffold
-    migrate-book-club.ts     # one-time data migration
+  tools/
+    new-app/                 # deterministic scaffold (npm run new-app -- <slug>)
+    app-conformance/         # platform rules every app must pass
+    migrate-book-club/       # one-time data migration (done)
   docs/
     PLATFORM_SPEC.md         # this spec
     ARCHITECTURE.md
@@ -327,7 +327,7 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 
 0. **Template guarantees.** Every generated app has `<AccountMenu />` at the top right of its header and exports `web/src/demo/setup.ts`, so it passes `tools/app-conformance` from the first commit.
 1. **Interview** (Claude, few tokens). Ask, one screen at a time, in plain language for non-technical creators: purpose, who uses it, public or private, roles and who approves, the 3–5 things it tracks, what signed-out visitors see, the look and feel (3 adjectives or a reference site), which modules it needs. Write `app.manifest.json` plus `apps/<slug>/BRIEF.md` (the description, entities, user stories). Show both back for a yes.
-2. **Scaffold** (script, zero tokens). `npm run new-app -- <slug>` copies `templates/app/`, fills placeholders from the manifest, adds the stack, wires auth, roles, audit, demo personas (one per role), tests, landing page and footer. It must pass typecheck and tests before Claude writes a line.
+2. **Scaffold** (script, zero tokens). `npm run new-app -- <slug>` (`tools/new-app`) copies `templates/app/` into `apps/<slug>/`, keeping the interview's `app.manifest.json` and `BRIEF.md` (or, with no manifest yet, writing a starting one from `--name --tagline --description --visibility --owner`: roles Owner and Member). It fills the slug and title, generates one demo persona per role (top role first), and runs `npm install` so the new workspace is in the lockfile. The result has auth, roles, audit, the account menu, a landing page (tagline, description, sign in or request access), a footer, a starter feature (shared notes: a public route, member routes, an approver-only delete, audit events), API and UI tests and the demo. No extra stack file is needed: `infra/` finds every `apps/*/app.manifest.json`. A test in `tools/new-app` scaffolds an app in the repo and checks that it typechecks, passes its tests and the conformance test, builds and synthesizes, so this holds before Claude writes a line.
 3. **Build** (Claude). Reads only `BRIEF.md`, `packages/*/README.md` (each under ~300 lines, API cheat-sheet style) and, when useful, the matching folder in `apps/mofobookklub` as a worked example. Writes entities, routes, UI and tests. The UI is unconstrained: any layout, styling or component library the CSP allows.
 4. **Verify** (script + Claude). Typecheck, unit and integration tests, demo build, a Playwright pass that signs in as every persona and screenshots the main pages. Claude reviews the screenshots with the creator and iterates.
 5. **Stage** (CI). `gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>`; the session waits on the run and returns `https://<slug>.test.<domain>`.
@@ -461,7 +461,7 @@ Phase 3 build notes:
 
 **Phase 4 — `/new-app`**
 
-- [ ] `templates/app/` and `scripts/new-app.ts`
+- [x] `templates/app/` and `tools/new-app` (`npm run new-app -- <slug>`)
 - [ ] The skill: interview, scaffold, build, verify, stage, ship
 - [ ] Remaining modules: uploads, scheduled jobs, email
 - [ ] Eval run on the 4 reference apps, usage logged
