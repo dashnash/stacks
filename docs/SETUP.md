@@ -8,6 +8,18 @@ once. Nothing here goes into a Claude session.
 For each environment: `rootDomain` (apps live at `<slug>.<rootDomain>`), the Route 53
 `hostedZoneId` and `hostedZoneName` holding it, the Google OAuth `googleClientId`, and `platformAdmins`.
 
+**None of these are secrets**, which is why they live in the repo:
+
+| Value | Why it is safe to commit |
+| --- | --- |
+| `rootDomain` | Public: it is in every URL. |
+| `hostedZoneId` | An identifier, not a credential. It does nothing without AWS credentials for your account. |
+| `googleClientId` | Public by design: Google's sign-in button sends it to every visitor's browser. Stacks uses Google's ID-token flow, which needs **no client secret**. |
+| `platformAdmins` | Email addresses (personal, not secret). The repo is private; move them to a GitHub variable if you prefer. |
+
+The real secrets never touch the repo: AWS access comes from GitHub OIDC (no stored keys), and each
+app's Platform API credential is generated inside AWS Secrets Manager by its stack.
+
 Until the platform stack exists (phase 2), leave `hostedZoneId` empty: apps are then served on
 their CloudFront domain instead of `<slug>.<rootDomain>`, because the wildcard certificate is
 created by the platform stack.

@@ -82,4 +82,5 @@ jobs:
       - name: Deploy
         run: npx cdk deploy --app cdk.out "stacks-test-app-${{ inputs.app }}" --require-approval never --outputs-file outputs.json
       - name: Summary
-        run: node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('Staging URL: '+v.SiteURL)" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('Staging URL: '+v.SiteURL)" >> "$GITHUB_STEP_SUMMARY"
