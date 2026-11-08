@@ -1,0 +1,9 @@
+# Shared platform code needs review from the platform owner.
+# App folders (apps/*) deploy on green CI without this review.
+/packages/   @dashnash
+/platform/   @dashnash
+/infra/      @dashnash
+/templates/  @dashnash
+/.github/    @dashnash
+/CLAUDE.md   @dashnash
+/docs/PLATFORM_SPEC.md @dashnash
