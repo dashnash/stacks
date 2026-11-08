@@ -8,6 +8,7 @@ import {
   type AppRoutes,
   type AuditEvent,
   type PlatformClient,
+  type PortalBarData,
   type StacksUser,
 } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
@@ -34,6 +35,12 @@ export class FakePlatform implements PlatformClient {
 
   async recordAudit(event: AuditEvent): Promise<void> {
     this.audit.push(event);
+  }
+
+  /** Set what portalBar() returns. */
+  bar: PortalBarData = { portalUrl: 'https://auth.stacks.test', unread: 0, apps: [] };
+  async portalBar(): Promise<PortalBarData> {
+    return this.bar;
   }
 }
 

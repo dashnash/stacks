@@ -2,11 +2,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { StacksProvider } from '@stacks/web';
 import { App } from './App';
+import manifest from '../../app.manifest.json';
 import './styles.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <StacksProvider>
+    <StacksProvider portalBar={manifest.portalBar as 'shown' | 'minimized' | 'off'}>
       <App />
     </StacksProvider>
   </StrictMode>,

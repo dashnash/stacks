@@ -6,3 +6,5 @@ export { matchRoute, useAsync, useHashRoute } from './hooks';
 export type { AsyncState } from './hooks';
 export { Avatar, ErrorNote, initials, lockPageScroll, Modal, RequestAccess, Spinner } from './components';
 export { firstName, formatDateTime, formatShortDate, timeAgo } from './format';
+export { PortalBar } from './PortalBar';
+export type { PortalBarMode } from './PortalBar';

@@ -9,6 +9,7 @@ import {
   type AuditEvent,
   type Item,
   type PlatformClient,
+  type PortalBarData,
   type StacksUser,
 } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
@@ -44,6 +45,10 @@ class DemoPlatform implements PlatformClient {
   }
   async recordAudit(event: AuditEvent): Promise<void> {
     this.audit.push(event);
+  }
+  constructor(private readonly self: { slug: string; name: string }) {}
+  async portalBar(): Promise<PortalBarData> {
+    return { portalUrl: '#', unread: 2, apps: [{ ...this.self, url: '#/' }, { slug: 'other', name: 'Another app', url: '#/' }] };
   }
 }
 
@@ -91,7 +96,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const store = new MemoryStore(saved ?? []);
   const base: AppDeps = {
     store,
-    platform: new DemoPlatform(),
+    platform: new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }),
     config: { appOrigin: globalThis.location?.origin ?? 'https://demo.local', authOrigin: 'https://auth.demo.local' },
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),

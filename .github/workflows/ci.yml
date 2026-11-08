@@ -24,6 +24,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Lint workflows
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
       - name: Import rule
         run: node scripts/check-imports.mjs
       - name: App branches touch only their app
@@ -31,7 +35,9 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/check-app-branch.mjs "$HEAD_REF" $(git diff --name-only "$BASE_SHA"...HEAD)
+        run: |
+          mapfile -t changed < <(git diff --name-only "$BASE_SHA"...HEAD)
+          node scripts/check-app-branch.mjs "$HEAD_REF" "${changed[@]}"
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
