@@ -22,6 +22,19 @@ export interface ExternalBookSourceOptions {
   fetch?: Fetch;
   /** A Google Books API key, or a way to fetch one (the app's `GOOGLE_BOOKS_API_KEY` secret). Optional: without it, Google's lower anonymous quota applies. */
   googleApiKey?: string | (() => Promise<string | undefined>);
+  /** Where key problems are reported (default `console.warn`, i.e. the Lambda's logs). */
+  warn?: (message: string) => void;
+}
+
+/** Google's reason for refusing a request, e.g. "API_KEY_HTTP_REFERRER_BLOCKED". */
+async function googleReason(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: { message?: string; details?: { reason?: string }[]; errors?: { reason?: string }[] } };
+    const reason = body.error?.details?.find((d) => d.reason)?.reason ?? body.error?.errors?.find((e) => e.reason)?.reason;
+    return [reason, body.error?.message].filter(Boolean).join(': ').slice(0, 300) || 'no details';
+  } catch {
+    return 'no details';
+  }
 }
 
 /**
@@ -31,19 +44,45 @@ export interface ExternalBookSourceOptions {
 export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): BookSource {
   const doFetch: Fetch = opts.fetch ?? fetch;
   const key = opts.googleApiKey;
-  /** Adds the key to Google Books calls; a key that can't be read just means the anonymous quota. */
-  async function withKey(url: string): Promise<string> {
-    if (!key || !url.startsWith('https://www.googleapis.com/books/')) return url;
-    const value = typeof key === 'string' ? key : await key().catch(() => undefined);
-    if (!value) return url;
-    const u = new URL(url);
-    u.searchParams.set('key', value);
-    return u.toString();
+  const warn = opts.warn ?? ((message: string) => console.warn(message));
+  const warned = new Set<string>();
+  /** Each distinct problem is logged once per container, so a bad key doesn't flood the logs. */
+  const warnOnce = (message: string) => {
+    if (warned.has(message)) return;
+    warned.add(message);
+    warn(message);
+  };
+
+  /** The key for Google Books calls, if one is set and readable; otherwise the anonymous quota. */
+  async function googleKeyFor(url: string): Promise<string | undefined> {
+    if (!key || !url.startsWith('https://www.googleapis.com/books/')) return undefined;
+    if (typeof key === 'string') return key || undefined;
+    try {
+      return (await key()) || undefined;
+    } catch (err) {
+      warnOnce(`Google Books: could not read GOOGLE_BOOKS_API_KEY (${(err as Error).name ?? 'Error'}: ${(err as Error).message}); using the anonymous quota`);
+      return undefined;
+    }
   }
 
   async function getJson<T>(url: string): Promise<T | null> {
+    const fetchJson = async (target: string) => doFetch(target, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     try {
-      const res = await doFetch(await withKey(url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const value = await googleKeyFor(url);
+      let res: Response;
+      if (value) {
+        const keyed = new URL(url);
+        keyed.searchParams.set('key', value);
+        res = await fetchJson(keyed.toString());
+        // Google rejected the key itself (restricted to websites, API not enabled, invalid): say why,
+        // never the key, and try again anonymously rather than lose Google's results.
+        if (res.status === 400 || res.status === 403) {
+          warnOnce(`Google Books rejected the API key (${res.status} ${await googleReason(res)}); retrying without it`);
+          res = await fetchJson(url);
+        }
+      } else {
+        res = await fetchJson(url);
+      }
       if (!res.ok) return null;
       return (await res.json()) as T;
     } catch {

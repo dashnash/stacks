@@ -111,3 +111,7 @@ aws ssm put-parameter --name /stacks/prod/secrets/<slug>/<NAME> --type SecureStr
 Use `/stacks/test/...` for staging. The app picks the value up within 5 minutes, with no deploy.
 `https://<slug>.<rootDomain>/api/health` lists required secrets that are still missing (by name).
 To remove one: `aws ssm delete-parameter --name <same name> --profile admin --region us-east-1`.
+
+Keys are used from the app's server, so restrict them by **API** only: website (HTTP referrer)
+restrictions make every call fail, and Lambda has no fixed IP. If a provider rejects a key, the app's
+logs say why (e.g. `API_KEY_HTTP_REFERRER_BLOCKED`).
