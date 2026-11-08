@@ -174,8 +174,10 @@ export function AccessNotice({ notice }: { notice: string }) {
       <p className="kicker">Waiting at the door</p>
       <p className="voice mt-1 text-2xl leading-tight">
         {notice === 'access_pending'
-          ? "Your request to join is with the admins. Once someone approves you, sign in again and you're in."
-          : "This account doesn't have access to the Klub."}
+          ? "Your request to join is with the admins. Once someone approves you, you're in."
+          : notice === 'access_required'
+            ? "You're signed in, but not a member yet. Use Request access at the top right and an admin will let you in."
+            : "This account doesn't have access to the Klub."}
       </p>
     </div>
   );

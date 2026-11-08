@@ -20,7 +20,8 @@ export interface MenuItem {
   onSelect?: () => void;
 }
 
-export type AccountState = 'loading' | 'signedOut' | 'pending' | 'signedIn';
+/** `noAccess`: signed in to the platform, but no role in this private app (offer Request access). */
+export type AccountState = 'loading' | 'signedOut' | 'noAccess' | 'pending' | 'signedIn';
 
 /** Demo builds put the persona switcher inside the account menu (see @stacks/demo). */
 export interface DemoControls {
@@ -59,7 +60,15 @@ export function useAccountMenu(opts: { manageAccessHref?: string } = {}) {
   }, [api, status, session?.user.email, session?.role]);
 
   const state: AccountState =
-    status === 'loading' ? 'loading' : status === 'signedIn' ? 'signedIn' : accessNotice === 'access_pending' ? 'pending' : 'signedOut';
+    status === 'loading'
+      ? 'loading'
+      : status === 'signedIn'
+        ? 'signedIn'
+        : accessNotice === 'access_pending'
+          ? 'pending'
+          : accessNotice === 'access_required'
+            ? 'noAccess'
+            : 'signedOut';
   const manage = account?.manage ? { ...account.manage, href: opts.manageAccessHref ?? account.manage.href } : null;
   return {
     state,
@@ -184,11 +193,13 @@ export function AccountMenuView(props: AccountMenuViewProps) {
   if (props.state === 'loading') {
     return <div {...rootProps} aria-busy="true" style={{ ...props.style, minWidth: 96, minHeight: 36 }} />;
   }
-  if (props.state === 'signedOut' || (props.state === 'pending' && !props.user)) {
+  if (props.state === 'signedOut' || ((props.state === 'pending' || props.state === 'noAccess') && !props.user)) {
+    // Sign in; or, signed in to the platform without a role here, ask for one (only on click).
+    const label = props.state === 'pending' ? (props.pendingLabel ?? 'Access requested · check again') : props.state === 'noAccess' ? 'Request access' : 'Sign in';
     return (
       <div {...rootProps}>
         <button type="button" className="stacks-am-btn" onClick={props.onSignIn}>
-          {props.state === 'pending' ? (props.pendingLabel ?? 'Access requested · check again') : 'Sign in'}
+          {label}
         </button>
       </div>
     );

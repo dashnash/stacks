@@ -71,13 +71,13 @@ function world() {
     jar = new Map<string, Map<string, string>>();
     visited: string[] = [];
 
-    async request(method: string, url: string, body?: unknown): Promise<Res & { url: string }> {
+    async request(method: string, url: string, body?: unknown, headers?: Record<string, string>): Promise<Res & { url: string }> {
       const u = new URL(url);
       const cookies = Object.fromEntries(this.jar.get(u.host) ?? []);
       const handler = u.host === 'auth.stacks.test' ? platform.app : apps.get(u.host.split('.')[0]!);
       if (!handler) throw new Error(`no server for ${u.host}`);
       this.visited.push(`${method} ${u.host}${u.pathname}`);
-      const res = toRes(await handler(event(method, u.pathname, { cookies, body, query: Object.fromEntries(u.searchParams) })));
+      const res = toRes(await handler(event(method, u.pathname, { cookies, body, query: Object.fromEntries(u.searchParams), headers })));
       const jar = this.jar.get(u.host) ?? new Map<string, string>();
       for (const c of res.cookies) {
         const [pair] = c.split(';');
@@ -109,6 +109,15 @@ function world() {
 
     async api(url: string) {
       return this.request('GET', url);
+    }
+
+    /** What @stacks/web does when an app page loads without a session: ask the platform in the background. */
+    async silentSignIn(appOrigin: string): Promise<{ error?: string; signedIn: boolean }> {
+      const start = await this.request('GET', `${appOrigin}/api/auth/silent-start`);
+      const answer = await this.request('GET', start.body.url, undefined, { origin: appOrigin });
+      if (!answer.body.code) return { error: answer.body.error, signedIn: false };
+      const done = await this.request('POST', `${appOrigin}/api/auth/silent-finish`, { code: answer.body.code, state: start.body.state });
+      return { signedIn: done.status === 200 };
     }
   }
 
@@ -222,6 +231,54 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     await expect(deps.platform.notify('stranger@test.dev', 'spam')).rejects.toMatchObject({ status: 403 });
     const inbox = await w.platform.call('GET', '/notifications', { as: 'max@test.dev' });
     expect(inbox.body.notifications[0]).toMatchObject({ text: 'Your greeting got a reply', link: 'https://hello.stacks.test/#/x', app: 'hello' });
+  });
+
+  it('signing in on the portal signs you in to every app, with no click or redirect', async () => {
+    const w = world();
+    const b = new w.Browser();
+    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:max@test.dev' });
+    b.visited = [];
+    expect(await b.silentSignIn('https://hello.stacks.test')).toEqual({ signedIn: true });
+    expect(await b.silentSignIn('https://club.stacks.test')).toEqual({ signedIn: true });
+    expect((await b.api('https://club.stacks.test/api/whoami')).body.role).toBe('MEMBER');
+    expect(b.visited.some((v) => v.includes('/authorize') || v.includes('/auth/callback'))).toBe(false);
+  });
+
+  it('silent sign-in never files a request for a private app; it answers access_required', async () => {
+    const w = world();
+    const b = new w.Browser();
+    await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:ann@test.dev' });
+    expect(await b.silentSignIn('https://club.stacks.test')).toEqual({ error: 'access_required', signedIn: false });
+    const grid = await w.platform.call('GET', '/admin/access', { as: 'owner@test.dev' });
+    expect(grid.body.grants.filter((g: { email: string }) => g.email === 'ann@test.dev')).toEqual([]);
+    // Without a portal session, the answer is login_required.
+    const stranger = new w.Browser();
+    expect(await stranger.silentSignIn('https://club.stacks.test')).toEqual({ error: 'login_required', signedIn: false });
+  });
+
+  it('only the app\'s own origin can read the silent answer', async () => {
+    const w = world();
+    const b = new w.Browser();
+    await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:max@test.dev' });
+    const start = await b.request('GET', 'https://hello.stacks.test/api/auth/silent-start');
+    expect((await b.request('GET', start.body.url, undefined, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await b.request('GET', start.body.url, undefined, { origin: 'https://club.stacks.test' })).status).toBe(403);
+    const ok = await b.request('GET', start.body.url, undefined, { origin: 'https://hello.stacks.test' });
+    expect(ok.status).toBe(200);
+  });
+
+  it('signing out in an app signs you out everywhere and returns you to that app page', async () => {
+    const w = world();
+    const b = new w.Browser();
+    await b.signInOnPortal(await b.go('https://hello.stacks.test/api/auth/login?return=%2F'), 'max@test.dev');
+    const out = await b.request('POST', 'https://hello.stacks.test/api/auth/logout');
+    const landed = await b.go(`${out.body.platformLogoutUrl}?return=${encodeURIComponent('https://hello.stacks.test/#/greetings/7')}`);
+    expect(landed).toBe('https://hello.stacks.test/#/greetings/7');
+    expect(await b.silentSignIn('https://hello.stacks.test')).toEqual({ error: 'login_required', signedIn: false });
+    // A return address outside the platform's apps is refused: you land on the portal.
+    await b.signInOnPortal(await b.go('https://hello.stacks.test/api/auth/login?return=%2F'), 'max@test.dev');
+    expect(await b.go(`https://auth.stacks.test/logout?return=${encodeURIComponent('https://evil.example/')}`)).toBe('https://auth.stacks.test/#/?signedOut=1');
   });
 
   it('mirrors app activity into the central audit feed', async () => {

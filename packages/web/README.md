@@ -12,7 +12,9 @@ function App() {
   // status: 'loading' | 'signedIn' | 'signedOut'
   // session: { user: { email, name, pictureUrl? }, role, canManageAccess } | null
   // signIn(returnTo?) goes through platform sign-in and back to the current page
-  // accessNotice: 'access_pending' | 'access_denied' | null (after a private-app sign-in attempt)
+  // accessNotice: 'access_required' (signed in to the platform, no role here) | 'access_pending' | 'access_denied' | null
+  // Signed in to the platform = signed in here: the provider signs in silently in the background.
+  // signOut() signs out of every app and comes back to this page.
   const api = useApi();
   const { data, error, loading, reload } = useAsync(() => api.get<{ items: Item[] }>('/items'), [deps]);
 }

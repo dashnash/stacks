@@ -147,7 +147,7 @@ describe('buildCsp', () => {
     const csp = buildCsp(manifest, { authOrigin: 'https://auth.example.com' });
     expect(csp).toContain("script-src 'self' https://auth.example.com");
     expect(csp).toContain("img-src 'self' data: blob: https://lh3.googleusercontent.com https://covers.openlibrary.org");
-    expect(csp).toContain("connect-src 'self' https://api.example.com");
+    expect(csp).toContain("connect-src 'self' https://auth.example.com https://api.example.com");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(buildCsp({ ...manifest, csp: { frameSrc: ['https://www.youtube.com'] } }, { authOrigin: 'a' })).toContain('frame-src https://www.youtube.com');
   });
