@@ -1,0 +1,20 @@
+{
+  "name": "@stacks/deploy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "synth": "cdk synth",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@stacks/infra": "*",
+    "@stacks/manifest": "*",
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1100.0"
+  }
+}

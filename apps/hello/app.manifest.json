@@ -1,0 +1,18 @@
+{
+  "slug": "hello",
+  "name": "Hello Board",
+  "tagline": "Say hello to everyone on the platform.",
+  "description": "The reference app for Stacks: anyone signed in can leave a greeting; owners can tidy up. Everyone can see the latest greetings.",
+  "category": "Examples",
+  "visibility": "public",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "MEMBER", "label": "Member" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "MEMBER",
+  "publicRoutes": ["/"],
+  "modules": [],
+  "portalBar": "minimized",
+  "owners": ["dashiell.nash@gmail.com"]
+}

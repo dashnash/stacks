@@ -6,8 +6,20 @@ of truth for architecture, decisions and the phased build plan.
 
 ## Current state
 
-The repo holds the spec only. Building starts at **Phase 1 — Foundations** in the spec's Build plan.
-Work phase by phase; do not start a phase until the previous phase's gate is demonstrated.
+Phase 1 (Foundations) is built: `packages/{manifest,api,web,testing,demo,infra}`, the `hello`
+reference app, `infra/` (CDK app), the CI and deploy workflows, and `docs/SETUP.md`. Next is
+**Phase 2 — Platform**. Work phase by phase; do not start a phase until the previous gate is shown.
+
+## Commands
+
+- `npm test`, `npm run typecheck`, `npm run lint` (import rule), `npm run build`
+- `npm run demo -w apps/<slug>`: the app's in-browser demo
+- `cd infra && npx cdk synth -c env=staging [-c app=<slug>]`: no AWS credentials needed
+
+## Where things are
+
+- Package APIs: `packages/*/README.md` (read these, not the source, when building an app)
+- Worked example: `apps/hello/` (manifest, `api/routes.ts`, `api/demo-data.ts`, `web/src/App.tsx`, tests)
 
 ## Reference implementation
 

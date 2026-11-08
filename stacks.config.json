@@ -1,0 +1,19 @@
+{
+  "$comment": "Per-environment settings read by infra/bin/stacks.ts. Nothing here is secret. Fill in before the first deploy.",
+  "region": "us-east-1",
+  "githubRepo": "dashnash/stacks",
+  "environments": {
+    "production": {
+      "rootDomain": "iamdashnash.com",
+      "hostedZoneId": "",
+      "googleClientId": "",
+      "platformAdmins": ["dashiell.nash@gmail.com"]
+    },
+    "staging": {
+      "rootDomain": "test.iamdashnash.com",
+      "hostedZoneId": "",
+      "googleClientId": "",
+      "platformAdmins": ["dashiell.nash@gmail.com"]
+    }
+  }
+}
