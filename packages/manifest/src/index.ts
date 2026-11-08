@@ -47,10 +47,33 @@ export interface AppManifest {
    * `custom`: it draws its own from useAccountMenu(). Either way the conformance test checks it is there.
    */
   accountMenu?: 'standard' | 'custom';
+  /**
+   * Keys the app's server needs (third-party API keys and the like). Values never go in git or CI:
+   * an admin stores each one in SSM Parameter Store at {@link secretParameterName}; the app reads
+   * them with `appSecret(name)` from `@stacks/api/lambda`.
+   */
+  secrets?: AppSecret[];
   /** @deprecated Replaced by the account menu; accepted and ignored. */
   portalBar?: 'shown' | 'minimized' | 'off';
   /** Google emails of the people who own the app (the creator first). */
   owners: string[];
+}
+
+export interface AppSecret {
+  /** Upper-case, e.g. "GOOGLE_BOOKS_API_KEY". */
+  name: string;
+  /** What it is and where to get it, for whoever sets it up. */
+  description?: string;
+  /** The app works without it (e.g. at a lower quota). Required secrets that are missing show on `/api/health`. */
+  optional?: boolean;
+}
+
+export const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
+export const MAX_SECRETS = 10;
+
+/** Where an app's secret lives: outside `/stacks/<env>/apps/`, so the platform's registry never sees it. */
+export function secretParameterName(envTag: 'prod' | 'test', slug: string, name: string): string {
+  return `/stacks/${envTag}/secrets/${slug}/${name}`;
 }
 
 /** Subdomains the platform uses itself. */
@@ -76,7 +99,7 @@ export function validateManifest(input: unknown): ValidationResult {
 
   const known = new Set([
     '$schema', 'slug', 'name', 'tagline', 'description', 'icon', 'category', 'visibility', 'roles', 'topRole',
-    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners',
+    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets',
   ]);
   for (const key of Object.keys(m)) if (!known.has(key)) errors.push(`unknown field "${key}"`);
 
@@ -131,6 +154,23 @@ export function validateManifest(input: unknown): ValidationResult {
   if (m.modules !== undefined) {
     if (!Array.isArray(m.modules)) errors.push('"modules" must be a list');
     else for (const mod of m.modules) if (!MODULES.includes(mod as ModuleName)) errors.push(`unknown module "${String(mod)}" (known: ${MODULES.join(', ')})`);
+  }
+  if (m.secrets !== undefined) {
+    if (!Array.isArray(m.secrets) || m.secrets.length > MAX_SECRETS) errors.push(`"secrets" must be a list of at most ${MAX_SECRETS}`);
+    else {
+      const seen = new Set<string>();
+      m.secrets.forEach((s, i) => {
+        if (!isObject(s) || typeof s.name !== 'string' || !SECRET_NAME.test(s.name)) {
+          errors.push(`secrets[${i}] needs a "name" in upper case, e.g. "GOOGLE_BOOKS_API_KEY"`);
+          return;
+        }
+        if (seen.has(s.name)) errors.push(`secret "${s.name}" is listed twice`);
+        seen.add(s.name);
+        for (const k of Object.keys(s)) if (!['name', 'description', 'optional'].includes(k)) errors.push(`secrets[${i}]: unknown field "${k}"`);
+        if (s.description !== undefined && typeof s.description !== 'string') errors.push(`secrets[${i}].description must be a string`);
+        if (s.optional !== undefined && typeof s.optional !== 'boolean') errors.push(`secrets[${i}].optional must be true or false`);
+      });
+    }
   }
   if (m.csp !== undefined) {
     if (!isObject(m.csp)) errors.push('"csp" must be an object');

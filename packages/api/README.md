@@ -75,4 +75,18 @@ await content.signUrl('eggs/gatsby.jpg');   // 15-minute private link
 await content.list('eggs/faces/');           // keys, cached 10 min
 ```
 
+Secrets (third-party API keys): declare them in the manifest, never put values in git, env vars or CI.
+
+```jsonc
+"secrets": [{ "name": "MAPS_API_KEY", "description": "Where to get it", "optional": true }]
+```
+
+```ts
+const key = await deps.secret?.('MAPS_API_KEY');   // string | undefined (not set yet); cached 5 min
+```
+
+An admin stores each value once per environment (see `docs/SETUP.md`, "App secrets"). Required secrets
+that aren't set show as `missingSecrets` on `GET /api/health`. In tests:
+`createTestHarness({ manifest, routes, secrets: { MAPS_API_KEY: 'x' } })`.
+
 Other: `recordAudit(deps, user, { action, label, details })`, `listAudit`, `endUserSessions(deps, email)`.

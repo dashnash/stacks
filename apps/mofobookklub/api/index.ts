@@ -13,7 +13,7 @@ export const handler = createLambdaHandler<Deps>({
   routes,
   extend: (base) => ({
     ...base,
-    books: createExternalBookSource({ googleApiKey: process.env.GOOGLE_BOOKS_API_KEY }),
+    books: createExternalBookSource({ googleApiKey: async () => base.secret?.('GOOGLE_BOOKS_API_KEY') }),
     signImageUrl: (key) => content.signUrl(key),
     listFacePhotos: () => content.list(FACES_PREFIX),
     random: Math.random,

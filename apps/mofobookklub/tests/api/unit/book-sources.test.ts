@@ -264,6 +264,21 @@ describe('createExternalBookSource.search', () => {
     const results = await createExternalBookSource({ fetch: fn }).search('dune');
     expect(results).toEqual([{ isbn: '9780441172719', title: 'Dune', author: 'Frank Herbert', coverUrl: undefined, year: 1990 }]);
   });
+
+  it('adds the API key (from the app secret) to Google Books calls only, and works without one', async () => {
+    const responder: Responder = (url) => (url.includes('search.json') ? jsonRes({ docs: [] }) : url.includes('googleapis.com') ? jsonRes({ items: [] }) : undefined);
+    const withKey = fakeFetch(responder);
+    await createExternalBookSource({ fetch: withKey.fn, googleApiKey: async () => 'k 1' }).search('dune');
+    expect(withKey.calls.filter((u) => u.includes('googleapis.com')).every((u) => new URL(u).searchParams.get('key') === 'k 1')).toBe(true);
+    expect(withKey.calls.filter((u) => !u.includes('googleapis.com')).some((u) => u.includes('key='))).toBe(false);
+
+    // Not set yet, or SSM unreachable: Google is still asked, anonymously.
+    for (const googleApiKey of [async () => undefined, async () => Promise.reject(new Error('ssm down'))]) {
+      const anon = fakeFetch(responder);
+      await createExternalBookSource({ fetch: anon.fn, googleApiKey }).search('dune');
+      expect(anon.calls.some((u) => u.includes('googleapis.com') && !u.includes('key='))).toBe(true);
+    }
+  });
 });
 
 describe('googleCover', () => {

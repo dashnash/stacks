@@ -98,3 +98,16 @@ gh workflow run deploy-test.yml -f app=hello -f ref=<branch>
 ```
 
 The run summary prints the staging URL. The next merge to `main` puts staging back to `main`.
+
+## 7. App secrets (API keys an app needs)
+
+Apps list the keys they need in `app.manifest.json` under `secrets` (names only). Store each value
+yourself, once per environment, with your admin profile. CI never sees it and it never goes in git:
+
+```bash
+aws ssm put-parameter --name /stacks/prod/secrets/<slug>/<NAME> --type SecureString --value '<value>' --overwrite --profile admin --region us-east-1
+```
+
+Use `/stacks/test/...` for staging. The app picks the value up within 5 minutes, with no deploy.
+`https://<slug>.<rootDomain>/api/health` lists required secrets that are still missing (by name).
+To remove one: `aws ssm delete-parameter --name <same name> --profile admin --region us-east-1`.

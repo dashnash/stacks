@@ -187,7 +187,15 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   }
 
   router
-    .add('GET', '/health', async () => ({ body: { ok: true, app: manifest.slug } }))
+    .add('GET', '/health', async () => {
+      // Required secrets that nobody has set yet (names only, never values).
+      const required = (manifest.secrets ?? []).filter((s) => !s.optional).map((s) => s.name);
+      const missing: string[] = [];
+      if (required.length && deps.secret) {
+        for (const name of required) if (!(await deps.secret(name).catch(() => undefined))) missing.push(name);
+      }
+      return { body: { ok: true, app: manifest.slug, ...(missing.length ? { missingSecrets: missing } : {}) } };
+    })
     // Step 2 of the handshake: send the browser to the platform with a PKCE challenge.
     .add('GET', '/auth/login', async (req) => {
       const { url, loginCookie } = await startLogin('/authorize', safeReturnPath(req.query.return));
