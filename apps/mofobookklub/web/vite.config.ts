@@ -19,6 +19,6 @@ export default defineConfig({
   // The deployed commit, for the footer's build link.
   define: buildDefines(),
   build: { outDir: 'dist', emptyOutDir: true },
-  // For local dev against a deployed copy: STACKS_API_PROXY=https://book-club.test.example.com
+  // For local dev against a deployed copy: STACKS_API_PROXY=https://mofobookklub.test.iamdashnash.com
   server: process.env.STACKS_API_PROXY ? { proxy: { '/api': { target: process.env.STACKS_API_PROXY, changeOrigin: true, secure: true } } } : {},
 });

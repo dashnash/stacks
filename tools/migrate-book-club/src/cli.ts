@@ -60,7 +60,7 @@ const report = await migrateBookClub({
   source: scan(),
   appStore: new DynamoStore(appTable),
   platformStore: new DynamoStore(platformTable),
-  appSlug: 'book-club',
+  appSlug: 'mofobookklub',
   copyObjects,
   dryRun,
   log: (line) => console.log(line),

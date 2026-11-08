@@ -1,4 +1,4 @@
-# MOFO Book Klub (`book-club`)
+# MOFO Book Klub (`mofobookklub`)
 
 The club's next meeting, The Lineup of nominations, the shelf of past reads, and a discussion for
 every book and meeting. Ported from `dashnash/MofoBookKlubPortal` onto Stacks; the cut-over is in
@@ -12,7 +12,7 @@ every book and meeting. Ported from `dashnash/MofoBookKlubPortal` onto Stacks; t
 | `api/index.ts` | Lambda entry: book sources, the content bucket for critic photos |
 | `content/eggs/` | `quotes.json` (in git). Face photos live only in the content bucket |
 | `web/` | The UI (React + Tailwind). `src/lib/api.ts` is the typed client over the Stacks session |
-| `web/src/demo/` | Demo data and fake catalog; `npm run demo -w apps/book-club` |
+| `web/src/demo/` | Demo data and fake catalog; `npm run demo -w apps/mofobookklub` |
 | `tests/api`, `tests/web` | Book Club's original tests, running on the Stacks test harness |
 
 What changed in the move:

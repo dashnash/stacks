@@ -21,7 +21,7 @@ workflows. The Book Club cut-over itself is run by Dash (`docs/BOOK_CLUB_MIGRATI
 
 - Package APIs: `packages/*/README.md` (read these, not the source, when building an app)
 - Worked examples: `apps/hello/` (small: manifest, `api/routes.ts`, `api/demo-data.ts`, `web/src/App.tsx`, tests)
-  and `apps/book-club/` (large: comments module, content bucket, admin page on `/stacks/access`)
+  and `apps/mofobookklub/` (large: comments module, content bucket, admin page on `/stacks/access`)
 - Media of real people (photos) never goes in git: it lives in the app's content bucket.
 
 ## Reference implementation

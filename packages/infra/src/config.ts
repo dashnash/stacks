@@ -12,6 +12,11 @@ export interface EnvConfig {
   hostedZoneName?: string;
   googleClientId: string;
   platformAdmins: string[];
+  /**
+   * App slugs not deployed to this environment yet, e.g. while another site still owns their
+   * hostname (Book Club's old stack holds mofobookklub.<domain> until the cut-over).
+   */
+  holdApps?: string[];
 }
 
 export interface StacksConfig {

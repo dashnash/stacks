@@ -41,7 +41,7 @@ describe('migrateBookClub', () => {
       source: OLD,
       appStore,
       platformStore,
-      appSlug: 'book-club',
+      appSlug: 'mofobookklub',
       copyObjects: async (prefix) => (copied.push(prefix), 232),
     });
     expect(report).toMatchObject({ appItems: 8, sessionsDropped: 1, users: { created: 4 }, grants: { created: 4, pending: 1 }, objectsCopied: 232, skipped: [] });
@@ -56,13 +56,13 @@ describe('migrateBookClub', () => {
     // The platform reads what was written.
     const deps = platformDeps(platformStore);
     expect(await getUser(deps, 'jane@x.dev')).toMatchObject({ name: 'Jane Okafor', displayName: 'JJ', pictureUrl: 'https://p/j.jpg', createdAt: '2025-02-01T00:00:00.000Z' });
-    expect((await grantsForApp(deps, 'book-club')).map((g) => `${g.email}:${g.role}`).sort()).toEqual([
+    expect((await grantsForApp(deps, 'mofobookklub')).map((g) => `${g.email}:${g.role}`).sort()).toEqual([
       'ada@x.dev:ADMIN',
       'jane@x.dev:MEMBER',
       'owner@x.dev:OWNER',
       'sam@x.dev:PENDING',
     ]);
-    expect((await getGrant(deps, 'book-club', 'sam@x.dev'))?.requestedAt).toBe('2026-10-01T00:00:00.000Z');
+    expect((await getGrant(deps, 'mofobookklub', 'sam@x.dev'))?.requestedAt).toBe('2026-10-01T00:00:00.000Z');
   });
 
   it('never overwrites what the platform already has, and is safe to re-run', async () => {
@@ -71,15 +71,15 @@ describe('migrateBookClub', () => {
     const deps = platformDeps(platformStore);
     // Jane already signed in to the portal and chose another name; Sam was already approved there.
     await platformStore.put({ PK: 'USER#jane@x.dev', SK: 'PROFILE', GSI1PK: 'USERS', GSI1SK: 'jane@x.dev', email: 'jane@x.dev', name: 'Jane Okafor', displayName: 'Janey', createdAt: '2026-11-01T00:00:00.000Z' });
-    await platformStore.put({ PK: 'APP#book-club', SK: 'GRANT#sam@x.dev', GSI1PK: 'USERGRANTS#sam@x.dev', GSI1SK: 'book-club', app: 'book-club', email: 'sam@x.dev', role: 'MEMBER' });
+    await platformStore.put({ PK: 'APP#mofobookklub', SK: 'GRANT#sam@x.dev', GSI1PK: 'USERGRANTS#sam@x.dev', GSI1SK: 'mofobookklub', app: 'mofobookklub', email: 'sam@x.dev', role: 'MEMBER' });
 
-    const first = await migrateBookClub({ source: OLD, appStore, platformStore, appSlug: 'book-club' });
+    const first = await migrateBookClub({ source: OLD, appStore, platformStore, appSlug: 'mofobookklub' });
     expect(first.users).toEqual({ created: 3, existing: 1 });
     expect(first.grants).toMatchObject({ created: 3, existing: 1 });
     expect((await getUser(deps, 'jane@x.dev'))?.displayName).toBe('Janey');
-    expect((await getGrant(deps, 'book-club', 'sam@x.dev'))?.role).toBe('MEMBER');
+    expect((await getGrant(deps, 'mofobookklub', 'sam@x.dev'))?.role).toBe('MEMBER');
 
-    const again = await migrateBookClub({ source: OLD, appStore, platformStore, appSlug: 'book-club' });
+    const again = await migrateBookClub({ source: OLD, appStore, platformStore, appSlug: 'mofobookklub' });
     expect(again.users).toEqual({ created: 0, existing: 4 });
     expect(again.grants).toMatchObject({ created: 0, existing: 4 });
   });
@@ -87,18 +87,18 @@ describe('migrateBookClub', () => {
   it('writes nothing in a dry run, but reports what it would do; flags unknown items', async () => {
     const appStore = new MemoryStore();
     const platformStore = new MemoryStore();
-    const report = await migrateBookClub({ source: [...OLD, { PK: 'MYSTERY#1', SK: 'X' }], appStore, platformStore, appSlug: 'book-club', dryRun: true, copyObjects: async () => 99 });
+    const report = await migrateBookClub({ source: [...OLD, { PK: 'MYSTERY#1', SK: 'X' }], appStore, platformStore, appSlug: 'mofobookklub', dryRun: true, copyObjects: async () => 99 });
     expect(report).toMatchObject({ appItems: 8, users: { created: 4 }, objectsCopied: 0, skipped: ['MYSTERY#1 / X'] });
     expect(appStore.items.size + platformStore.items.size).toBe(0);
   });
 
   it('leaves migrated pending users where the platform expects them (a new request does not duplicate it)', async () => {
     const platformStore = new MemoryStore();
-    await migrateBookClub({ source: OLD, appStore: new MemoryStore(), platformStore, appSlug: 'book-club' });
+    await migrateBookClub({ source: OLD, appStore: new MemoryStore(), platformStore, appSlug: 'mofobookklub' });
     const deps = platformDeps(platformStore);
     const sam = (await getUser(deps, 'sam@x.dev'))!;
-    const manifest = { slug: 'book-club', name: 'Book Club', tagline: 't', description: 'd', visibility: 'private' as const, roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }], topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['owner@x.dev'] };
+    const manifest = { slug: 'mofobookklub', name: 'Book Club', tagline: 't', description: 'd', visibility: 'private' as const, roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }], topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['owner@x.dev'] };
     expect((await requestAccess(deps, sam, manifest)).role).toBe('PENDING');
-    expect((await grantsForApp(deps, 'book-club')).filter((g) => g.email === 'sam@x.dev')).toHaveLength(1);
+    expect((await grantsForApp(deps, 'mofobookklub')).filter((g) => g.email === 'sam@x.dev')).toHaveLength(1);
   });
 });

@@ -10,7 +10,7 @@ const role = (id: string, label: string, manage = false, approvers = false) => (
 /** Sample apps the demo platform knows about. */
 export const DEMO_APPS: AppManifest[] = [
   {
-    slug: 'book-club',
+    slug: 'mofobookklub',
     name: 'MOFO Book Klub',
     tagline: 'Nominate, vote, read, meet.',
     description: "The club's next meeting, The Lineup of nominations and the shelf of past reads.",
@@ -88,13 +88,13 @@ export function createDemoPortal() {
   const seeded = (async () => {
     const [dash, priya, sam] = await Promise.all(DEMO_PEOPLE.map((p) => userForIdentity(deps, p)));
     const byApp = Object.fromEntries(DEMO_APPS.map((m) => [m.slug, m]));
-    await setGrant(deps, dash!, byApp['book-club']!, 'priya@demo.stacks', 'ADMIN');
+    await setGrant(deps, dash!, byApp['mofobookklub']!, 'priya@demo.stacks', 'ADMIN');
     for (const [email, name] of [['kyle@demo.stacks', 'Kyle'], ['joe@demo.stacks', 'Joe'], ['mei@demo.stacks', 'Mei Chen']] as const) {
       const u = await userForIdentity(deps, { email, name });
-      await setGrant(deps, dash!, byApp['book-club']!, u.email, 'MEMBER');
+      await setGrant(deps, dash!, byApp['mofobookklub']!, u.email, 'MEMBER');
       await requestAccess(deps, u, byApp.hello!);
     }
-    await requestAccess(deps, sam!, byApp['book-club']!);
+    await requestAccess(deps, sam!, byApp['mofobookklub']!);
     await requestAccess(deps, sam!, byApp.potluck!);
     await requestAccess(deps, priya!, byApp.pickup!);
   })();

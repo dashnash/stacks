@@ -4,6 +4,8 @@
  *   -c env=staging|production   which environment (default staging)
  *   -c app=<slug>               only that app's stack (the staging pipeline uses this)
  *   -c only=platform            only the platform stack
+ *
+ * Apps listed in an environment's `holdApps` (stacks.config.json) are left out of that environment.
  *   -c ci=true                  only the one-time CI/OIDC stack (deployed by hand with admin credentials)
  *
  * It never does CDK context lookups, so synth needs no AWS credentials; values that live in AWS
@@ -29,7 +31,9 @@ if (app.node.tryGetContext('ci') === 'true') {
 } else {
   const only = app.node.tryGetContext('app') as string | undefined;
   if (!only) new PlatformStack(app, { envName, env: config.environments[envName], region: config.region, repoRoot });
-  const apps = discoverApps(repoRoot).filter((a) => !only || a.manifest.slug === only);
+  const held = new Set(config.environments[envName].holdApps ?? []);
+  if (only && held.has(only)) throw new Error(`"${only}" is on hold for ${envName} (holdApps in stacks.config.json)`);
+  const apps = discoverApps(repoRoot).filter((a) => (!only || a.manifest.slug === only) && !held.has(a.manifest.slug));
   if (only && !apps.length) throw new Error(`No app "${only}" in apps/`);
   for (const a of apps) {
     new AppStack(app, { manifest: a.manifest, envName, env: config.environments[envName], region: config.region, repoRoot, appDir: a.dir });
