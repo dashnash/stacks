@@ -42,10 +42,21 @@ await store.queryGsi1<T>(gsi1pk, { descending: true });
 `strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate.
 Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`.
 
+## People and access (the platform owns them)
+
+```ts
+import { appMembers, getPeople } from '@stacks/api';
+const members = await appMembers(deps);                  // [{ email, name, pictureUrl?, role }], cached 30 s
+const people = await getPeople(deps, emails);            // Map email -> { email, name, pictureUrl? } ("Former member" if gone)
+await deps.platform.notify(email, 'Your pick won', url);  // into their platform inbox (members only)
+```
+
 ## Built-in routes
 
 `GET /health`, `GET /auth/login?return=/path`, `GET /auth/callback`, `GET /auth/session`,
-`POST /auth/logout`, `GET /admin/audit` (approvers; `?before&actor&action&limit`).
+`POST /auth/logout`, `GET /stacks/bar` (portal bar), `GET /stacks/members` (members),
+`GET /stacks/access` + `PUT /stacks/access/:email {role|null}` (approvers: the app's own access
+page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`).
 
 ## Lambda entry (`apps/<slug>/api/index.ts`)
 
@@ -53,6 +64,15 @@ Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#�
 import { createLambdaHandler } from '@stacks/api/lambda';
 export const handler = createLambdaHandler({ manifest, routes });
 // own dependencies: createLambdaHandler({ manifest, routes, extend: (base) => ({ ...base, clock: … }) })
+```
+
+Content bucket (manifest module `contentPacks`; files in `apps/<slug>/content/` are uploaded, nothing is pruned):
+
+```ts
+import { contentStore } from '@stacks/api/lambda';
+const content = contentStore();
+await content.signUrl('eggs/gatsby.jpg');   // 15-minute private link
+await content.list('eggs/faces/');           // keys, cached 10 min
 ```
 
 Other: `recordAudit(deps, user, { action, label, details })`, `listAudit`, `endUserSessions(deps, email)`.

@@ -66,6 +66,25 @@ describe('PlatformStack', () => {
   });
 });
 
+describe('AppStack contentPacks', () => {
+  it('adds a private content bucket, grants the Lambda read and never prunes uploads', () => {
+    const contentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-content-'));
+    fs.writeFileSync(path.join(contentDir, 'quotes.json'), '[]');
+    const manifest: AppManifest = {
+      slug: 'club', name: 'Club', tagline: 't', description: 'd', visibility: 'private', modules: ['contentPacks'],
+      roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }],
+      topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['o@x.dev'],
+    };
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const t = Template.fromStack(
+      new AppStack(app, { manifest, envName: 'production', env, region: 'us-east-1', repoRoot, appDir: '/nowhere', webDistPath: webDist, contentDir, apiEntry: path.join(__dirname, 'fake-entry.ts') }),
+    );
+    t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ CONTENT_BUCKET: Match.anyValue() }) } });
+    t.hasResourceProperties('Custom::CDKBucketDeployment', { Prune: false });
+    t.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain', Properties: Match.objectLike({ PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true }) }) });
+  });
+});
+
 describe('AppStack registry entries', () => {
   it('registers the manifest and table name with the platform', () => {
     const manifest: AppManifest = {

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { AppManifest } from '@stacks/manifest';
 import { createStacksApp, type AppRoutes } from './app';
@@ -55,3 +57,34 @@ export function createLambdaHandler<D extends AppDeps = AppDeps>(opts: {
 }
 
 export { DynamoStore } from './dynamo-store';
+
+/** The app's private content bucket (the `contentPacks` module). */
+export interface ContentStore {
+  /** A short-lived link to a private object (default 15 minutes). */
+  signUrl(key: string, expiresInSeconds?: number): Promise<string>;
+  /** Object keys under a prefix (cached for 10 minutes per container). */
+  list(prefix: string): Promise<string[]>;
+}
+
+/** Content stored in `CONTENT_BUCKET`, set by the PlatformApp construct when the app enables `contentPacks`. */
+export function contentStore(): ContentStore {
+  const bucket = env('CONTENT_BUCKET');
+  const s3 = new S3Client({});
+  const lists = new Map<string, { at: number; keys: string[] }>();
+  return {
+    signUrl: (key, expiresIn = 900) => getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn }),
+    async list(prefix) {
+      const hit = lists.get(prefix);
+      if (hit && Date.now() - hit.at < 600_000) return hit.keys;
+      const keys: string[] = [];
+      let token: string | undefined;
+      do {
+        const page = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
+        for (const o of page.Contents ?? []) if (o.Key && !o.Key.endsWith('/')) keys.push(o.Key);
+        token = page.NextContinuationToken;
+      } while (token);
+      lists.set(prefix, { at: Date.now(), keys });
+      return keys;
+    },
+  };
+}

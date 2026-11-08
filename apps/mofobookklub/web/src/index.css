@@ -1,0 +1,181 @@
+@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Instrument+Serif:ital@0;1&family=Familjen+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Poster: the page is a gig poster. Huge condensed type carries the hierarchy,
+ * an italic serif adds the voice, and 2px ink rules divide the page into panels.
+ */
+:root {
+  --c-ink: 17 17 17;
+  --c-paper: 246 243 236;
+  --c-coral: 255 91 77;
+  --c-lav: 201 184 255;
+  --c-sun: 255 207 63;
+  --font-cond: 'Big Shoulders Display', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Familjen Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-coral ring-offset-2 ring-offset-paper;
+  }
+}
+
+@layer components {
+  /* Condensed all-caps headline type. */
+  .display {
+    @apply font-cond font-black uppercase leading-[0.85] tracking-[-0.01em];
+  }
+  /* The italic serif "voice" used inside headlines and for asides. */
+  .voice {
+    @apply font-serif font-normal normal-case italic tracking-normal;
+  }
+  /* Outlined numerals, as in the date headline. */
+  .outline-type {
+    color: transparent;
+    /* An explicit color: currentColor would be the transparent fill. */
+    -webkit-text-stroke: max(2px, 0.022em) rgb(var(--c-ink));
+  }
+  .kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.14em];
+  }
+  .label {
+    @apply kicker mb-1.5 block text-ink/70;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-ink px-5 py-2.5 text-sm font-bold transition hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0;
+  }
+  .btn-primary {
+    @apply btn bg-ink text-paper;
+  }
+  .btn-accent {
+    @apply btn bg-coral text-ink;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink hover:bg-ink/5;
+  }
+  /* For buttons sitting on an ink background. */
+  .btn-inverse {
+    @apply btn border-paper/50 bg-transparent text-paper hover:bg-paper/10;
+  }
+  .input {
+    @apply w-full rounded-none border-2 border-ink bg-paper px-3 py-2.5 text-base placeholder:text-ink/40 focus:bg-white focus:outline-none;
+  }
+  .panel {
+    @apply min-w-0 px-4 py-6 sm:px-6 sm:py-8;
+  }
+}
+
+@layer components {
+  /*
+   * Card hover/focus: the cover lifts and tilts a touch as a coral offset shadow
+   * slides in behind it. Applies to any .lift-card containing a .lift-cover.
+   */
+  .lift-card .lift-cover {
+    transition:
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .lift-card:hover .lift-cover,
+  .lift-card:focus-within .lift-cover {
+    transform: translate(-3px, -4px) rotate(-1.5deg);
+    box-shadow: 6px 6px 0 rgb(var(--c-coral));
+  }
+  .lift-card .lift-title {
+    background: linear-gradient(rgb(var(--c-coral)), rgb(var(--c-coral))) no-repeat 0 100% / 0 3px;
+    transition: background-size 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .lift-card:hover .lift-title,
+  .lift-card:focus-within .lift-title {
+    background-size: 100% 3px;
+  }
+  /*
+   * Shelf cards: just the cover by default; the details panel slides in from the
+   * left on hover, keyboard focus or tap (tapping focuses the card on touch screens).
+   * It stays in the accessibility tree while hidden, so screen readers always get it.
+   */
+  .reveal-card {
+    outline: none;
+  }
+  /* A link whose click area is its whole card (the nearest positioned ancestor). */
+  .stretched-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .reveal-card:has(.stretched-link:focus-visible) .lift-cover {
+    outline: 2px solid rgb(var(--c-coral));
+    outline-offset: 3px;
+  }
+  .reveal-card:focus-visible .lift-cover {
+    outline: 2px solid rgb(var(--c-coral));
+    outline-offset: 3px;
+  }
+  .reveal-card .reveal-panel {
+    transform: translateX(-101%);
+    transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* No tile behind the words: the cover itself softens, and a shadow keeps text crisp on any cover. */
+    text-shadow:
+      0 1px 2px rgb(0 0 0 / 0.55),
+      0 2px 14px rgb(0 0 0 / 0.5);
+  }
+  .reveal-card:hover .reveal-panel,
+  .reveal-card:focus-within .reveal-panel {
+    transform: translateX(0);
+  }
+  /* The cover stays visible but goes soft and dim, like a camera pulling focus onto the words. */
+  .reveal-card .reveal-media {
+    transition:
+      filter 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .reveal-card:hover .reveal-media,
+  .reveal-card:focus-within .reveal-media {
+    /* Scaling up a touch hides the soft edges the blur would otherwise show. */
+    filter: blur(4px) brightness(0.55) saturate(1.15);
+    transform: scale(1.07);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lift-card .lift-cover,
+    .lift-card .lift-title,
+    .reveal-card .reveal-panel,
+    .reveal-card .reveal-media {
+      transition: none;
+    }
+    .lift-card:hover .lift-cover,
+    .lift-card:focus-within .lift-cover {
+      transform: none;
+    }
+  }
+}
+
+@layer utilities {
+  .marquee-track {
+    animation: marquee 40s linear infinite;
+  }
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none;
+    }
+  }
+}

@@ -71,7 +71,7 @@ flowchart TB
     T["Platform table (DynamoDB)<br/>users, grants, sessions, audit"]
   end
   subgraph A["one stack per app (no access to the platform table)"]
-    BC["app-book-club<br/>book-club.DOMAIN: CloudFront + S3<br/>Lambda on @stacks/api<br/>own table + content bucket"]
+    BC["app-mofobookklub<br/>mofobookklub.DOMAIN: CloudFront + S3<br/>Lambda on @stacks/api<br/>own table + content bucket"]
     AS["app-SLUG<br/>SLUG.DOMAIN: CloudFront + S3<br/>Lambda on @stacks/api<br/>own table + module buckets"]
   end
   S["Shared through SSM: Route 53 zone, wildcard cert, stacks.config.json"]
@@ -99,12 +99,12 @@ Only `auth.<domain>` talks to Google; every app gets its own session through a r
 ```mermaid
 sequenceDiagram
   participant B as Browser
-  participant A as App (book-club.DOMAIN)
+  participant A as App (mofobookklub.DOMAIN)
   participant U as Auth portal (auth.DOMAIN)
   participant G as Google Identity Services
   B->>A: 1 open a deep link
   A->>B: 2 redirect to auth
-  B->>U: 3 /authorize?app=book-club&state
+  B->>U: 3 /authorize?app=mofobookklub&state
   U->>G: 4 Google sign-in (first time only)
   G->>U: 5 ID token, master session set
   Note over U: 6 check grant: public auto-grants, private asks
@@ -164,7 +164,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
 
 ```json
 {
-  "slug": "book-club",
+  "slug": "mofobookklub",
   "name": "MOFO Book Klub",
   "tagline": "Nominate, vote, read, meet.",
   "description": "The club's next meeting, The Lineup and the shelf of past reads.",
@@ -255,7 +255,7 @@ stacks/
     modules/                 # comments, votes, content-packs, uploads, scheduled-jobs, email
   templates/app/             # what new-app copies; placeholders filled from the manifest
   apps/
-    book-club/
+    mofobookklub/
       app.manifest.json
       api/  web/  content/  tests/
       stack.ts               # new PlatformApp(this, { manifest }) and nothing else by default
@@ -277,7 +277,7 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 
 1. **Interview** (Claude, few tokens). Ask, one screen at a time, in plain language for non-technical creators: purpose, who uses it, public or private, roles and who approves, the 3–5 things it tracks, what signed-out visitors see, the look and feel (3 adjectives or a reference site), which modules it needs. Write `app.manifest.json` plus `apps/<slug>/BRIEF.md` (the description, entities, user stories). Show both back for a yes.
 2. **Scaffold** (script, zero tokens). `npm run new-app -- <slug>` copies `templates/app/`, fills placeholders from the manifest, adds the stack, wires auth, roles, audit, demo personas (one per role), tests, landing page and footer. It must pass typecheck and tests before Claude writes a line.
-3. **Build** (Claude). Reads only `BRIEF.md`, `packages/*/README.md` (each under ~300 lines, API cheat-sheet style) and, when useful, the matching folder in `apps/book-club` as a worked example. Writes entities, routes, UI and tests. The UI is unconstrained: any layout, styling or component library the CSP allows.
+3. **Build** (Claude). Reads only `BRIEF.md`, `packages/*/README.md` (each under ~300 lines, API cheat-sheet style) and, when useful, the matching folder in `apps/mofobookklub` as a worked example. Writes entities, routes, UI and tests. The UI is unconstrained: any layout, styling or component library the CSP allows.
 4. **Verify** (script + Claude). Typecheck, unit and integration tests, demo build, a Playwright pass that signs in as every persona and screenshots the main pages. Claude reviews the screenshots with the creator and iterates.
 5. **Stage** (CI). `gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>`; the session waits on the run and returns `https://<slug>.test.<domain>`.
 6. **Ship** (PR). Claude opens a PR; CI runs; merge deploys `app-<slug>` to production and registers it in the catalog with the creator as `topRole`.
@@ -336,14 +336,14 @@ One AWS account is kept on purpose; these controls are the isolation. If a Claud
 
 ## Book Club migration
 
-Book Club moves into `apps/book-club` as a private app; its data is kept, members and roles land in the grid, and everyone signs in once more.
+Book Club moves into `apps/mofobookklub` as a private app; its data is kept, members and roles land in the grid, and everyone signs in once more.
 
 1. Copy the app code (books, meetings, lineup, comments, easter eggs, views) from `dashnash/MofoBookKlubPortal`; replace its `auth/`, `users/`, `audit/` and `utils/` with `@stacks/*` imports; comments and votes move onto the shared modules; easter eggs become a `contentPacks` pack.
 2. Its admin page keeps member controls but they now read and write platform grants; the activity log reads the app's own audit partition.
-3. `scripts/migrate-book-club.ts` (run once by CI with a flag): copy every non-user, non-session item from `BookClubTable` into the new app table unchanged; create platform users and grants from `USER#` items (`OWNER`, `ADMIN`, `MEMBER` keep their role; `PENDING` becomes a pending request); copy audit history; drop sessions.
+3. `tools/migrate-book-club` (run by Dash with admin credentials, `--dry-run` first): copy every non-user, non-session item from `BookClubTable` into the new app table unchanged; create platform users and grants from `USER#` items (`OWNER`, `ADMIN`, `MEMBER` keep their role; `PENDING` becomes a pending request); copy audit history; drop sessions.
 4. Display names move to the global profile; the first sign-in to the portal keeps an existing Book Club display name.
 5. Deploy to staging, check with a copy of production data, then production. Keep the old stack read-only for 30 days, then destroy it.
-6. If Book Club's current domain differs from `book-club.<domain>`, the old CloudFront serves a redirect for 90 days.
+6. The new app takes over Book Club's existing address, `mofobookklub.<domain>`: the old stack releases the hostname first (`holdApps` keeps production off it until then). Runbook: `docs/BOOK_CLUB_MIGRATION.md`.
 
 Done when every existing member can sign in at the new URL and sees their history, nominations, votes and comments.
 
@@ -391,13 +391,23 @@ Phase 2 build notes:
 - **Portal bar**: a React component in `@stacks/web`, rendered by `<StacksProvider>`. It gets its data from the app's own `/api/stacks/bar`, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed.
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
 
-**Phase 3 — Book Club migration**
+**Phase 3 — Book Club migration** (built; cut-over run by Dash, `docs/BOOK_CLUB_MIGRATION.md`)
 
-- [ ] `apps/book-club` on the SDK and shared modules
-- [ ] Migration script, dry run on a copy of production data
+- [x] `apps/mofobookklub` on the SDK and shared modules
+- [x] Migration script (`tools/migrate-book-club`); dry run on a copy of production data is the first cut-over step
 - [ ] Production cut-over and redirect
 
 Gate: every existing member's data visible after sign-in; grid shows their roles.
+
+Phase 3 build notes:
+- **Votes stay in Book Club** for now: its votes are tied to The Lineup's key layout. A generic `votes` module is extracted in phase 4 with the other remaining modules.
+- **App admin pages manage access through the platform**: `GET /stacks/access` and `PUT /stacks/access/:email` in every app (approvers only) call the Platform API (`/api/apps/:slug/access`), which applies the grid's rules with the app vouching for the acting user.
+- **Members and names** come from the platform (`appMembers`, `getPeople` in `@stacks/api`, cached 30 s), so apps keep no user records. People who lose access show as "Former member".
+- **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
+- **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
+- The **portal bar** moved to the bottom-right: apps usually keep their own account menu top-right.
+- **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. While the old stack still owns that hostname, `holdApps` in `stacks.config.json` keeps it out of production (staging is unaffected).
+- Book Club's `GOOGLE_BOOKS_API_KEY` is not wired yet; book sources work without it at a lower Google Books quota.
 
 **Phase 4 — `/new-app`**
 
@@ -419,8 +429,9 @@ Gate: a non-technical user builds one app end to end in a single Claude Code ses
 These are defaulted as written above; change any by editing this spec or commenting on the Claude Doc.
 
 - [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
-- [ ] Does Book Club keep a vanity host (e.g. `books.<domain>`) or use its slug `book-club.<domain>`?
+- [ ] Does Book Club keep a vanity host (e.g. `books.<domain>`) or use its slug `mofobookklub.<domain>`?
 - [ ] Session lifetime: keep Book Club's 90-day sliding expiry for both master and app sessions?
 - [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.
 - [ ] SES: request production access now so `email` works on day one, or defer until an app needs it?
 - [ ] Who besides Dash is in `PLATFORM_ADMINS`?
+- [ ] Should public apps have a "blocked" state? Removing someone from a public app today only lasts until they sign in again (they get the default role back).

@@ -2,7 +2,9 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { canManageAccess, type AppManifest } from '@stacks/manifest';
 import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
-import { badRequest, forbidden, unauthorized, type RouteResult } from './http';
+import { badRequest, forbidden, HttpError, unauthorized, type RouteResult } from './http';
+import { forgetMembers } from './people';
+import { PlatformError } from './platform';
 import type { AppDeps, Viewer } from './model';
 import { Router, type HttpMethod, type RequestContext } from './router';
 import { clearCookie, cookie, createSession, endSession, readSession, SESSION_COOKIE, sessionCookie } from './session';
@@ -208,6 +210,30 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       return { body: { portalUrl: v.deps.config.authOrigin, unread: 0, apps: [] } };
     }
   });
+
+  // Everyone with a role here (names for pickers and credits). Members only.
+  api.member('GET', '/stacks/members', async (_req, v) => ({ body: { members: (await v.deps.platform.access()).members } }));
+  // The app's own access page: same rules as the portal's grid (the platform checks them).
+  api.approver('GET', '/stacks/access', async (_req, v) => ({
+    body: { ...(await v.deps.platform.access()), roles: manifest.roles, topRole: manifest.topRole, defaultRole: manifest.defaultRole ?? null },
+  }));
+  api.approver(
+    'PUT',
+    '/stacks/access/:email',
+    async (req, v) => {
+      const role = req.body.role;
+      if (role !== null && typeof role !== 'string') throw badRequest('"role" must be a role id or null');
+      try {
+        await v.deps.platform.setAccess(v.user.email, req.params.email!, role);
+        forgetMembers(v.deps);
+      } catch (err) {
+        if (err instanceof PlatformError) throw new HttpError(err.status, err.message, err.code);
+        throw err;
+      }
+      return { body: { ok: true }, audit: { label: req.params.email, to: role } };
+    },
+    { audit: 'access.set' },
+  );
 
   api.approver('GET', '/admin/audit', async (req, v) => {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;

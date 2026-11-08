@@ -31,6 +31,7 @@ import {
   listNotifications,
   managesApp,
   markNotificationsRead,
+  notify,
   PORTAL_COOKIE,
   PORTAL_IDLE_DAYS,
   readPortalSession,
@@ -200,6 +201,40 @@ export function createPlatformApp(deps: PlatformDeps) {
       return {
         body: { portalUrl: portalUrl('/'), unread, apps: apps.map((a) => ({ slug: a.manifest.slug, name: a.manifest.name, url: `${appOrigin(deps.config, a.manifest.slug)}/` })) },
       };
+    })
+
+    // Who has a role in this app (for pickers and names), and who is waiting.
+    .add('GET', '/apps/:slug/access', async (req) => {
+      const app = await requireAppCaller(req);
+      const grants = await grantsForApp(deps, app.manifest.slug);
+      const people = await Promise.all(grants.map(async (g) => ({ g, u: await getUser(deps, g.email) })));
+      const view = people
+        .filter((p) => p.u)
+        .map(({ g, u }) => ({ email: g.email, name: shownName(u!), ...(u!.pictureUrl ? { pictureUrl: u!.pictureUrl } : {}), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return { body: { members: view.filter((p) => p.role !== PENDING), pending: view.filter((p) => p.role === PENDING) } };
+    })
+    // An app's own admin page changing a grant. The app vouches for the actor (from its session);
+    // the platform still checks that the actor manages this app, with the same rules as the grid.
+    .add('PUT', '/apps/:slug/access/:email', async (req) => {
+      const app = await requireAppCaller(req);
+      const actorEmail = String(req.body.actorEmail ?? '').toLowerCase();
+      const actor = actorEmail ? await getUser(deps, actorEmail) : null;
+      if (!actor) throw forbidden('Unknown actor');
+      const role = req.body.role;
+      if (role !== null && typeof role !== 'string') throw badRequest('"role" must be a role id or null');
+      return { body: { grant: await setGrant(deps, actor, app.manifest, req.params.email!, role) } };
+    })
+    .add('POST', '/apps/:slug/notify', async (req) => {
+      const app = await requireAppCaller(req);
+      const email = String(req.body.email ?? '').toLowerCase();
+      const text = String(req.body.text ?? '').slice(0, 300);
+      if (!email || !text) throw badRequest('"email" and "text" are required');
+      const grant = await getGrant(deps, app.manifest.slug, email);
+      if (!grant || grant.role === PENDING) throw forbidden('Apps can only notify their own members');
+      const link = typeof req.body.link === 'string' && req.body.link.startsWith(appOrigin(deps.config, app.manifest.slug)) ? req.body.link : `${appOrigin(deps.config, app.manifest.slug)}/`;
+      await notify(deps, email, { text, link, app: app.manifest.slug });
+      return { body: { ok: true } };
     })
 
     /* ---------- Portal: me, catalog, requests, notifications ---------- */

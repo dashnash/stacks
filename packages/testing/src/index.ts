@@ -9,6 +9,8 @@ import {
   type AuditEvent,
   type PlatformClient,
   type PortalBarData,
+  type AppAccess,
+  type AppMember,
   type StacksUser,
 } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
@@ -35,6 +37,23 @@ export class FakePlatform implements PlatformClient {
 
   async recordAudit(event: AuditEvent): Promise<void> {
     this.audit.push(event);
+  }
+
+  /** People with access, as the platform would report them; tests can edit this directly. */
+  members: AppMember[] = [];
+  pending: AppMember[] = [];
+  notifications: { email: string; text: string; link?: string }[] = [];
+  async access(): Promise<AppAccess> {
+    return { members: [...this.members], pending: [...this.pending] };
+  }
+  async setAccess(_actor: string, email: string, role: string | null): Promise<void> {
+    const current = [...this.members, ...this.pending].find((m) => m.email === email);
+    this.members = this.members.filter((m) => m.email !== email);
+    this.pending = this.pending.filter((m) => m.email !== email);
+    if (role) this.members.push({ email, name: current?.name ?? email.split('@')[0]!, role });
+  }
+  async notify(email: string, text: string, link?: string): Promise<void> {
+    this.notifications.push({ email, text, link });
   }
 
   /** Set what portalBar() returns. */

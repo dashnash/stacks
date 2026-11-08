@@ -17,7 +17,8 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
-import type { AppManifest } from '@stacks/manifest';
+import { existsSync } from 'node:fs';
+import { hasModule, type AppManifest } from '@stacks/manifest';
 import {
   appOrigin,
   authOrigin,
@@ -58,6 +59,8 @@ export interface AppStackProps {
   /** Overrides for tests. */
   webDistPath?: string;
   apiEntry?: string;
+  /** Override for tests: the folder uploaded to the content bucket. */
+  contentDir?: string;
   /** Extra environment variables for the app's Lambda. */
   environment?: Record<string, string>;
 }
@@ -145,6 +148,30 @@ export class AppStack extends cdk.Stack {
     });
     this.table.grantReadWriteData(this.handler);
     credential.grantRead(this.handler);
+
+    // contentPacks: a private bucket for media the app serves through short-lived links. Files in
+    // apps/<slug>/content/ are uploaded on deploy; nothing is ever pruned, so media added
+    // outside git (e.g. photos of people) stays.
+    if (hasModule(manifest, 'contentPacks')) {
+      const content = new s3.Bucket(this, 'ContentBucket', {
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+        autoDeleteObjects: !isProd,
+      });
+      content.grantRead(this.handler);
+      this.handler.addEnvironment('CONTENT_BUCKET', content.bucketName);
+      const contentDir = props.contentDir ?? path.join(props.appDir, 'content');
+      if (existsSync(contentDir)) {
+        new s3deploy.BucketDeployment(this, 'DeployContent', {
+          sources: [s3deploy.Source.asset(contentDir, { exclude: ['*.md', '.*'] })],
+          destinationBucket: content,
+          prune: false,
+          memoryLimit: 512,
+        });
+      }
+      new cdk.CfnOutput(this, 'ContentBucketName', { value: content.bucketName });
+    }
 
     // 4. HTTP API, reached same-origin through CloudFront (no CORS). Throttled: some routes are public.
     const httpApi = new apigw.HttpApi(this, 'HttpApi');

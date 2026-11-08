@@ -12,6 +12,27 @@ export interface PlatformClient {
   recordAudit(event: AuditEvent): Promise<void>;
   /** What the portal bar shows a user: their apps and unread notifications. */
   portalBar(email: string): Promise<PortalBarData>;
+  /** Everyone with a role in this app, and pending requests. Names are display names. */
+  access(): Promise<AppAccess>;
+  /** Change a grant on behalf of `actorEmail` (the platform checks they manage this app). `role: null` removes. */
+  setAccess(actorEmail: string, email: string, role: string | null): Promise<void>;
+  /** Put a message in a member's platform inbox (badge in the portal bar). */
+  notify(email: string, text: string, link?: string): Promise<void>;
+}
+
+export interface AppMember {
+  email: string;
+  name: string;
+  pictureUrl?: string;
+  /** A manifest role id, or "PENDING" in `pending`. */
+  role: string;
+  requestedAt?: string | null;
+  grantedAt?: string | null;
+}
+
+export interface AppAccess {
+  members: AppMember[];
+  pending: AppMember[];
 }
 
 export interface PortalBarData {
@@ -47,9 +68,13 @@ export class HttpPlatformClient implements PlatformClient {
     this.doFetch = opts.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   }
 
-  private async post<T>(path: string, body?: unknown): Promise<T> {
+  private post<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>(body === undefined ? 'GET' : 'POST', path, body);
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.doFetch(`${this.opts.baseUrl}/apps/${encodeURIComponent(this.opts.appSlug)}${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
+      method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await this.opts.credential()}` },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
@@ -69,5 +94,17 @@ export class HttpPlatformClient implements PlatformClient {
 
   portalBar(email: string): Promise<PortalBarData> {
     return this.post<PortalBarData>(`/bar?email=${encodeURIComponent(email)}`);
+  }
+
+  access(): Promise<AppAccess> {
+    return this.post<AppAccess>('/access');
+  }
+
+  async setAccess(actorEmail: string, email: string, role: string | null): Promise<void> {
+    await this.request('PUT', `/access/${encodeURIComponent(email)}`, { actorEmail, role });
+  }
+
+  async notify(email: string, text: string, link?: string): Promise<void> {
+    await this.post('/notify', { email, text, link });
   }
 }

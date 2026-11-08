@@ -24,4 +24,7 @@ function App() {
 - Headless components (take `className`/`style`): `Modal` (Escape/backdrop close, focus, scroll lock),
   `Avatar`, `Spinner`, `ErrorNote`, `RequestAccess` (render-prop for custom UI).
 - Format: `timeAgo(iso)`, `formatShortDate`, `formatDateTime`, `firstName`.
+- `useOptionalStacks()` is `useStacks()` that returns null outside a provider (for components tested with fakes).
+- The portal bar (bottom-right pill: other apps, inbox count, sign out of everything) is rendered by
+  `<StacksProvider portalBar="minimized|shown|off">`; pass the manifest's `portalBar`.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.email + session.role} />`.

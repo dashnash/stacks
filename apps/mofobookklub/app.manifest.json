@@ -1,0 +1,20 @@
+{
+  "slug": "mofobookklub",
+  "name": "MOFO Book Klub",
+  "tagline": "Nominate, vote, read, meet.",
+  "description": "The club's next meeting, The Lineup of nominations, the shelf of past reads, and a threaded discussion for every book and meeting.",
+  "category": "Clubs",
+  "visibility": "private",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "ADMIN", "label": "Admin", "canManageAccess": true },
+    { "id": "MEMBER", "label": "Member" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "MEMBER",
+  "publicRoutes": ["/", "/book/*"],
+  "modules": ["comments", "contentPacks", "notifications"],
+  "csp": { "imgSrc": ["https:"], "fontSrc": ["https://fonts.gstatic.com"], "styleSrc": ["https://fonts.googleapis.com"] },
+  "portalBar": "minimized",
+  "owners": ["dashiell.nash@gmail.com"]
+}
