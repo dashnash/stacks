@@ -87,10 +87,14 @@ Merge to `main` (or re-run the **Deploy** workflow). It deploys `stacks-test-pla
 `stacks-prod-platform`, then every production app. The first platform deploy waits for the
 certificate's DNS validation (a few minutes). Then open `https://auth.<rootDomain>`.
 
-## 6. Try a staging app deploy
+Each merge to `main` deploys all of staging first (platform and every app), then production.
+
+## 6. Try a branch on staging
+
+To try an app from a branch before merging:
 
 ```bash
-gh workflow run deploy-test.yml -f app=hello -f ref=main
+gh workflow run deploy-test.yml -f app=hello -f ref=<branch>
 ```
 
-The run summary prints the staging URL.
+The run summary prints the staging URL. The next merge to `main` puts staging back to `main`.
