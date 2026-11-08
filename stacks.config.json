@@ -9,9 +9,7 @@
       "hostedZoneId": "Z34UPUIR94DZXQ",
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
-      "platformAdmins": ["dashiell.nash@gmail.com"],
-      "holdApps": ["mofobookklub"],
-      "$holdApps": "mofobookklub waits until the old Book Club stack releases mofobookklub.iamdashnash.com (docs/BOOK_CLUB_MIGRATION.md)"
+      "platformAdmins": ["dashiell.nash@gmail.com"]
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
