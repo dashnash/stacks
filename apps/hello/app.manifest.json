@@ -13,6 +13,6 @@
   "defaultRole": "MEMBER",
   "publicRoutes": ["/"],
   "modules": [],
-  "portalBar": "minimized",
+  "accountMenu": "standard",
   "owners": ["dashiell.nash@gmail.com"]
 }

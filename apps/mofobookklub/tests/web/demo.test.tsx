@@ -31,7 +31,7 @@ describe('the Book Club demo on Stacks', () => {
   it('shows the public site, then the club after signing in', async () => {
     renderDemo();
     expect(await screen.findByRole('heading', { name: /Read\. Dish\. Repeat\./ })).toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[0]!);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('heading', { name: 'The lineup' }, { timeout: 3000 })).toBeInTheDocument();
   });
 

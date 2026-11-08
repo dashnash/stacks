@@ -42,6 +42,12 @@ export interface AppManifest {
   modules?: ModuleName[];
   /** Additions to the platform's default Content-Security-Policy. */
   csp?: Partial<Record<CspDirective, string[]>>;
+  /**
+   * `standard` (default): the app puts <AccountMenu /> at the top right of its header.
+   * `custom`: it draws its own from useAccountMenu(). Either way the conformance test checks it is there.
+   */
+  accountMenu?: 'standard' | 'custom';
+  /** @deprecated Replaced by the account menu; accepted and ignored. */
   portalBar?: 'shown' | 'minimized' | 'off';
   /** Google emails of the people who own the app (the creator first). */
   owners: string[];
@@ -70,7 +76,7 @@ export function validateManifest(input: unknown): ValidationResult {
 
   const known = new Set([
     '$schema', 'slug', 'name', 'tagline', 'description', 'icon', 'category', 'visibility', 'roles', 'topRole',
-    'defaultRole', 'publicRoutes', 'modules', 'csp', 'portalBar', 'owners',
+    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners',
   ]);
   for (const key of Object.keys(m)) if (!known.has(key)) errors.push(`unknown field "${key}"`);
 
@@ -144,8 +150,8 @@ export function validateManifest(input: unknown): ValidationResult {
       }
     }
   }
-  if (m.portalBar !== undefined && !['shown', 'minimized', 'off'].includes(m.portalBar as string)) {
-    errors.push('"portalBar" must be "shown", "minimized" or "off"');
+  if (m.accountMenu !== undefined && !['standard', 'custom'].includes(m.accountMenu as string)) {
+    errors.push('"accountMenu" must be "standard" or "custom"');
   }
   if (!Array.isArray(m.owners) || m.owners.length === 0 || !m.owners.every((e) => isString(e) && EMAIL.test(e))) {
     errors.push('"owners" must list at least one email address');

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '../components/Header';
 import { PublicHeadliner, PublicShelf } from '../components/PublicShelf';
-import { useStacks } from '@stacks/web';
+import { AccountMenu, useStacks } from '@stacks/web';
 import { useApi } from '../lib/auth';
 import { useRoute } from '../lib/route';
 import type { PublicShelf as PublicShelfData } from '../lib/types';
@@ -80,7 +80,7 @@ const FEATURES: [string, string][] = [
  * Opening any signed-out page starts Google sign-in straight away; the button is the fallback.
  */
 export function SignedOutLayout({ children }: { children: ReactNode }) {
-  const { signIn, accessNotice } = useStacks();
+  const { accessNotice } = useStacks();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -90,10 +90,8 @@ export function SignedOutLayout({ children }: { children: ReactNode }) {
         </a>
         <div className="flex items-center gap-3">
           <span className="kicker hidden text-ink/60 md:inline">Members</span>
-          {/* One sign-in for every app on the platform; it comes straight back here. */}
-          <button type="button" className="btn-primary !px-4 !py-1.5" onClick={() => signIn()}>
-            Sign in
-          </button>
+          {/* The platform's account control: one sign-in for every app, straight back here. */}
+          <AccountMenu className="klub-account" />
         </div>
       </header>
       {accessNotice && <AccessNotice notice={accessNotice} />}

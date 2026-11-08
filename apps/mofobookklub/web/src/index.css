@@ -179,3 +179,25 @@
     }
   }
 }
+
+/* The platform's account menu, in the poster style. */
+.klub-account {
+  --stacks-menu-bg: rgb(var(--c-paper));
+  --stacks-menu-fg: rgb(var(--c-ink));
+  --stacks-menu-muted: rgb(var(--c-ink) / 0.6);
+  --stacks-menu-border: rgb(var(--c-ink));
+  --stacks-menu-accent: rgb(var(--c-ink));
+  --stacks-menu-accent-fg: rgb(var(--c-paper));
+  --stacks-menu-muted-bg: rgb(var(--c-lav));
+  --stacks-menu-hover: rgb(var(--c-sun) / 0.5);
+  --stacks-menu-radius: 0;
+  font-weight: 600;
+}
+.klub-account .stacks-am-chip,
+.klub-account .stacks-am-btn {
+  border: 2px solid rgb(var(--c-ink));
+}
+.klub-account .stacks-am-panel {
+  border: 2px solid rgb(var(--c-ink));
+  box-shadow: 6px 6px 0 rgb(var(--c-ink));
+}

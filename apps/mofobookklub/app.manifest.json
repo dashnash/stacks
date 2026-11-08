@@ -15,6 +15,6 @@
   "publicRoutes": ["/", "/book/*"],
   "modules": ["comments", "contentPacks", "notifications"],
   "csp": { "imgSrc": ["https:"], "fontSrc": ["https://fonts.gstatic.com"], "styleSrc": ["https://fonts.googleapis.com"] },
-  "portalBar": "minimized",
+  "accountMenu": "standard",
   "owners": ["dashiell.nash@gmail.com"]
 }

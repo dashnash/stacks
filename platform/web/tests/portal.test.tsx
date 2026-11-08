@@ -18,9 +18,9 @@ function renderPortal(hash = '#/') {
 }
 
 async function signInAs(name: string) {
-  await userEvent.click(await screen.findByRole('link', { name: 'Sign in' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
   await userEvent.click(await screen.findByRole('button', { name: new RegExp(`Continue as ${name}`) }));
-  await screen.findByRole('button', { name: 'Account menu' });
+  await screen.findByRole('button', { name: new RegExp(`Account menu for ${name.split(' ')[0]}`) });
 }
 
 beforeEach(() => {
@@ -33,7 +33,7 @@ describe('catalog', () => {
     expect(await screen.findByText('Potluck')).toBeInTheDocument();
     expect(screen.getByText('MOFO Book Klub')).toBeInTheDocument();
     expect(screen.getAllByText('Private').length).toBe(2);
-    expect(screen.getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
   it('shows the viewer\'s access and files requests for private apps', async () => {
@@ -52,6 +52,27 @@ describe('catalog', () => {
     await screen.findAllByText('Waiting for approval');
     expect(screen.getAllByText('Requested').length).toBe(2);
     expect((await api.catalog()).apps.find((a) => a.slug === 'hello')!.access).toBe(null);
+  });
+});
+
+describe('account menu', () => {
+  it('offers your apps, inbox, settings, access and sign out from the top right', async () => {
+    renderPortal();
+    await signInAs('Priya Rao');
+    await userEvent.click(screen.getByRole('button', { name: /Account menu for Priya/ }));
+    const items = screen.getAllByRole('menuitem').map((i) => i.textContent);
+    expect(items).toEqual(expect.arrayContaining(['MOFO Book Klub', 'Potluck', 'All apps', 'Settings', 'Activity']));
+    expect(items.some((t) => t?.startsWith('Manage access'))).toBe(true);
+    expect(items.at(-1)).toMatch(/^Sign out/);
+    await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('links back to the app you came from on the profile page', async () => {
+    renderPortal();
+    await signInAs('Priya Rao');
+    window.location.hash = '#/profile?from=potluck';
+    expect(await screen.findByRole('link', { name: '← Back to Potluck' })).toHaveAttribute('href', 'https://potluck.demo.stacks/');
   });
 });
 

@@ -74,6 +74,28 @@ export function createPlatformApp(deps: PlatformDeps) {
     return app;
   }
 
+  async function accountFor(app: AppEntry, rawEmail: string): Promise<RouteResult> {
+    const email = rawEmail.toLowerCase();
+    const slug = app.manifest.slug;
+    const grants = (await grantsForUser(deps, email)).filter((g) => g.role !== PENDING);
+    const apps = (await listApps(deps)).filter((a) => grants.some((g) => g.app === a.manifest.slug));
+    const unread = (await listNotifications(deps, email)).filter((n) => !n.read).length;
+    const role = grants.find((g) => g.app === slug)?.role;
+    const { manages } = await managesApp(deps, email, app.manifest);
+    const pending = manages ? (await grantsForApp(deps, slug)).filter((g) => g.role === PENDING).length : 0;
+    return {
+      body: {
+        portalUrl: portalUrl('/'),
+        profileUrl: portalUrl(`/profile?from=${encodeURIComponent(slug)}`),
+        inboxUrl: portalUrl(`/notifications?from=${encodeURIComponent(slug)}`),
+        unread,
+        app: { slug, name: app.manifest.name, roleLabel: role ? (roleDef(app.manifest, role)?.label ?? role) : null },
+        apps: apps.map((a) => ({ slug: a.manifest.slug, name: a.manifest.name, url: `${appOrigin(deps.config, a.manifest.slug)}/` })),
+        manage: manages ? { pending, href: portalUrl(`/admin/access?app=${encodeURIComponent(slug)}`) } : null,
+      },
+    };
+  }
+
   const catalogEntry = (app: AppEntry, access: string | null, favorite: boolean) => ({
     slug: app.manifest.slug,
     name: app.manifest.name,
@@ -191,17 +213,10 @@ export function createPlatformApp(deps: PlatformDeps) {
       });
       return { body: { ok: true } };
     })
-    // For the portal bar inside apps: the user's apps and unread count (fetched by the app's server).
-    .add('GET', '/apps/:slug/bar', async (req) => {
-      await requireAppCaller(req);
-      const email = String(req.query.email ?? '').toLowerCase();
-      const grants = (await grantsForUser(deps, email)).filter((g) => g.role !== PENDING);
-      const apps = (await listApps(deps)).filter((a) => grants.some((g) => g.app === a.manifest.slug));
-      const unread = (await listNotifications(deps, email)).filter((n) => !n.read).length;
-      return {
-        body: { portalUrl: portalUrl('/'), unread, apps: apps.map((a) => ({ slug: a.manifest.slug, name: a.manifest.name, url: `${appOrigin(deps.config, a.manifest.slug)}/` })) },
-      };
-    })
+    // For the account menu inside apps: who you are here, your other apps, inbox, approvals.
+    .add('GET', '/apps/:slug/account', async (req) => accountFor(await requireAppCaller(req), String(req.query.email ?? '')))
+    // Older apps (before the account menu) ask here; same data.
+    .add('GET', '/apps/:slug/bar', async (req) => accountFor(await requireAppCaller(req), String(req.query.email ?? '')))
 
     // Who has a role in this app (for pickers and names), and who is waiting.
     .add('GET', '/apps/:slug/access', async (req) => {

@@ -13,12 +13,11 @@ import { useApi } from '../lib/auth';
 import { useRoute } from '../lib/route';
 import { AdminView } from './AdminView';
 import { BookView } from './BookView';
-import { SettingsView } from './SettingsView';
 import { LegalLinks } from './SignInView';
 import type { User } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
-export function DashboardView({ user, onSignOut }: { user: User; onSignOut: () => void }) {
+export function DashboardView({ user }: { user: User }) {
   const api = useApi();
   const canAdmin = isAdmin(user);
   const next = useAsync(() => api.nextMeeting(), []);
@@ -46,8 +45,6 @@ export function DashboardView({ user, onSignOut }: { user: User; onSignOut: () =
   return (
     <div className="min-h-screen">
       <Header
-        user={user}
-        onSignOut={onSignOut}
         onAdmin={canAdmin ? () => (window.location.hash = '#/admin') : undefined}
         pendingCount={pending.data?.length ?? 0}
         // Only the people the meeting is waiting on get the header strip; admins step in from the admin page.
@@ -61,9 +58,6 @@ export function DashboardView({ user, onSignOut }: { user: User; onSignOut: () =
       />
 
       {route.name === 'book' && <BookView isbn={route.isbn} onChanged={() => void refresh()} />}
-      {route.name === 'settings' && (
-        <SettingsView user={user} />
-      )}
       {route.name === 'admin' && (
         <AdminView
           user={user}

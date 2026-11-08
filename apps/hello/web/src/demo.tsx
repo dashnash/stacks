@@ -1,13 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createDemo, DemoApp } from '@stacks/demo';
-import { personas, seed } from '../../api/demo-data';
-import { manifest } from '../../api/manifest';
-import { routes } from '../../api/routes';
-import { App } from './App';
+import { App, demoOptions } from './demo/setup';
 import './styles.css';
 
-const demo = createDemo({ manifest, routes, personas, seed });
+const demo = createDemo(demoOptions());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

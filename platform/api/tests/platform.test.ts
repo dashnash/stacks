@@ -127,6 +127,21 @@ describe('access grid', () => {
   });
 });
 
+describe('account data for apps', () => {
+  it('tells an approver how many requests wait, and nobody else', async () => {
+    const h = createPlatformHarness();
+    await h.authorize('club', 'ann@test.dev'); // files a request
+    const get = (email: string) => h.call('GET', '/apps/club/account', { query: { email }, headers: { authorization: 'Bearer cred-club' } });
+    expect((await get('owner@test.dev')).body).toMatchObject({
+      app: { roleLabel: 'Owner' },
+      manage: { pending: 1, href: 'https://auth.stacks.test/#/admin/access?app=club' },
+      unread: 1,
+    });
+    expect((await get('ann@test.dev')).body).toMatchObject({ app: { roleLabel: null }, manage: null, apps: [] });
+    expect((await h.call('GET', '/apps/club/account', { query: { email: 'x' }, headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
+  });
+});
+
 describe('catalog', () => {
   it('lists apps for signed-out visitors and the viewer\'s access when signed in', async () => {
     const h = createPlatformHarness();

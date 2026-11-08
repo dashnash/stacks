@@ -4,6 +4,7 @@
 /platform/   @dashnash
 /infra/      @dashnash
 /templates/  @dashnash
+/tools/      @dashnash
 /.github/    @dashnash
 /CLAUDE.md   @dashnash
 /docs/PLATFORM_SPEC.md @dashnash

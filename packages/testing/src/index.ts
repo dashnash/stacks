@@ -8,7 +8,7 @@ import {
   type AppRoutes,
   type AuditEvent,
   type PlatformClient,
-  type PortalBarData,
+  type AccountData,
   type AppAccess,
   type AppMember,
   type StacksUser,
@@ -56,10 +56,18 @@ export class FakePlatform implements PlatformClient {
     this.notifications.push({ email, text, link });
   }
 
-  /** Set what portalBar() returns. */
-  bar: PortalBarData = { portalUrl: 'https://auth.stacks.test', unread: 0, apps: [] };
-  async portalBar(): Promise<PortalBarData> {
-    return this.bar;
+  /** Set what account() returns. */
+  accountData: AccountData = {
+    portalUrl: 'https://auth.stacks.test/#/',
+    profileUrl: 'https://auth.stacks.test/#/profile',
+    inboxUrl: 'https://auth.stacks.test/#/notifications',
+    unread: 0,
+    app: { slug: 'app', name: 'App', roleLabel: null },
+    apps: [],
+    manage: null,
+  };
+  async account(): Promise<AccountData> {
+    return this.accountData;
   }
 }
 

@@ -127,16 +127,33 @@ describe('route guards', () => {
   });
 });
 
-describe('portal bar', () => {
-  it('serves the viewer\'s apps from the platform, and degrades to empty if the platform fails', async () => {
+describe('account menu data', () => {
+  it('serves the viewer\'s account from the platform, and degrades gracefully if the platform fails', async () => {
     const t = harness();
-    t.platform.bar = { portalUrl: 'https://auth.stacks.test/#/', unread: 2, apps: [{ slug: 'x', name: 'X', url: 'https://x.stacks.test/' }] };
-    expect((await t.call('GET', '/stacks/bar', { as: 'r@test.dev' })).body.unread).toBe(2);
-    t.platform.portalBar = async () => {
+    t.platform.accountData = { ...t.platform.accountData, unread: 2, apps: [{ slug: 'x', name: 'X', url: 'https://x.stacks.test/' }] };
+    expect((await t.call('GET', '/stacks/account', { as: 'r@test.dev' })).body.unread).toBe(2);
+    t.platform.account = async () => {
       throw new Error('down');
     };
-    expect((await t.call('GET', '/stacks/bar', { as: 'r@test.dev' })).body).toEqual({ portalUrl: 'https://auth.stacks.test', unread: 0, apps: [] });
-    expect((await t.call('GET', '/stacks/bar')).status).toBe(401);
+    expect((await t.call('GET', '/stacks/account', { as: 'r@test.dev', role: 'READER' })).body).toMatchObject({
+      unread: 0,
+      apps: [],
+      manage: null,
+      app: { slug: 'notes', name: 'Notes', roleLabel: 'Reader' },
+      profileUrl: 'https://auth.stacks.test/#/profile?from=notes',
+    });
+    expect((await t.call('GET', '/stacks/account')).status).toBe(401);
+  });
+
+  it('shows names from the platform profile, so a rename needs no new sign-in', async () => {
+    const t = harness();
+    const token = await t.sessionFor({ email: 'r@test.dev', name: 'Old Name' }, 'READER');
+    const cookies = { '__Host-stacks-session': token };
+    expect((await t.call('GET', '/auth/session', { cookies })).body.user.name).toBe('Old Name');
+    t.platform.members = [{ email: 'r@test.dev', name: 'New Name', role: 'READER' }];
+    const { forgetMembers } = await import('../src/people');
+    forgetMembers(t.deps);
+    expect((await t.call('GET', '/auth/session', { cookies })).body.user.name).toBe('New Name');
   });
 });
 

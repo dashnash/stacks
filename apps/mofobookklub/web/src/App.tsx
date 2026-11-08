@@ -9,7 +9,7 @@ import { Centered, SignedOutSite } from './views/SignInView';
  * signed out (or still waiting) you get the public site; signed in you have a role.
  */
 export default function App() {
-  const { status, session, signOut } = useStacks();
+  const { status, session } = useStacks();
   if (status === 'loading') {
     return (
       <Centered>
@@ -19,5 +19,5 @@ export default function App() {
   }
   if (status === 'signedOut' || !session) return <SignedOutSite />;
   const user: User = { email: session.user.email, name: session.user.name, pictureUrl: session.user.pictureUrl, role: session.role as Role };
-  return <DashboardView key={`${user.email}:${user.role}`} user={user} onSignOut={() => void signOut()} />;
+  return <DashboardView key={`${user.email}:${user.role}`} user={user} />;
 }
