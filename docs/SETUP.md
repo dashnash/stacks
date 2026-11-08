@@ -26,6 +26,9 @@ created by the platform stack.
 
 ## 2. Bootstrap production and deploy the CI stack
 
+Clone the repo and run `npm ci` at its root first (Node 22). Run the `cdk bootstrap` commands from
+the **repo root**: inside `infra/`, CDK would first synthesize every app, which needs their web builds.
+
 ```bash
 npx cdk bootstrap aws://ACCOUNT_ID/us-east-1 --qualifier stkprod --toolkit-stack-name CDKToolkit-stkprod
 ```
@@ -34,12 +37,16 @@ npx cdk bootstrap aws://ACCOUNT_ID/us-east-1 --qualifier stkprod --toolkit-stack
 cd infra && npx cdk deploy -c ci=true stacks-ci
 ```
 
+(Add `--profile <name>` to these commands if your admin credentials are an AWS CLI profile, e.g. from IAM Identity Center.)
+
 `stacks-ci` creates the GitHub OIDC provider (pass `existingOidcProviderArn` in `bin/stacks.ts` if
 the account already has one), the roles `stacks-ci-production` and `stacks-ci-staging`, and the
 staging guardrail policies `stacks-test-cfn-exec` and `stacks-test-boundary`. Note the two role
 ARNs it prints.
 
 ## 3. Bootstrap staging with the limited execution policy
+
+From the repo root again:
 
 ```bash
 npx cdk bootstrap aws://ACCOUNT_ID/us-east-1 --qualifier stktest --toolkit-stack-name CDKToolkit-stktest \
