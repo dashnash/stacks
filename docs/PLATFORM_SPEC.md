@@ -426,7 +426,7 @@ Five phases; each ends with a gate the build agent must demonstrate before start
 
 Gate: a hello-world app synthesizes, its tests pass, and its demo build runs in a browser.
 
-**Phase 2 — Platform** (built; staging gate pending first deploy)
+**Phase 2 — Platform** (done; gate verified on staging and production in Safari and Chrome, 2026-11-08)
 
 - [x] `platform` stack: cert, DNS, platform table, platform API, portal web
 - [x] Google sign-in at `auth.<domain>`, master session, app handshake, `GET /me`
@@ -463,7 +463,7 @@ Phase 3 build notes:
 
 - [ ] `templates/app/` and `scripts/new-app.ts`
 - [ ] The skill: interview, scaffold, build, verify, stage, ship
-- [ ] Remaining modules: uploads, scheduled jobs, email
+- [ ] Remaining modules: uploads, scheduled jobs (email deferred until an app needs it, with SES production access)
 - [ ] Eval run on the 4 reference apps, usage logged
 
 Gate: a non-technical user builds one app end to end in a single Claude Code session and it is live on staging.
@@ -480,8 +480,8 @@ These are defaulted as written above; change any by editing this spec or comment
 
 - [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
 - [x] Book Club uses its slug host `mofobookklub.<domain>`, which is also its old address.
-- [ ] Session lifetime: keep Book Club's 90-day sliding expiry for both master and app sessions?
-- [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.
-- [ ] SES: request production access now so `email` works on day one, or defer until an app needs it?
-- [ ] Who besides Dash is in `PLATFORM_ADMINS`?
+- [x] Session lifetime: 90-day sliding expiry for both master and app sessions (as built).
+- [x] Private apps are listed in the catalog for everyone, with Request access (as built).
+- [x] SES: deferred until an app needs email. The `email` module waits until then.
+- [x] `PLATFORM_ADMINS` is just Dash for now.
 - [x] Public (and private) apps have a `BLOCKED` grant state: see access rule 8.
