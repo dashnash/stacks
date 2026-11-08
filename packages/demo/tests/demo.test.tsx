@@ -108,4 +108,17 @@ describe('DemoApp', () => {
     await userEvent.click(screen.getByText('Log out'));
     await waitFor(() => expect(screen.getByText('status:signedOut')).toBeInTheDocument());
   });
+
+  it('opens signed in as the persona in ?as= (for scripted screenshots)', async () => {
+    window.history.replaceState(null, '', '/demo.html?as=rex@demo');
+    const demo = createDemo({ manifest, routes, personas, seed, storageKey: false });
+    useStacksApiGet = () => demo.client.get('/notes');
+    render(
+      <DemoApp demo={demo}>
+        <NotesView />
+      </DemoApp>,
+    );
+    expect(await screen.findByText('who:Rex')).toBeInTheDocument();
+    window.history.replaceState(null, '', '/');
+  });
 });

@@ -6,7 +6,9 @@
   "scripts": {
     "new-app": "tsx src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "verify-app": "tsx src/verify.ts",
+    "app-usage": "tsx src/usage.ts"
   },
   "dependencies": {
     "@stacks/manifest": "*"
