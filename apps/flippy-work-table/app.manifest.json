@@ -1,0 +1,18 @@
+{
+  "slug": "flippy-work-table",
+  "name": "Flippy Work Table",
+  "tagline": "Pull up the table. Watch the stuff fly. Very relaxing, 100% legal.",
+  "description": "A silly table-flipping toy that looks like a cheap knockoff site. Pull up on the work table, the things on it go flying, and you score for damage and hang time. Signed-in players get their best flips on the leaderboard and unlock flipping tools in the shop.",
+  "category": "Games",
+  "visibility": "public",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "FLIPPER", "label": "Flipper" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "FLIPPER",
+  "publicRoutes": ["/"],
+  "modules": [],
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}
