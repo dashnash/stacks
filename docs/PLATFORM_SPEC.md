@@ -244,7 +244,7 @@ stacks/
   CLAUDE.md                  # rules for every agent: read SDK READMEs, never edit packages/ from an app task
   .claude/skills/new-app/    # the /new-app skill (interview, scaffold, build, verify, ship)
   .github/CODEOWNERS         # @dashnash owns packages/, infra/, platform/, .github/
-  .github/workflows/         # ci.yml, deploy.yml (changed stacks only), deploy-test.yml (on demand)
+  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand)
   stacks.config.json         # rootDomain, hostedZoneId, googleClientId per env, PLATFORM_ADMINS
   platform/                  # the platform app itself
     api/                     # auth, handshake, grants, registry, audit feed, notifications
@@ -302,14 +302,14 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 | Environment | Where | Deployed by | Data |
 | --- | --- | --- | --- |
 | Demo | In the browser, `npm run demo -w apps/<slug>` | Nobody (local) | `MemoryStore`, seeded personas |
-| Staging | `*.test.<domain>`, a full second platform | `deploy-test.yml` (`workflow_dispatch`: app + ref), callable from a Claude session with `gh` | Separate tables; last deploy of an app wins |
+| Staging | `*.test.<domain>`, a full second platform | `deploy.yml` on push to `main` (platform and every app), and `deploy-test.yml` (`workflow_dispatch`: app + branch), callable from a Claude session with `gh` | Separate tables; last deploy of an app wins (a merge to `main` puts it back to `main`) |
 | Production | `*.<domain>` | `deploy.yml` on push to `main` | Real |
 
 **Pipelines**
 
 - `ci.yml` on every PR: install, lint (incl. the import rule and the path guard for app branches), typecheck, tests for changed workspaces, manifest validation, `cdk synth` of changed stacks.
-- `deploy.yml` on `main`: deploy `platform` first if `platform/`, `packages/` or `infra/` changed, then each changed `app-<slug>` stack in parallel (max 4). A packages change redeploys all apps.
-- `deploy-test.yml`: same steps against the staging context; posts the URL as the run summary.
+- `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), so a broken change stops before production; then the production platform, then every production app. CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
+- `deploy-test.yml`: one app from a branch to staging, before merging; posts the URL as the run summary.
 - Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
 
 **Staging deploys without AWS credentials**
