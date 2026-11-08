@@ -1,0 +1,18 @@
+{
+  "slug": "potluck",
+  "name": "Potluck",
+  "tagline": "Plan the party, sign up for a dish, and skip the five desserts.",
+  "description": "Hosts post a potluck with what it needs (mains, sides, desserts, drinks). Guests RSVP and sign up for a dish, with dietary tags, so everyone can see what's covered.",
+  "category": "Social",
+  "visibility": "private",
+  "roles": [
+    { "id": "HOST", "label": "Host", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "GUEST", "label": "Guest" }
+  ],
+  "topRole": "HOST",
+  "defaultRole": "GUEST",
+  "publicRoutes": ["/"],
+  "modules": ["notifications"],
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}

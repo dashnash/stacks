@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "step": "interview",
+      "at": "2026-11-08T22:08:50.654Z",
+      "filesChanged": 2,
+      "note": "8 questions; private, roles HOST/GUEST, notifications"
+    },
+    {
+      "step": "scaffold",
+      "at": "2026-11-08T22:09:12.172Z",
+      "minutes": 0.4,
+      "filesChanged": 23,
+      "note": "needed workaround: scaffold refused .stacks/usage.json"
+    },
+    {
+      "step": "build",
+      "at": "2026-11-08T22:12:59.719Z",
+      "minutes": 3.8,
+      "filesChanged": 30,
+      "note": "API: model/events/dishes; UI: list, event page, host form; 13 tests"
+    },
+    {
+      "step": "verify",
+      "at": "2026-11-08T22:14:09.648Z",
+      "minutes": 1.2,
+      "filesChanged": 30,
+      "note": "all checks passed; fixed demo times (UTC vs local); event page screenshotted by hand"
+    }
+  ]
+}
