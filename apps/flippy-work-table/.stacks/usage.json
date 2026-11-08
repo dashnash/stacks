@@ -22,6 +22,18 @@
       "at": "2026-11-08T23:01:13.818Z",
       "minutes": 2.4,
       "filesChanged": 30
+    },
+    {
+      "step": "stage",
+      "at": "2026-11-08T23:07:45.912Z",
+      "minutes": 6.5,
+      "filesChanged": 0
+    },
+    {
+      "step": "ship",
+      "at": "2026-11-08T23:07:54.290Z",
+      "minutes": 0.1,
+      "filesChanged": 1
     }
   ]
 }
