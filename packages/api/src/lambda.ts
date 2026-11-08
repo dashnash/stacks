@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { AppManifest } from '@stacks/manifest';
@@ -36,6 +37,36 @@ export function defaultDeps(manifest: AppManifest): AppDeps {
     }),
     now: () => new Date(),
     newId: () => randomUUID(),
+    ...(manifest.secrets?.length ? { secret: appSecrets(manifest) } : {}),
+  };
+}
+
+const SECRET_TTL_MS = 5 * 60_000;
+
+/**
+ * Reads the app's secrets from SSM (`/stacks/<env>/secrets/<slug>/<NAME>`, SecureString), as the
+ * `PlatformApp` construct allows. Only names the manifest declares; undefined when not set yet.
+ */
+export function appSecrets(manifest: AppManifest, opts: { client?: Pick<SSMClient, 'send'>; prefix?: string; now?: () => number } = {}) {
+  const declared = new Set((manifest.secrets ?? []).map((s) => s.name));
+  const client = opts.client ?? new SSMClient({});
+  const now = opts.now ?? Date.now;
+  const cache = new Map<string, { at: number; value: Promise<string | undefined> }>();
+  return (name: string): Promise<string | undefined> => {
+    if (!declared.has(name)) return Promise.reject(new Error(`Secret ${name} is not declared in app.manifest.json "secrets"`));
+    const hit = cache.get(name);
+    if (hit && now() - hit.at < SECRET_TTL_MS) return hit.value;
+    const prefix = opts.prefix ?? env('STACKS_SECRETS_PREFIX');
+    const value = client
+      .send(new GetParameterCommand({ Name: `${prefix}${name}`, WithDecryption: true }))
+      .then((r) => r.Parameter?.Value || undefined)
+      .catch((err: { name?: string }) => {
+        if (err?.name === 'ParameterNotFound') return undefined;
+        cache.delete(name);
+        throw err;
+      });
+    cache.set(name, { at: now(), value });
+    return value;
   };
 }
 

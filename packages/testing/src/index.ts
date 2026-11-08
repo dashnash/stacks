@@ -108,6 +108,8 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
   extend?: (base: AppDeps) => D;
   appOrigin?: string;
   authOrigin?: string;
+  /** Values for the manifest's `secrets` (anything not listed reads as not set). */
+  secrets?: Record<string, string>;
 }) {
   const store = new MemoryStore();
   const platform = new FakePlatform();
@@ -122,6 +124,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
     },
     now: () => new Date((clock += 1000)),
     newId: () => `id${++id}`,
+    ...(opts.manifest.secrets?.length ? { secret: async (name: string) => opts.secrets?.[name] } : {}),
   };
   const deps = opts.extend ? opts.extend(base) : (base as D);
   const app = createStacksApp({ manifest: opts.manifest, deps, routes: opts.routes });

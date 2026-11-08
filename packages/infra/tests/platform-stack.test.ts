@@ -100,3 +100,33 @@ describe('AppStack registry entries', () => {
     t.hasResourceProperties('AWS::SSM::Parameter', { Name: '/stacks/test/apps/hello/table' });
   });
 });
+
+describe('AppStack secrets', () => {
+  const withSecrets = (secrets?: AppManifest['secrets']) => {
+    const manifest: AppManifest = {
+      slug: 'club', name: 'Club', tagline: 't', description: 'd', visibility: 'private',
+      roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }],
+      topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['o@x.dev'], ...(secrets ? { secrets } : {}),
+    };
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    return Template.fromStack(
+      new AppStack(app, { manifest, envName: 'staging', env, region: 'us-east-1', repoRoot, appDir: '/nowhere', webDistPath: webDist, apiEntry: path.join(__dirname, 'fake-entry.ts') }),
+    );
+  };
+
+  it('lets the Lambda read only its own secrets, outside the registry path, and decrypt only through SSM', () => {
+    const t = withSecrets([{ name: 'GOOGLE_BOOKS_API_KEY', optional: true }]);
+    t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ STACKS_SECRETS_PREFIX: '/stacks/test/secrets/club/' }) } });
+    const policies = JSON.stringify(t.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain(':parameter/stacks/test/secrets/club/*');
+    expect(policies).toContain('ssm.us-east-1.amazonaws.com');
+    // No parameter is created: the value is put in by hand, never through CloudFormation.
+    expect(JSON.stringify(t.findResources('AWS::SSM::Parameter'))).not.toContain('/secrets/');
+  });
+
+  it('adds nothing when the manifest declares no secrets', () => {
+    const t = withSecrets();
+    expect(JSON.stringify(t.toJSON())).not.toContain('STACKS_SECRETS_PREFIX');
+    expect(JSON.stringify(t.findResources('AWS::IAM::Policy'))).not.toContain('kms:ViaService');
+  });
+});

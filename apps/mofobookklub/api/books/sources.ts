@@ -20,7 +20,8 @@ export interface MeasuredCover {
 
 export interface ExternalBookSourceOptions {
   fetch?: Fetch;
-  googleApiKey?: string;
+  /** A Google Books API key, or a way to fetch one (the app's `GOOGLE_BOOKS_API_KEY` secret). Optional: without it, Google's lower anonymous quota applies. */
+  googleApiKey?: string | (() => Promise<string | undefined>);
 }
 
 /**
@@ -29,11 +30,20 @@ export interface ExternalBookSourceOptions {
  */
 export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): BookSource {
   const doFetch: Fetch = opts.fetch ?? fetch;
-  const googleKey = opts.googleApiKey ? `&key=${encodeURIComponent(opts.googleApiKey)}` : '';
+  const key = opts.googleApiKey;
+  /** Adds the key to Google Books calls; a key that can't be read just means the anonymous quota. */
+  async function withKey(url: string): Promise<string> {
+    if (!key || !url.startsWith('https://www.googleapis.com/books/')) return url;
+    const value = typeof key === 'string' ? key : await key().catch(() => undefined);
+    if (!value) return url;
+    const u = new URL(url);
+    u.searchParams.set('key', value);
+    return u.toString();
+  }
 
   async function getJson<T>(url: string): Promise<T | null> {
     try {
-      const res = await doFetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const res = await doFetch(await withKey(url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!res.ok) return null;
       return (await res.json()) as T;
     } catch {
@@ -94,7 +104,7 @@ export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): 
   async function googleCandidates(volumeId: string | undefined, searchLinks?: Record<string, string>) {
     const detail = volumeId
       ? await getJson<{ volumeInfo?: { imageLinks?: Record<string, string> } }>(
-          `https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(volumeId)}${googleKey ? `?${googleKey.slice(1)}` : ''}`,
+          `https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(volumeId)}`,
         )
       : null;
     const links = { ...searchLinks, ...detail?.volumeInfo?.imageLinks };
@@ -147,7 +157,7 @@ export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): 
 
   async function googleVolumes(q: string, maxResults = 1): Promise<GoogleHit[]> {
     const data = await getJson<GoogleVolumes>(
-      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${googleKey}`,
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}`,
     );
     return (data?.items ?? []).map((item) => ({
       id: item.id,
@@ -265,7 +275,7 @@ export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): 
         getJson<OlDocs>(
           `https://openlibrary.org/search.json?q=${q}&limit=8&fields=title,author_name,isbn,cover_i,publisher,first_publish_year,number_of_pages_median,subject`,
         ),
-        getJson<GoogleVolumes>(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=8${googleKey}`),
+        getJson<GoogleVolumes>(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=8`),
       ]);
       const editions: (Edition & { fetchUrl?: string })[] = [];
       for (const doc of ol?.docs ?? []) {
@@ -331,7 +341,7 @@ export function createExternalBookSource(opts: ExternalBookSourceOptions = {}): 
         getJson<OlSearch>(
           `https://openlibrary.org/search.json?q=${q}&limit=10&fields=title,author_name,isbn,cover_i,cover_edition_key,first_publish_year`,
         ),
-        getJson<GoogleVolumes>(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=10${googleKey}`),
+        getJson<GoogleVolumes>(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=10`),
       ]);
 
       const fromGoogle: BookCandidate[] = [];

@@ -24,6 +24,11 @@ export interface AppDeps {
   config: AppConfig;
   now(): Date;
   newId(): string;
+  /**
+   * The app's secrets (manifest `secrets`), or undefined when not set. Wired by `createLambdaHandler`;
+   * tests pass a fake. Cached for 5 minutes per container.
+   */
+  secret?(name: string): Promise<string | undefined>;
 }
 
 /** The caller of a signed-in route. */

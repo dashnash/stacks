@@ -18,7 +18,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { existsSync } from 'node:fs';
-import { hasModule, type AppManifest } from '@stacks/manifest';
+import { hasModule, secretParameterName, type AppManifest } from '@stacks/manifest';
 import {
   appOrigin,
   authOrigin,
@@ -148,6 +148,27 @@ export class AppStack extends cdk.Stack {
     });
     this.table.grantReadWriteData(this.handler);
     credential.grantRead(this.handler);
+
+    // Secrets the manifest declares: SecureString parameters an admin puts in by hand (never in
+    // git or CI). The app may read only its own, under /stacks/<env>/secrets/<slug>/.
+    if (manifest.secrets?.length) {
+      const prefix = secretParameterName(envTag(envName), slug, '');
+      this.handler.addEnvironment('STACKS_SECRETS_PREFIX', prefix);
+      this.handler.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['ssm:GetParameter'],
+          resources: [cdk.Stack.of(this).formatArn({ service: 'ssm', resource: 'parameter', resourceName: `${prefix.slice(1)}*` })],
+        }),
+      );
+      // SecureStrings use the account's aws/ssm key; decrypting is allowed only through SSM.
+      this.handler.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['kms:Decrypt'],
+          resources: ['*'],
+          conditions: { StringEquals: { 'kms:ViaService': `ssm.${cdk.Stack.of(this).region}.amazonaws.com` } },
+        }),
+      );
+    }
 
     // contentPacks: a private bucket for media the app serves through short-lived links. Files in
     // apps/<slug>/content/ are uploaded on deploy; nothing is ever pruned, so media added

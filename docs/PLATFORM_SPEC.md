@@ -184,6 +184,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
   "modules": ["comments", "votes", "contentPacks", "notifications"],
   "csp": { "imgSrc": ["https:"], "connectSrc": [] },
   "accountMenu": "standard",
+  "secrets": [{ "name": "GOOGLE_BOOKS_API_KEY", "description": "Books API key", "optional": true }],
   "owners": ["dashiell.nash@gmail.com"]
 }
 ```
@@ -193,6 +194,14 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
 - `modules` turns on Tier 3 modules; the construct adds only the resources those modules need.
 - `csp` extends the platform's default Content-Security-Policy; anything not listed stays blocked.
 - `accountMenu`: `standard` (the app renders `<AccountMenu />`) or `custom` (it draws its own from `useAccountMenu()`). The old `portalBar` field is accepted and ignored.
+- `secrets` names the keys the app's server needs (at most 10, upper case). Values never go in git, CI or
+  Lambda environment variables: an admin stores each as an SSM SecureString at
+  `/stacks/<prod|test>/secrets/<slug>/<NAME>` from their own machine. That path is outside
+  `/stacks/<env>/apps/`, so the platform's registry never reads it. The app stack lets the app's Lambda
+  read only its own prefix (and decrypt only through SSM); the app reads values with `deps.secret(name)`
+  (cached 5 minutes, so a new value applies within minutes, no deploy). Required secrets that aren't set
+  are listed by name in `/api/health` as `missingSecrets`. `/new-app` adds the declaration and tells the
+  creator which command to run.
 - Changing `roles` in a way that removes a role in use fails CI until the grants are migrated.
 
 ## Shared services
@@ -440,7 +449,7 @@ Phase 3 build notes:
 - **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
 - **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
 - **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. During the cut-over, `holdApps` in `stacks.config.json` kept it out of production until the old stack released the hostname; the mechanism stays for future migrations.
-- Book Club's `GOOGLE_BOOKS_API_KEY` is not wired yet; book sources work without it at a lower Google Books quota.
+- Book Club's `GOOGLE_BOOKS_API_KEY` is an optional app secret (manifest `secrets`); without it, book sources use Google's lower anonymous quota.
 
 **Phase 4 — `/new-app`**
 

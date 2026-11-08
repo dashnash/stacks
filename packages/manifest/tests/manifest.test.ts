@@ -29,6 +29,14 @@ describe('validateManifest', () => {
     expect(validateManifest(valid)).toEqual({ ok: true, manifest: valid });
   });
 
+  it('accepts declared secrets and rejects bad names, duplicates and unknown fields', () => {
+    expect(errorsFor({ secrets: [{ name: 'GOOGLE_BOOKS_API_KEY', description: 'Books', optional: true }] })).toEqual([]);
+    expect(errorsFor({ secrets: [{ name: 'lower' }] })[0]).toMatch(/upper case/);
+    expect(errorsFor({ secrets: [{ name: 'A_KEY' }, { name: 'A_KEY' }] })).toEqual(['secret "A_KEY" is listed twice']);
+    expect(errorsFor({ secrets: [{ name: 'A_KEY', value: 'oops' }] })).toEqual(['secrets[0]: unknown field "value"']);
+    expect(errorsFor({ secrets: 'A_KEY' })[0]).toMatch(/must be a list/);
+  });
+
   it('rejects bad and reserved slugs', () => {
     expect(errorsFor({ slug: 'Book Club' })[0]).toMatch(/slug/);
     expect(errorsFor({ slug: 'ab' })[0]).toMatch(/slug/);

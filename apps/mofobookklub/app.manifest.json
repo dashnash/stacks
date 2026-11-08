@@ -16,5 +16,12 @@
   "modules": ["comments", "contentPacks", "notifications"],
   "csp": { "imgSrc": ["https:"], "fontSrc": ["https://fonts.gstatic.com"], "styleSrc": ["https://fonts.googleapis.com"] },
   "accountMenu": "standard",
+  "secrets": [
+    {
+      "name": "GOOGLE_BOOKS_API_KEY",
+      "description": "Google Books API key (Google Cloud Console, APIs & Services, Credentials; restrict it to the Books API). Raises the book search quota.",
+      "optional": true
+    }
+  ],
   "owners": ["dashiell.nash@gmail.com"]
 }
