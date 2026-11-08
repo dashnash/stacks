@@ -1,0 +1,85 @@
+name: Deploy app to staging
+
+# Start from a session or terminal (always on main; the branch is an input):
+#   gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>
+#
+# The branch's code only runs in the build job, which has no AWS credentials. The deploy job
+# runs main's code, checks the assembly, and deploys it with the staging role (see the spec's
+# "Staging deploys without AWS credentials").
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App slug (folder under apps/)
+        required: true
+      ref:
+        description: Branch, tag or commit to deploy
+        required: true
+
+concurrency:
+  group: deploy-test-${{ inputs.app }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check inputs
+        env:
+          APP: ${{ inputs.app }}
+        run: '[[ "$APP" =~ ^[a-z][a-z0-9-]{1,28}[a-z0-9]$ ]] || { echo "bad app slug"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Test and build the app
+        run: |
+          npm test -w "apps/${{ inputs.app }}"
+          npm run build -w "apps/${{ inputs.app }}"
+      - name: Synth (no AWS credentials in this job)
+        working-directory: infra
+        run: npx cdk synth -q -c env=staging -c "app=${{ inputs.app }}" -o ../cdk.out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cdk-out
+          path: cdk.out
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # main's code, not the branch's: only reviewed code runs next to credentials.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: cdk-out
+          path: cdk.out
+      - name: Check the assembly
+        run: npx tsx scripts/check-assembly.ts cdk.out "stacks-test-app-${{ inputs.app }}"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Deploy
+        run: npx cdk deploy --app cdk.out "stacks-test-app-${{ inputs.app }}" --require-approval never --outputs-file outputs.json
+      - name: Summary
+        run: node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('Staging URL: '+v.SiteURL)" >> "$GITHUB_STEP_SUMMARY"

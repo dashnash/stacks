@@ -1,0 +1,61 @@
+name: Deploy production
+
+# Every merge to main deploys all app stacks (CloudFormation skips stacks with no changes).
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Synth production
+        working-directory: infra
+        run: npx cdk synth -q -c env=production -o ../cdk.out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cdk-out
+          path: cdk.out
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: cdk-out
+          path: cdk.out
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PRODUCTION_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Deploy
+        run: npx cdk deploy --app cdk.out --all --require-approval never --concurrency 4 --outputs-file outputs.json
+      - name: Summary
+        run: node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??''))" >> "$GITHUB_STEP_SUMMARY"

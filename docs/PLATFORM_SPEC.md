@@ -86,6 +86,7 @@ flowchart TB
 
 Apps reach the platform only through the Platform API, never its table, so one faulty app cannot read another app's data or sessions.
 
+- **Stack names**: `stacks-<prod|test>-platform`, `stacks-<prod|test>-app-<slug>`, and the one-time `stacks-ci`. The `stacks-test-` prefix is what the staging guardrails scope to.
 - **Platform stack**: Route 53 records for `auth.` and the portal host, the ACM wildcard certificate, the platform table, the Platform API Lambda, the portal SPA, and SSM parameters (`/stacks/<env>/...`) that app stacks read. Cross-stack values go through SSM, not CloudFormation exports, so app stacks deploy and delete independently.
 - **App stack**: CloudFront + private S3 (OAC) at `<slug>.<domain>`, HTTP API at `/api/*` on the same origin, one arm64 Node 22 Lambda, one DynamoDB single table (PK, SK, GSI1, TTL), buckets only for enabled modules, its own DNS alias.
 - **Limits**: 200 CloudFront distributions per account covers the few-dozen-app horizon. A new app's first deploy takes about 5 minutes for CloudFront; updates take 1–2.
@@ -135,8 +136,9 @@ Access is one **grant** per (user, app): a role from that app's manifest, or a p
 | App | `APP#<slug>` | manifest snapshot, `visibility` (`public`/`private`), `status` (`live`/`archived`), `createdBy` |
 | Grant | `APP#<slug>` / `USER#<email>` (GSI by user) | `role` or `PENDING`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
 | Master session | `SESSION#<sha256>` | `userEmail`, `expiresAt` (TTL), `lastUsedAt` |
-| App session | `APPSESSION#<slug>#<sha256>` | `userEmail`, `userCreatedAt`, `expiresAt` (TTL) |
 | Audit event | `AUDIT#<yyyy-mm>` | `app`, `actor`, `action`, `label`, `details` |
+
+App sessions are not in the platform table: each lives in its app's own table (`SESSION#<sha256>`, indexed by `USERSESSIONS#<email>`, holding the user and role). When a grant changes, the platform deletes that user's sessions in the app's table, so the next request re-runs the handshake with the new role.
 
 **Rules**
 
@@ -318,11 +320,11 @@ Developers and Claude sessions never hold AWS credentials; anyone with push acce
 | --- | --- |
 | Workflow from `main` | `deploy-test.yml` is always dispatched on `main`; the branch is only an input. The staging IAM role trusts only `repo:dashnash/stacks:environment:staging`, and the `staging` GitHub environment allows only `main`. |
 | Build and deploy split | Job 1 checks out the branch, installs, tests and synthesizes the cloud assembly with no AWS credentials (no CDK context lookups; config comes from `stacks.config.json`). Job 2 alone gets credentials and runs no app code: only `cdk deploy --app <assembly>`. |
-| Assembly check | Job 2 refuses an assembly containing any stack other than `app-<slug>-test`, or IAM resources outside the allowed name patterns. |
-| Permissions boundary | The staging CDK deploy and execution roles are limited by a boundary to `stacks-test-*` resources and cannot create IAM users or touch production resources. |
+| Assembly check | Job 2 refuses an assembly containing any stack other than `stacks-test-app-<slug>`, or IAM resources outside the allowed name patterns. |
+| Permissions boundary | Staging is bootstrapped with its own qualifier (`stktest`) and the execution policy `stacks-test-cfn-exec` instead of admin; every role a staging deploy creates must carry the `stacks-test-boundary` permissions boundary; both deny anything on resources tagged `stacks:env=production`, and no IAM users or keys can be created. |
 | Production | The prod role trusts only the `production` environment, which allows only `main`. |
 
-One AWS account is kept on purpose; these controls are the isolation. If a Claude session cannot dispatch workflows through its GitHub proxy (check in phase 1), pushing a `test/<slug>` branch triggers the same `main`-hosted pipeline.
+One AWS account is kept on purpose; these controls are the isolation. If a Claude session cannot dispatch workflows through its GitHub proxy, the creator runs the same `gh workflow run` command, or the GitHub Actions page's "Run workflow" button, themselves; a push-triggered fallback would run the branch's own workflow file and is not allowed. One-time AWS and GitHub setup: `docs/SETUP.md`.
 
 **Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId`, `googleClientId`, `platformAdmins`. Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
 
@@ -363,13 +365,13 @@ The design assumes any single app may be buggy or malicious and limits what it c
 
 Five phases; each ends with a gate the build agent must demonstrate before starting the next. Milestone 1 = phases 1–4.
 
-**Phase 1 — Foundations**
+**Phase 1 — Foundations** (done)
 
-- [ ] Monorepo skeleton, workspaces, lint, typecheck, Vitest, `CLAUDE.md`, `CODEOWNERS`
-- [ ] `@stacks/api`, `@stacks/web`, `@stacks/testing`, `@stacks/demo` extracted from Book Club with their tests
-- [ ] `@stacks/manifest` schema and validator
-- [ ] `@stacks/infra` `PlatformApp` construct with `cdk synth` snapshot tests
-- [ ] GitHub OIDC roles and the three workflows
+- [x] Monorepo skeleton, workspaces, lint, typecheck, Vitest, `CLAUDE.md`, `CODEOWNERS`
+- [x] `@stacks/api`, `@stacks/web`, `@stacks/testing`, `@stacks/demo` extracted from Book Club with their tests
+- [x] `@stacks/manifest` schema and validator
+- [x] `@stacks/infra` `PlatformApp` construct with `cdk synth` snapshot tests
+- [x] GitHub OIDC roles and the three workflows
 
 Gate: a hello-world app synthesizes, its tests pass, and its demo build runs in a browser.
 
