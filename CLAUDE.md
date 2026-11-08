@@ -8,14 +8,15 @@ of truth for architecture, decisions and the phased build plan.
 
 Phases 1-3 are built and live: `packages/*` (SDK) and `packages/modules/comments`, `platform/api`
 and `platform/web`, the `hello` and `mofobookklub` apps, `infra/` and the workflows. The Book Club
-cut-over is done: production runs at mofobookklub.iamdashnash.com on Stacks and its data was
-migrated with `tools/migrate-book-club` (`docs/BOOK_CLUB_MIGRATION.md`). Next is
-**Phase 4 — `/new-app`**.
+cut-over is done (`docs/BOOK_CLUB_MIGRATION.md`). **Phase 4 — `/new-app`** is under way: the template,
+`tools/new-app` and the skill (`.claude/skills/new-app/SKILL.md`) are built; the eval run on the
+reference apps and the remaining modules (uploads, scheduled jobs) are next.
 
 ## Commands
 
 - `npm test`, `npm run typecheck`, `npm run lint` (import rule), `npm run build`
 - `npm run new-app -- <slug> [--owner you@gmail.com]`: scaffold `apps/<slug>/` from `templates/app/` (green tests, no feature code)
+- `npm run verify-app -- <slug>`: every pre-staging check plus demo screenshots per persona; `npm run app-usage -- <slug> <step>`: log a /new-app step
 - `npm run demo -w apps/<slug>`: the app's in-browser demo; `npm run demo -w platform/web`: the portal's
 - `cd infra && npx cdk synth -c env=staging [-c app=<slug>]`: no AWS credentials needed
 

@@ -20,7 +20,9 @@
     "lint": "node scripts/check-imports.mjs",
     "synth": "npm run synth -w infra",
     "build": "npm run build --workspaces --if-present",
-    "new-app": "npm run new-app -w tools/new-app --"
+    "new-app": "npm run new-app -w tools/new-app --",
+    "verify-app": "npm run verify-app -w tools/new-app --",
+    "app-usage": "npm run app-usage -w tools/new-app --"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
