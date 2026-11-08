@@ -2,6 +2,7 @@
   "$comment": "Per-environment settings read by infra/bin/stacks.ts. Nothing here is secret (see docs/SETUP.md).",
   "region": "us-east-1",
   "githubRepo": "dashnash/stacks",
+  "githubSubjectPrefix": "repo:dashnash@3804293/stacks@1449992124",
   "environments": {
     "production": {
       "rootDomain": "iamdashnash.com",

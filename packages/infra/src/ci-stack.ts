@@ -9,6 +9,12 @@ const GITHUB_OIDC = 'token.actions.githubusercontent.com';
 export interface CiStackProps {
   /** `owner/repo` whose GitHub Actions may deploy. */
   githubRepo: string;
+  /**
+   * The start of the OIDC `sub` claim GitHub sends for this repo, before `:environment:<name>`.
+   * Defaults to `repo:<owner>/<repo>`. Repos with GitHub's immutable subject claims send IDs instead,
+   * e.g. `repo:dashnash@3804293/stacks@1449992124` (see `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`).
+   */
+  githubSubjectPrefix?: string;
   region: string;
   /** Reuse an existing GitHub OIDC provider in the account instead of creating one. */
   existingOidcProviderArn?: string;
@@ -42,6 +48,7 @@ export class CiStack extends cdk.Stack {
       props.existingOidcProviderArn ??
       new iam.OpenIdConnectProvider(this, 'GitHubOidc', { url: `https://${GITHUB_OIDC}`, clientIds: ['sts.amazonaws.com'] }).openIdConnectProviderArn;
 
+    const subjectPrefix = props.githubSubjectPrefix ?? `repo:${props.githubRepo}`;
     const deployRole = (envName: EnvName, githubEnvironment: string) => {
       const role = new iam.Role(this, `${envName === 'production' ? 'Production' : 'Staging'}DeployRole`, {
         roleName: `stacks-ci-${envName}`,
@@ -50,7 +57,7 @@ export class CiStack extends cdk.Stack {
         assumedBy: new iam.WebIdentityPrincipal(providerArn, {
           StringEquals: {
             [`${GITHUB_OIDC}:aud`]: 'sts.amazonaws.com',
-            [`${GITHUB_OIDC}:sub`]: `repo:${props.githubRepo}:environment:${githubEnvironment}`,
+            [`${GITHUB_OIDC}:sub`]: `${subjectPrefix}:environment:${githubEnvironment}`,
           },
         }),
       });

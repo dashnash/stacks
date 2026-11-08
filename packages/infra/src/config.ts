@@ -18,6 +18,8 @@ export interface StacksConfig {
   region: string;
   /** `owner/repo`, trusted by the CI roles. */
   githubRepo: string;
+  /** OIDC `sub` prefix GitHub sends for the repo (needed when it uses immutable subject claims). */
+  githubSubjectPrefix?: string;
   environments: Record<EnvName, EnvConfig>;
 }
 
@@ -28,6 +30,9 @@ export function loadStacksConfig(path: string): StacksConfig {
     if (!env?.rootDomain) throw new Error(`${path}: environments.${name}.rootDomain is required`);
   }
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.githubRepo ?? '')) throw new Error(`${path}: githubRepo must be "owner/repo"`);
+  if (config.githubSubjectPrefix !== undefined && !/^repo:[^:\s]+$/.test(config.githubSubjectPrefix)) {
+    throw new Error(`${path}: githubSubjectPrefix must look like "repo:owner/repo" or "repo:owner@id/repo@id"`);
+  }
   return config;
 }
 

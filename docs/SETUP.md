@@ -47,6 +47,16 @@ cd infra && npx cdk deploy -c ci=true stacks-ci
 
 (Add `--profile <name>` to these commands if your admin credentials are an AWS CLI profile, e.g. from IAM Identity Center.)
 
+Before deploying it, check which subject GitHub sends for the repo:
+
+```bash
+gh api repos/dashnash/stacks/actions/oidc/customization/sub
+```
+
+If it says `"use_immutable_subject": true`, copy its `sub_claim_prefix` into `githubSubjectPrefix`
+in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
+`repo:dashnash@3804293/stacks@1449992124`, which survives renames). Otherwise leave it out.
+
 `stacks-ci` creates the GitHub OIDC provider (pass `existingOidcProviderArn` in `bin/stacks.ts` if
 the account already has one), the roles `stacks-ci-production` and `stacks-ci-staging`, and the
 staging guardrail policies `stacks-test-cfn-exec` and `stacks-test-boundary`. Note the two role
