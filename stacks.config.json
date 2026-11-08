@@ -1,18 +1,20 @@
 {
-  "$comment": "Per-environment settings read by infra/bin/stacks.ts. Nothing here is secret. Fill in before the first deploy.",
+  "$comment": "Per-environment settings read by infra/bin/stacks.ts. Nothing here is secret (see docs/SETUP.md).",
   "region": "us-east-1",
   "githubRepo": "dashnash/stacks",
   "environments": {
     "production": {
       "rootDomain": "iamdashnash.com",
-      "hostedZoneId": "",
-      "googleClientId": "",
+      "hostedZoneId": "Z34UPUIR94DZXQ",
+      "hostedZoneName": "iamdashnash.com",
+      "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"]
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
-      "hostedZoneId": "",
-      "googleClientId": "",
+      "hostedZoneId": "Z34UPUIR94DZXQ",
+      "hostedZoneName": "iamdashnash.com",
+      "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"]
     }
   }
