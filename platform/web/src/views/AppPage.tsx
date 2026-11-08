@@ -24,7 +24,9 @@ export function AppPage({ slug }: { slug: string }) {
         <span className={`pill ${badge.tone}`}>{badge.text}</span>
       </p>
       <div className="row-gap">
-        {(app.access && app.access !== 'PENDING') || app.visibility === 'public' || !signedIn ? (
+        {app.access === 'BLOCKED' ? (
+          <p className="muted">You don't have access to this app. Ask its owner if you think that's a mistake.</p>
+        ) : (app.access && app.access !== 'PENDING') || app.visibility === 'public' || !signedIn ? (
           <a className="button" href={app.url}>
             Open {app.name}
           </a>

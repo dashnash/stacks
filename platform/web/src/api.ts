@@ -17,7 +17,7 @@ export interface CatalogApp {
   visibility: 'public' | 'private';
   url: string;
   status: 'live' | 'archived';
-  /** A role id, "PENDING", or null. */
+  /** A role id, "PENDING", "BLOCKED", or null. */
   access: string | null;
   accessLabel: string | null;
   favorite: boolean;

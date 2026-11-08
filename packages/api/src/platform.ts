@@ -12,9 +12,9 @@ export interface PlatformClient {
   recordAudit(event: AuditEvent): Promise<void>;
   /** What the account menu shows a user: their apps, inbox, role here, and approvals waiting. */
   account(email: string): Promise<AccountData>;
-  /** Everyone with a role in this app, and pending requests. Names are display names. */
+  /** Everyone with a role in this app, pending requests, and blocked people. Names are display names. */
   access(): Promise<AppAccess>;
-  /** Change a grant on behalf of `actorEmail` (the platform checks they manage this app). `role: null` removes. */
+  /** Change a grant on behalf of `actorEmail` (the platform checks they manage this app). `role: null` removes; `"BLOCKED"` blocks. */
   setAccess(actorEmail: string, email: string, role: string | null): Promise<void>;
   /** Put a message in a member's platform inbox (badge in the portal bar). */
   notify(email: string, text: string, link?: string): Promise<void>;
@@ -24,7 +24,7 @@ export interface AppMember {
   email: string;
   name: string;
   pictureUrl?: string;
-  /** A manifest role id, or "PENDING" in `pending`. */
+  /** A manifest role id; "PENDING" in `pending`; "BLOCKED" in `blocked`. */
   role: string;
   requestedAt?: string | null;
   grantedAt?: string | null;
@@ -33,6 +33,8 @@ export interface AppMember {
 export interface AppAccess {
   members: AppMember[];
   pending: AppMember[];
+  /** People kept out: no auto-grant (public apps) and no new requests (private apps). */
+  blocked: AppMember[];
 }
 
 export interface AccountData {

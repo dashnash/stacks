@@ -42,9 +42,10 @@ export class FakePlatform implements PlatformClient {
   /** People with access, as the platform would report them; tests can edit this directly. */
   members: AppMember[] = [];
   pending: AppMember[] = [];
+  blocked: AppMember[] = [];
   notifications: { email: string; text: string; link?: string }[] = [];
   async access(): Promise<AppAccess> {
-    return { members: [...this.members], pending: [...this.pending] };
+    return { members: [...this.members], pending: [...this.pending], blocked: [...this.blocked] };
   }
   async setAccess(_actor: string, email: string, role: string | null): Promise<void> {
     const current = [...this.members, ...this.pending].find((m) => m.email === email);

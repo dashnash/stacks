@@ -30,6 +30,26 @@ describe('AdminPanel members', () => {
   });
 });
 
+describe('AdminPanel blocking', () => {
+  it('blocks a request so they cannot ask again, and unblocks from the Blocked list', async () => {
+    const pest = { email: 'pest@club.test', name: 'Pest', role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' };
+    const api = fakeApi({
+      access: vi
+        .fn()
+        .mockResolvedValueOnce({ members: people, pending: [pest], blocked: [] })
+        .mockResolvedValue({ members: people, pending: [], blocked: [{ ...pest, role: 'BLOCKED' }] }),
+    });
+    renderWithApi(<AdminPanel me="admin@club.test" onChanged={vi.fn()} />, api);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Block' }));
+    expect(api.setAccess).toHaveBeenCalledWith('pest@club.test', 'BLOCKED');
+    const blocked = await screen.findByRole('list', { name: 'Blocked' });
+    await user.click(within(blocked).getByRole('button', { name: 'Unblock' }));
+    expect(api.setAccess).toHaveBeenLastCalledWith('pest@club.test', null);
+  });
+});
+
 describe('moderating comments', () => {
   it("lets an admin delete someone else's comment", async () => {
     const api = fakeApi({

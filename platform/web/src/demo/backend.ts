@@ -97,6 +97,9 @@ export function createDemoPortal() {
     await requestAccess(deps, sam!, byApp['mofobookklub']!);
     await requestAccess(deps, sam!, byApp.potluck!);
     await requestAccess(deps, priya!, byApp.pickup!);
+    // A blocked person on a public app: signing in no longer gives them the default role.
+    const troll = await userForIdentity(deps, { email: 'troll@demo.stacks', name: 'Rex Troll' });
+    await setGrant(deps, dash!, byApp.hello!, troll.email, 'BLOCKED');
   })();
 
   const fetchShim = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {

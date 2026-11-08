@@ -6,7 +6,7 @@ import { usePortal } from '../portal';
 type GridApp = Grid['apps'][number];
 
 /** Can the viewer pick this role (or move someone off their current one) in this app? */
-const allowed = (app: GridApp, roleId: string | null) => !roleId || roleId === 'PENDING' || app.canManageApprovers || !app.roles.find((r) => r.id === roleId)?.canManageAccess;
+const allowed = (app: GridApp, roleId: string | null) => !roleId || roleId === 'PENDING' || roleId === 'BLOCKED' || app.canManageApprovers || !app.roles.find((r) => r.id === roleId)?.canManageAccess;
 
 export function toCsv(grid: Grid, apps: GridApp[]): string {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -29,6 +29,9 @@ function Cell({ app, email, role, onSet }: { app: GridApp; email: string; role: 
         <button type="button" className="link muted" onClick={() => onSet(null)} aria-label={`Dismiss ${email}'s request for ${app.name}`}>
           Dismiss
         </button>
+        <button type="button" className="link muted" onClick={() => onSet('BLOCKED')} aria-label={`Block ${email} from ${app.name}`}>
+          Block
+        </button>
       </div>
     );
   }
@@ -37,7 +40,7 @@ function Cell({ app, email, role, onSet }: { app: GridApp; email: string; role: 
       aria-label={`${email} in ${app.name}`}
       value={role ?? ''}
       disabled={locked}
-      className={role ? 'has-role' : ''}
+      className={role === 'BLOCKED' ? 'blocked' : role ? 'has-role' : ''}
       onChange={(e) => onSet(e.target.value || null)}
     >
       <option value="">—</option>
@@ -46,6 +49,7 @@ function Cell({ app, email, role, onSet }: { app: GridApp; email: string; role: 
           {r.label}
         </option>
       ))}
+      <option value="BLOCKED">Blocked</option>
     </select>
   );
 }

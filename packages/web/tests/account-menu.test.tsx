@@ -77,4 +77,13 @@ describe('AccountMenu', () => {
     renderMenu({ signedIn: false });
     expect(await screen.findByRole('button', { name: /Access requested/ })).toBeInTheDocument();
   });
+
+  it('blocked: "No access" offers to switch accounts instead of signing in again', async () => {
+    window.history.replaceState(null, '', '/?stacks_access=access_denied');
+    const nav = renderMenu({ signedIn: false });
+    const button = await screen.findByRole('button', { name: /No access/ });
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+    await userEvent.click(button);
+    await waitFor(() => expect(nav.visited[0]).toMatch(/^https:\/\/auth\.x\/logout/));
+  });
 });

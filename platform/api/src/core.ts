@@ -3,6 +3,8 @@ import { conflict, forbidden, notFound, randomToken, sanitize, sha256Hex, badReq
 import {
   isPlatformAdmin,
   keys,
+  BLOCKED,
+  holdsRole,
   PENDING,
   shownName,
   type AppItem,
@@ -106,7 +108,7 @@ export async function signOutEverywhere(deps: PlatformDeps, email: string): Prom
   const sessions = await deps.store.queryGsi1(`USERSESSIONS#${email}`);
   await Promise.all(sessions.map((s) => deps.store.delete(s.PK, s.SK)));
   const grants = await grantsForUser(deps, email);
-  await Promise.all(grants.filter((g) => g.role !== PENDING).map((g) => deps.appSessions.endUserSessions(g.app, email).catch((err) => console.error(`Could not end ${g.app} sessions`, err))));
+  await Promise.all(grants.filter((g) => holdsRole(g.role)).map((g) => deps.appSessions.endUserSessions(g.app, email).catch((err) => console.error(`Could not end ${g.app} sessions`, err))));
 }
 
 /* ---------- Apps ---------- */
@@ -180,13 +182,15 @@ async function putGrant(deps: PlatformDeps, grant: Grant): Promise<void> {
 export async function managesApp(deps: PlatformDeps, viewerEmail: string, manifest: AppManifest): Promise<{ manages: boolean; managesApprovers: boolean }> {
   if (isPlatformAdmin(deps, viewerEmail)) return { manages: true, managesApprovers: true };
   const g = await getGrant(deps, manifest.slug, viewerEmail);
-  const def = g && g.role !== PENDING ? roleDef(manifest, g.role) : undefined;
+  const def = g && holdsRole(g.role) ? roleDef(manifest, g.role) : undefined;
   return { manages: !!def?.canManageAccess, managesApprovers: !!def?.canManageApprovers };
 }
 
 /**
  * Everything that changes a grant goes through here, from the central grid or an app's own
- * admin page. `role: null` removes access (or dismisses a request).
+ * admin page. `role: null` removes access (or dismisses a request); `role: "BLOCKED"` keeps the
+ * person out (public apps stop auto-granting, private apps stop taking their requests) until
+ * someone sets a role or `null`.
  */
 export async function setGrant(
   deps: PlatformDeps,
@@ -198,12 +202,13 @@ export async function setGrant(
   email = email.toLowerCase();
   const { manages, managesApprovers } = await managesApp(deps, actor.email, manifest);
   if (!manages) throw forbidden('You do not manage access to this app');
-  if (role !== null && !roleDef(manifest, role)) throw badRequest(`"${role}" is not a role in ${manifest.name}`);
+  if (role !== null && role !== BLOCKED && !roleDef(manifest, role)) throw badRequest(`"${role}" is not a role in ${manifest.name}`);
+  if (role === BLOCKED && isPlatformAdmin(deps, email)) throw conflict('Platform admins cannot be blocked');
 
   const current = await getGrant(deps, manifest.slug, email);
   const from = current?.role ?? null;
   if (from === role) return current;
-  const touchesApprovers = (r: string | null) => !!r && r !== PENDING && canManageAccess(manifest, r);
+  const touchesApprovers = (r: string | null) => holdsRole(r) && canManageAccess(manifest, r);
   if ((touchesApprovers(from) || touchesApprovers(role)) && !managesApprovers) {
     throw forbidden('Only people who manage approvers can grant or remove that role');
   }
@@ -222,15 +227,17 @@ export async function setGrant(
     await putGrant(deps, next);
   }
   // Their open sessions carry the old role: end them so the next request picks up the new one.
-  if (from && from !== PENDING) await deps.appSessions.endUserSessions(manifest.slug, email);
-  if (from === PENDING && role) await notify(deps, email, { text: `You now have access to ${manifest.name}.`, link: `https://${manifest.slug}.${deps.config.rootDomain}/`, app: manifest.slug });
-  await audit(deps, actor, manifest.slug, { action: role === null ? 'grant.remove' : 'grant.set', label: email, details: { from, to: role } });
+  if (holdsRole(from)) await deps.appSessions.endUserSessions(manifest.slug, email);
+  if (from === PENDING && holdsRole(role)) await notify(deps, email, { text: `You now have access to ${manifest.name}.`, link: `https://${manifest.slug}.${deps.config.rootDomain}/`, app: manifest.slug });
+  const action = role === BLOCKED ? 'grant.block' : from === BLOCKED ? 'grant.unblock' : role === null ? 'grant.remove' : 'grant.set';
+  await audit(deps, actor, manifest.slug, { action, label: email, details: { from, to: role } });
   return next;
 }
 
 /**
  * A signed-in user asks to use an app. Public apps grant the default role at once; private apps
- * file a pending request and tell the approvers. Returns the grant.
+ * file a pending request and tell the approvers. Returns the grant; an existing one (including a
+ * block) is returned unchanged, so a blocked person neither gets the default role nor files requests.
  */
 export async function requestAccess(deps: PlatformDeps, user: PlatformUser, manifest: AppManifest): Promise<Grant> {
   const current = await getGrant(deps, manifest.slug, user.email);
@@ -244,7 +251,7 @@ export async function requestAccess(deps: PlatformDeps, user: PlatformUser, mani
   }
   const grant: Grant = { app: manifest.slug, email: user.email, role: PENDING, requestedAt: now };
   await putGrant(deps, grant);
-  const approvers = (await grantsForApp(deps, manifest.slug)).filter((g) => g.role !== PENDING && canManageAccess(manifest, g.role)).map((g) => g.email);
+  const approvers = (await grantsForApp(deps, manifest.slug)).filter((g) => holdsRole(g.role) && canManageAccess(manifest, g.role)).map((g) => g.email);
   const recipients = approvers.length ? approvers : deps.config.platformAdmins;
   for (const email of recipients) {
     await notify(deps, email, { text: `${shownName(user)} (${user.email}) asked for access to ${manifest.name}.`, link: `#/admin/access?app=${manifest.slug}`, app: manifest.slug });

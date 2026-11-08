@@ -6,7 +6,7 @@ export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 /**
  * Why there is no app session although the person may be signed in to the platform:
  * `access_required` (signed in, no role in this private app: offer "Request access"),
- * `access_pending` (they asked; waiting for approval) or `access_denied`.
+ * `access_pending` (they asked; waiting for approval) or `access_denied` (blocked from this app).
  */
 export type AccessNotice = 'access_required' | 'access_pending' | 'access_denied' | string | null;
 
@@ -118,7 +118,7 @@ export function StacksProvider({
         setAccessNotice(null);
         return await api.post<Session>('/auth/silent-finish', { code: answer.code, state });
       }
-      if (answer.error === 'access_required' || answer.error === 'access_pending') setAccessNotice(answer.error);
+      if (answer.error === 'access_required' || answer.error === 'access_pending' || answer.error === 'access_denied') setAccessNotice(answer.error);
     } catch {
       // Platform unreachable or no session there: stay signed out quietly.
     }

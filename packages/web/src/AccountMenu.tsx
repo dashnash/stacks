@@ -21,7 +21,7 @@ export interface MenuItem {
 }
 
 /** `noAccess`: signed in to the platform, but no role in this private app (offer Request access). */
-export type AccountState = 'loading' | 'signedOut' | 'noAccess' | 'pending' | 'signedIn';
+export type AccountState = 'loading' | 'signedOut' | 'noAccess' | 'pending' | 'denied' | 'signedIn';
 
 /** Demo builds put the persona switcher inside the account menu (see @stacks/demo). */
 export interface DemoControls {
@@ -68,7 +68,9 @@ export function useAccountMenu(opts: { manageAccessHref?: string } = {}) {
           ? 'pending'
           : accessNotice === 'access_required'
             ? 'noAccess'
-            : 'signedOut';
+            : accessNotice === 'access_denied'
+              ? 'denied'
+              : 'signedOut';
   const manage = account?.manage ? { ...account.manage, href: opts.manageAccessHref ?? account.manage.href } : null;
   return {
     state,
@@ -140,13 +142,16 @@ export interface AccountMenuViewProps {
   onSignOut(): void;
   /** Shown in place of "Sign in" when access to this app has been requested. */
   pendingLabel?: string;
+  /** Shown when this account has been blocked from the app; clicking signs out to switch accounts. */
+  deniedLabel?: string;
   className?: string;
   style?: CSSProperties;
 }
 
 /**
  * The account control every Stacks app and the portal put at the top right of their header:
- * a "Sign in" button when signed out, "Access requested" while a request waits, and an avatar
+ * a "Sign in" button when signed out, "Access requested" while a request waits, "No access"
+ * when blocked, and an avatar
  * chip that opens the menu (your apps, inbox, settings, manage access, app items, sign out).
  */
 export function AccountMenuView(props: AccountMenuViewProps) {
@@ -192,6 +197,16 @@ export function AccountMenuView(props: AccountMenuViewProps) {
 
   if (props.state === 'loading') {
     return <div {...rootProps} aria-busy="true" style={{ ...props.style, minWidth: 96, minHeight: 36 }} />;
+  }
+  if (props.state === 'denied' && !props.user) {
+    // Blocked from this app: signing in again would only bounce, so offer a different account.
+    return (
+      <div {...rootProps}>
+        <button type="button" className="stacks-am-btn" onClick={props.onSignOut} title="This account has no access here. Sign out to use another one.">
+          {props.deniedLabel ?? 'No access · switch account'}
+        </button>
+      </div>
+    );
   }
   if (props.state === 'signedOut' || ((props.state === 'pending' || props.state === 'noAccess') && !props.user)) {
     // Sign in; or, signed in to the platform without a role here, ask for one (only on click).

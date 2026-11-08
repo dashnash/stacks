@@ -18,7 +18,7 @@ function Header() {
   const route = useHash();
   const manages = !!me && me.managesApps > 0;
   const catalog = useAsync(() => (status === 'signedIn' ? api.catalog() : Promise.resolve(null)), [status]);
-  const myApps = (catalog.data?.apps ?? []).filter((a) => a.access && a.access !== 'PENDING');
+  const myApps = (catalog.data?.apps ?? []).filter((a) => a.access && a.access !== 'PENDING' && a.access !== 'BLOCKED');
   return (
     <header className="topbar">
       <a href="#/" className="brand">

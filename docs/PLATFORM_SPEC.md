@@ -136,7 +136,7 @@ Access is one **grant** per (user, app): a role from that app's manifest, or a p
 | --- | --- | --- |
 | User | `USER#<email>` | `name`, `displayName`, `pictureUrl`, `createdAt`, `isPlatformAdmin` |
 | App | `APP#<slug>` | manifest snapshot, `visibility` (`public`/`private`), `status` (`live`/`archived`), `createdBy` |
-| Grant | `APP#<slug>` / `USER#<email>` (GSI by user) | `role` or `PENDING`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
+| Grant | `APP#<slug>` / `USER#<email>` (GSI by user) | `role`, `PENDING` or `BLOCKED`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
 | Master session | `SESSION#<sha256>` | `userEmail`, `expiresAt` (TTL), `lastUsedAt` |
 | Audit event | `AUDIT#<yyyy-mm>` | `app`, `actor`, `action`, `label`, `details` |
 
@@ -151,6 +151,13 @@ App sessions are not in the platform table: each lives in its app's own table (`
 5. The **creator** gets the manifest's `topRole` when the app is first registered. An app must always keep at least one holder of `topRole`.
 6. The **platform super-admin** (`PLATFORM_ADMINS` config, like Book Club's `OWNER_EMAILS`) can edit any cell, archive apps, and see the full audit feed.
 7. Revoking a grant ends that user's app sessions for that app immediately.
+8. **Blocking**: approvers (and the super-admin) can set a cell to `BLOCKED`, from the grid or the
+   app's own access page. A blocked person has no role and keeps none of their sessions; a public app
+   stops auto-granting them and a private app stops taking their requests (no approver
+   notifications). Sign-in answers `access_denied`, and the account menu shows **No access · switch
+   account**. Blocking follows the role rules: only approver-managers can block an approver, the last
+   `topRole` holder can't be blocked, and platform admins can't be blocked at all. Unblocking sets the
+   cell back to no grant (or straight to a role). Audit actions: `grant.block`, `grant.unblock`.
 
 **Central access grid** (portal `/admin/access`)
 
@@ -248,6 +255,7 @@ control at the top right of the portal's header and of every app's header.
 | Signed out (no platform session) | **Sign in**: through the platform and back to the same page |
 | Signed in to the platform, no role in this private app | **Request access** (files the request only when clicked) |
 | Request pending (private app) | **Access requested · check again** |
+| Blocked from this app | **No access · switch account** (signs out, so they can use another Google account) |
 | Signed in | Avatar chip (name on wide screens, a count of unread + requests waiting) opening the menu |
 
 The menu, top to bottom: name, email, role in this app · **Your apps** (up to six) · **All apps**
@@ -467,4 +475,4 @@ These are defaulted as written above; change any by editing this spec or comment
 - [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.
 - [ ] SES: request production access now so `email` works on day one, or defer until an app needs it?
 - [ ] Who besides Dash is in `PLATFORM_ADMINS`?
-- [ ] Should public apps have a "blocked" state? Removing someone from a public app today only lasts until they sign in again (they get the default role back).
+- [x] Public (and private) apps have a `BLOCKED` grant state: see access rule 8.

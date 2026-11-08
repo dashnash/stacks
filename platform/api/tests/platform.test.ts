@@ -121,6 +121,52 @@ describe('access grid', () => {
     expect(grid.body.isPlatformAdmin).toBe(true);
   });
 
+  it('blocks people from a public app: no default role on their next sign-in, until unblocked', async () => {
+    const h = createPlatformHarness();
+    await h.authorize('hello', 'troll@test.dev'); // auto-granted MEMBER
+    expect((await h.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(200);
+    expect(h.revoked).toEqual(['hello:troll@test.dev']);
+
+    const again = await h.authorize('hello', 'troll@test.dev');
+    expect(again.url!.searchParams.get('error')).toBe('access_denied');
+    expect(again.code).toBeUndefined();
+    expect((await h.call('POST', '/apps/hello/request', { as: 'troll@test.dev' })).body).toEqual({ access: 'BLOCKED' });
+
+    const catalog = await h.call('GET', '/catalog', { as: 'troll@test.dev' });
+    expect(catalog.body.apps.find((a: { slug: string }) => a.slug === 'hello')).toMatchObject({ access: 'BLOCKED', accessLabel: null });
+    const access = await h.call('GET', '/apps/hello/access', { headers: { authorization: 'Bearer cred-hello' } });
+    expect(access.body.members.map((m: { email: string }) => m.email)).not.toContain('troll@test.dev');
+    expect(access.body.blocked.map((m: { email: string }) => m.email)).toEqual(['troll@test.dev']);
+
+    // Unblocking (null) puts them back to "no grant": the next sign-in auto-grants again.
+    await h.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: null } });
+    expect((await h.authorize('hello', 'troll@test.dev')).code).toMatch(/^stc_/);
+    const audit = await h.call('GET', '/admin/audit', { as: 'root@test.dev', query: { app: 'hello' } });
+    const actions = audit.body.events.map((e: { action: string }) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(['grant.block', 'grant.unblock']));
+  });
+
+  it('blocks private-app requesters: the request is turned away, no new one is filed, nobody is notified', async () => {
+    const h = createPlatformHarness();
+    await h.authorize('club', 'pest@test.dev'); // files a request
+    await h.call('PUT', '/admin/access/club/pest@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
+    expect((await h.call('GET', '/me', { as: 'pest@test.dev' })).body.unread).toBe(0);
+    await h.call('POST', '/notifications/read', { as: 'owner@test.dev' });
+
+    expect((await h.authorize('club', 'pest@test.dev')).url!.searchParams.get('error')).toBe('access_denied');
+    expect((await h.call('POST', '/apps/club/request', { as: 'pest@test.dev' })).body).toEqual({ access: 'BLOCKED' });
+    expect((await h.call('GET', '/me', { as: 'owner@test.dev' })).body).toMatchObject({ unread: 0, pendingRequests: 0 });
+  });
+
+  it('keeps blocks within the same rules as roles: approver-managers only for approvers, never platform admins or the last owner', async () => {
+    const h = createPlatformHarness();
+    await h.call('PUT', '/admin/access/club/adm@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    await h.call('PUT', '/admin/access/club/adm2@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    expect((await h.call('PUT', '/admin/access/club/adm2@test.dev', { as: 'adm@test.dev', body: { role: 'BLOCKED' } })).status).toBe(403);
+    expect((await h.call('PUT', '/admin/access/club/owner@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
+    expect((await h.call('PUT', '/admin/access/club/root@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
+  });
+
   it('rejects roles the app does not declare', async () => {
     const h = createPlatformHarness();
     expect((await h.call('PUT', '/admin/access/club/x@test.dev', { as: 'owner@test.dev', body: { role: 'GOD' } })).status).toBe(400);

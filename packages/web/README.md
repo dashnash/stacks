@@ -12,7 +12,7 @@ function App() {
   // status: 'loading' | 'signedIn' | 'signedOut'
   // session: { user: { email, name, pictureUrl? }, role, canManageAccess } | null
   // signIn(returnTo?) goes through platform sign-in and back to the current page
-  // accessNotice: 'access_required' (signed in to the platform, no role here) | 'access_pending' | 'access_denied' | null
+  // accessNotice: 'access_required' (signed in to the platform, no role here) | 'access_pending' | 'access_denied' (blocked) | null
   // Signed in to the platform = signed in here: the provider signs in silently in the background.
   // signOut() signs out of every app and comes back to this page.
   const api = useApi();
@@ -28,7 +28,7 @@ function App() {
 - Format: `timeAgo(iso)`, `formatShortDate`, `formatDateTime`, `firstName`.
 - `useOptionalStacks()` is `useStacks()` that returns null outside a provider (for components tested with fakes).
 - **Account menu (required):** put `<AccountMenu />` at the top right of your header, signed in or
-  out. It shows Sign in, or the menu: your apps, inbox, settings (platform profile), manage access
+  out. It shows Sign in (or Request access / Access requested / No access · switch account), or the menu: your apps, inbox, settings (platform profile), manage access
   (approvers), your `items`, sign out of everything.
   ```tsx
   <header>… <AccountMenu items={[{ label: 'Reading reminders', href: '#/settings' }]} manageAccessHref="#/admin" /></header>
