@@ -425,11 +425,11 @@ Phase 2 build notes:
 - **Portal bar** (later replaced by the account menu): it got its data from the app's own API, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed. The account menu works the same way (`/api/stacks/account`).
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
 
-**Phase 3 — Book Club migration** (built; cut-over run by Dash, `docs/BOOK_CLUB_MIGRATION.md`)
+**Phase 3 — Book Club migration** (done; cut over on 2026-11-08, `docs/BOOK_CLUB_MIGRATION.md`)
 
 - [x] `apps/mofobookklub` on the SDK and shared modules
 - [x] Migration script (`tools/migrate-book-club`); dry run on a copy of production data is the first cut-over step
-- [ ] Production cut-over and redirect
+- [x] Production cut-over: the old stack released `mofobookklub.iamdashnash.com`, the hold was lifted and production data was migrated (69 items, 3 members). No redirect needed: the address stayed the same.
 
 Gate: every existing member's data visible after sign-in; grid shows their roles.
 
@@ -439,7 +439,7 @@ Phase 3 build notes:
 - **Members and names** come from the platform (`appMembers`, `getPeople` in `@stacks/api`, cached 30 s), so apps keep no user records. People who lose access show as "Former member".
 - **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
 - **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
-- **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. While the old stack still owns that hostname, `holdApps` in `stacks.config.json` keeps it out of production (staging is unaffected).
+- **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. During the cut-over, `holdApps` in `stacks.config.json` kept it out of production until the old stack released the hostname; the mechanism stays for future migrations.
 - Book Club's `GOOGLE_BOOKS_API_KEY` is not wired yet; book sources work without it at a lower Google Books quota.
 
 **Phase 4 — `/new-app`**
@@ -462,7 +462,7 @@ Gate: a non-technical user builds one app end to end in a single Claude Code ses
 These are defaulted as written above; change any by editing this spec or commenting on the Claude Doc.
 
 - [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
-- [ ] Does Book Club keep a vanity host (e.g. `books.<domain>`) or use its slug `mofobookklub.<domain>`?
+- [x] Book Club uses its slug host `mofobookklub.<domain>`, which is also its old address.
 - [ ] Session lifetime: keep Book Club's 90-day sliding expiry for both master and app sessions?
 - [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.
 - [ ] SES: request production access now so `email` works on day one, or defer until an app needs it?
