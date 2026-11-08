@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Avatar, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
+import { AccountMenu, Avatar, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
 import type { Greeting } from '../../api/routes';
 import { MAX_GREETING } from '../../api/routes';
 
@@ -98,22 +98,12 @@ function Board() {
 }
 
 export function App() {
-  const { status, session, signOut } = useStacks();
+  const { status, session } = useStacks();
   return (
     <main className="page">
       <header className="top">
         <h1>Hello Board</h1>
-        {session && (
-          <div className="me">
-            <Avatar person={session.user} size={28} className="avatar" />
-            <span>
-              {session.user.name} <span className="role">{session.role.toLowerCase()}</span>
-            </span>
-            <button type="button" className="link" onClick={() => void signOut()}>
-              Sign out
-            </button>
-          </div>
-        )}
+        <AccountMenu className="account" />
       </header>
       {status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Board key={`${session.user.email}:${session.role}`} /> : <SignedOut />}
     </main>

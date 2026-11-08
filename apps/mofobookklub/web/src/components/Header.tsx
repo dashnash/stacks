@@ -1,8 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { SETTINGS_HREF } from '../lib/route';
-import type { User } from '../lib/types';
+import { AccountMenu } from '@stacks/web';
 import { HelpOverlay } from './HelpOverlay';
-import { Avatar } from './ui';
 
 export function Logo({ className = 'text-2xl' }: { className?: string }) {
   return (
@@ -12,21 +10,20 @@ export function Logo({ className = 'text-2xl' }: { className?: string }) {
   );
 }
 
+/**
+ * The site header. Account and sign-in live in the platform's account menu at the top right
+ * (your apps, inbox, settings, manage access, sign out).
+ */
 export function Header({
-  user,
-  onSignOut,
   pendingCount = 0,
   onAdmin,
   meetingActions,
 }: {
-  user: User;
-  onSignOut: () => void;
   pendingCount?: number;
   onAdmin?: () => void;
   /** Highlighted controls for the viewer's own meeting; inline on wide screens, a second row on phones. */
   meetingActions?: ReactNode;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   return (
     <header className="app-header sticky top-0 z-30 border-b-2 border-ink bg-paper">
@@ -61,30 +58,7 @@ export function Header({
             )}
           </button>
         )}
-        <div className="relative">
-          <button
-            type="button"
-            className="btn-ghost !gap-2 !py-1 !pl-1 !pr-1 sm:!pr-4"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Account menu"
-            aria-expanded={menuOpen}
-          >
-            <Avatar person={user} size={30} />
-            <span className="hidden sm:inline">{user.name}</span>
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 mt-2 w-64 border-2 border-ink bg-paper p-4 shadow-[6px_6px_0_rgb(var(--c-ink))]">
-              <p className="truncate font-cond text-2xl font-extrabold uppercase leading-none">{user.name}</p>
-              <p className="mt-1 truncate text-xs text-ink/60">{user.email}</p>
-              <a href={SETTINGS_HREF} className="btn-ghost mt-4 w-full" onClick={() => setMenuOpen(false)}>
-                Settings
-              </a>
-              <button type="button" className="btn-primary mt-2 w-full" onClick={onSignOut}>
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
+        <AccountMenu className="klub-account" manageAccessHref="#/admin" />
       </div>
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </header>

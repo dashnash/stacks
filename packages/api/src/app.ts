@@ -3,7 +3,7 @@ import { canManageAccess, type AppManifest } from '@stacks/manifest';
 import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
 import { badRequest, forbidden, HttpError, unauthorized, type RouteResult } from './http';
-import { forgetMembers } from './people';
+import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
 import type { AppDeps, Viewer } from './model';
 import { Router, type HttpMethod, type RequestContext } from './router';
@@ -79,7 +79,15 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     if (!session) return null;
     // A role the manifest no longer declares grants nothing.
     if (!knownRoles.has(session.role)) return null;
-    return { user: session.user, role: session.role, canManageAccess: canManageAccess(manifest, session.role), deps, manifest };
+    // Names and photos follow the platform profile (cached ~30 s), so a rename shows without signing in again.
+    let user = session.user;
+    try {
+      const member = (await appMembers(deps)).find((m) => m.email === user.email);
+      if (member) user = { email: user.email, name: member.name, ...(member.pictureUrl ? { pictureUrl: member.pictureUrl } : {}) };
+    } catch {
+      // Platform unreachable: keep the name from sign-in.
+    }
+    return { user, role: session.role, canManageAccess: canManageAccess(manifest, session.role), deps, manifest };
   }
 
   const signedIn =
@@ -201,13 +209,25 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       return { body: { ok: true, platformLogoutUrl: new URL('/logout', deps.config.authOrigin).toString() }, cookies: [clearCookie(SESSION_COOKIE)] };
     });
 
-  // The portal bar: the viewer's other apps and unread count, fetched from the platform server-side.
-  api.member('GET', '/stacks/bar', async (_req, v) => {
+  // The account menu: who you are here, your other apps, inbox and approvals (from the platform).
+  api.member('GET', '/stacks/account', async (_req, v) => {
     try {
-      return { body: await v.deps.platform.portalBar(v.user.email) };
+      return { body: await v.deps.platform.account(v.user.email) };
     } catch (err) {
-      console.error('Portal bar unavailable', err);
-      return { body: { portalUrl: v.deps.config.authOrigin, unread: 0, apps: [] } };
+      console.error('Account details unavailable', err);
+      const portal = new URL('/', v.deps.config.authOrigin).toString();
+      const label = manifest.roles.find((r) => r.id === v.role)?.label ?? v.role;
+      return {
+        body: {
+          portalUrl: `${portal}#/`,
+          profileUrl: `${portal}#/profile?from=${manifest.slug}`,
+          inboxUrl: `${portal}#/notifications?from=${manifest.slug}`,
+          unread: 0,
+          app: { slug: manifest.slug, name: manifest.name, roleLabel: label },
+          apps: [],
+          manage: null,
+        },
+      };
     }
   });
 

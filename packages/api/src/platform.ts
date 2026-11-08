@@ -10,8 +10,8 @@ export interface PlatformClient {
   exchangeCode(input: { code: string; codeVerifier: string; redirectUri: string }): Promise<{ user: StacksUser; role: string }>;
   /** Mirror an activity-log event into the platform's central feed. */
   recordAudit(event: AuditEvent): Promise<void>;
-  /** What the portal bar shows a user: their apps and unread notifications. */
-  portalBar(email: string): Promise<PortalBarData>;
+  /** What the account menu shows a user: their apps, inbox, role here, and approvals waiting. */
+  account(email: string): Promise<AccountData>;
   /** Everyone with a role in this app, and pending requests. Names are display names. */
   access(): Promise<AppAccess>;
   /** Change a grant on behalf of `actorEmail` (the platform checks they manage this app). `role: null` removes. */
@@ -35,10 +35,20 @@ export interface AppAccess {
   pending: AppMember[];
 }
 
-export interface PortalBarData {
+export interface AccountData {
+  /** The portal's catalog. */
   portalUrl: string;
+  /** Platform profile (display name), with a way back to this app. */
+  profileUrl: string;
+  /** Platform inbox. */
+  inboxUrl: string;
   unread: number;
+  /** This app, and the viewer's role label in it. */
+  app: { slug: string; name: string; roleLabel: string | null };
+  /** Every app the viewer has a role in (this one included). */
   apps: { slug: string; name: string; url: string }[];
+  /** For people who manage access here: requests waiting, and the portal grid for this app. */
+  manage: { pending: number; href: string } | null;
 }
 
 export class PlatformError extends Error {
@@ -92,8 +102,8 @@ export class HttpPlatformClient implements PlatformClient {
     await this.post('/audit', event);
   }
 
-  portalBar(email: string): Promise<PortalBarData> {
-    return this.post<PortalBarData>(`/bar?email=${encodeURIComponent(email)}`);
+  account(email: string): Promise<AccountData> {
+    return this.post<AccountData>(`/account?email=${encodeURIComponent(email)}`);
   }
 
   access(): Promise<AppAccess> {

@@ -77,12 +77,8 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 .pill.warn { background: var(--warn-bg); color: var(--warn); }
 .pill.info { background: var(--info-bg); color: var(--info); }
 .avatar { background: var(--info-bg); color: var(--info); font-weight: 700; flex-shrink: 0; }
-.avatar-button { border: 0; background: none; padding: 0; cursor: pointer; border-radius: 50%; }
-.menu { position: relative; margin-left: 6px; }
-.menu-panel { position: absolute; right: 0; top: 40px; width: 240px; display: grid; gap: 2px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); }
-.menu-panel p { margin: 4px 8px 8px; overflow-wrap: anywhere; }
-.menu-panel a, .menu-panel button { display: block; padding: 8px; border-radius: 8px; color: var(--ink); text-decoration: none; background: none; border: 0; text-align: left; cursor: pointer; }
-.menu-panel a:hover, .menu-panel button:hover { background: var(--bg); }
+.account { margin-left: 6px; --stacks-menu-bg: var(--surface); --stacks-menu-fg: var(--ink); --stacks-menu-muted: var(--muted); --stacks-menu-border: var(--line); --stacks-menu-accent: var(--accent); --stacks-menu-accent-fg: var(--accent-ink); --stacks-menu-muted-bg: var(--info-bg); --stacks-menu-hover: var(--bg); }
+.back { margin: 0 0 12px; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
 .card.narrow { max-width: 520px; margin: 0 auto; }
@@ -124,7 +120,6 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 .grid.audit code { font-size: 0.85rem; }
 
 @media (max-width: 560px) {
-  .nav > a:first-child { display: none; }
   .content { padding: 16px 16px 48px; }
   .card { padding: 18px; }
   .grid .sticky { min-width: 160px; }

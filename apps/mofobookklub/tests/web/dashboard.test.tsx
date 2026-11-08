@@ -9,7 +9,7 @@ describe('DashboardView', () => {
       nextMeeting: vi.fn().mockResolvedValue({ meeting: meeting() }),
       lineup: vi.fn().mockResolvedValue(lineupOf(books)),
     });
-    renderWithApi(<DashboardView user={member} onSignOut={() => {}} />, api);
+    renderWithApi(<DashboardView user={member} />, api);
 
     expect(await screen.findByText(/Next meeting · October/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'The lineup' })).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe('DashboardView', () => {
     const api = fakeApi({
       nextMeeting: vi.fn().mockResolvedValue({ meeting: null, nextLeader: { email: member.email, name: member.name }, canCreateNext: true }),
     });
-    renderWithApi(<DashboardView user={member} onSignOut={() => {}} />, api);
+    renderWithApi(<DashboardView user={member} />, api);
     expect(await screen.findByRole('heading', { name: /You're up!/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Schedule & open nominations/ })).toBeInTheDocument();
     // Non-admins don't get a leader picker.
@@ -40,7 +40,7 @@ describe('DashboardView', () => {
         pending: [{ email: 'new@x.test', name: 'Newbie', role: 'PENDING', requestedAt: '2026-01-01T00:00:00Z' }],
       }),
     });
-    renderWithApi(<DashboardView user={admin} onSignOut={() => {}} />, api);
+    renderWithApi(<DashboardView user={admin} />, api);
     const adminButton = await screen.findByRole('button', { name: /Admin/ });
     expect(await screen.findByText('1')).toBeInTheDocument();
     // The Admin button opens the admin page, with people waiting for approval first.
@@ -54,7 +54,7 @@ describe('DashboardView', () => {
     const api = fakeApi({
       randomEasterEgg: vi.fn().mockResolvedValue({ id: 'e', quote: 'Hamlet, but he finally decides.', characterName: 'Bo', imageUrl: null }),
     });
-    renderWithApi(<DashboardView user={member} onSignOut={() => {}} />, api);
+    renderWithApi(<DashboardView user={member} />, api);
     expect(await screen.findByRole('region', { name: 'From our literary critics' })).toHaveTextContent(/Hamlet, but he finally decides\./);
     expect(screen.queryByRole('button', { name: /easter egg/i })).not.toBeInTheDocument();
   });
@@ -69,13 +69,13 @@ describe('who gets the header meeting controls', () => {
     });
 
   it('shows the strip to the leader', async () => {
-    renderWithApi(<DashboardView user={member} onSignOut={() => {}} />, upcoming(member.email));
+    renderWithApi(<DashboardView user={member} />, upcoming(member.email));
     expect(await screen.findByRole('region', { name: "You're leading" })).toBeInTheDocument();
   });
 
   it('keeps it out of the header for admins who are not leading; they use the admin page', async () => {
     const api = upcoming('someone@club.test');
-    renderWithApi(<DashboardView user={admin} onSignOut={() => {}} />, api);
+    renderWithApi(<DashboardView user={admin} />, api);
     await screen.findByRole('button', { name: /Admin/ });
     await screen.findAllByText(/Lead/);
     expect(screen.queryByRole('region', { name: 'Admin controls' })).not.toBeInTheDocument();

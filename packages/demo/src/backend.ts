@@ -9,7 +9,7 @@ import {
   type AuditEvent,
   type Item,
   type PlatformClient,
-  type PortalBarData,
+  type AccountData,
   type AppAccess,
   type StacksUser,
 } from '@stacks/api';
@@ -52,12 +52,25 @@ class DemoPlatform implements PlatformClient {
   readonly notifications: { email: string; text: string; link?: string }[] = [];
   constructor(
     private readonly self: { slug: string; name: string },
+    private readonly roles: { id: string; label: string; canManageAccess?: boolean }[],
     /** Shared with the demo: role changes here change who each persona signs in as. */
     private readonly personas: Persona[],
     private pendingPeople: { email: string; name: string }[],
   ) {}
-  async portalBar(): Promise<PortalBarData> {
-    return { portalUrl: '#', unread: 2, apps: [{ ...this.self, url: '#/' }, { slug: 'other', name: 'Another app', url: '#/' }] };
+  /** Set by the demo when someone signs in, so the menu shows their role. */
+  current: Persona | null = null;
+  async account(): Promise<AccountData> {
+    const persona = this.current;
+    const def = persona ? this.roles.find((r) => r.id === persona.role) : undefined;
+    return {
+      portalUrl: '#/',
+      profileUrl: '#/',
+      inboxUrl: '#/',
+      unread: 2,
+      app: { ...this.self, roleLabel: def?.label ?? null },
+      apps: [{ ...this.self, url: '#/' }, { slug: 'other', name: 'Another app (demo)', url: '#/' }],
+      manage: def?.canManageAccess ? { pending: this.pendingPeople.length, href: '#/' } : null,
+    };
   }
   async access(): Promise<AppAccess> {
     return {
@@ -120,9 +133,10 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const key = opts.storageKey === undefined ? `stacks-demo:${opts.manifest.slug}` : opts.storageKey;
   const saved = load(key);
   const store = new MemoryStore(saved ?? []);
+  const demoPlatform = new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, opts.manifest.roles, personas, opts.pending ?? []);
   const base: AppDeps = {
     store,
-    platform: new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, personas, opts.pending ?? []),
+    platform: demoPlatform,
     config: { appOrigin: globalThis.location?.origin ?? 'https://demo.local', authOrigin: 'https://auth.demo.local' },
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),
@@ -170,6 +184,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const signInAs = async (email: string | null) => {
     await ready;
     persona = personas.find((p) => p.email === email && !!p.role) ?? null;
+    demoPlatform.current = persona;
     sessionToken = persona
       ? await createSession(deps, { email: persona.email, name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
       : null;

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
 import { requireString, type AppDeps, type AppRoutes } from '@stacks/api';
-import { useAsync, useStacks } from '@stacks/web';
+import { AccountMenu, useAsync, useStacks } from '@stacks/web';
 import { createDemo, DemoApp } from '../src/index';
 
 const manifest: AppManifest = {
@@ -78,8 +78,9 @@ function NotesView() {
       <p>status:{status}</p>
       <p>who:{session?.user.name ?? '-'}</p>
       <p>notes:{data ? (data as { notes: string[] }).notes.join(',') : '-'}</p>
-      <button onClick={() => signIn()}>Sign in</button>
-      <button onClick={() => void signOut()}>Sign out</button>
+      <button onClick={() => signIn()}>Log in</button>
+      <button onClick={() => void signOut()}>Log out</button>
+      <AccountMenu />
     </div>
   );
 }
@@ -95,14 +96,16 @@ describe('DemoApp', () => {
       </DemoApp>,
     );
     expect(await screen.findByText('status:signedOut')).toBeInTheDocument();
-    await userEvent.click(screen.getByText('Sign in'));
+    await userEvent.click(screen.getByText('Log in'));
     expect(await screen.findByText('who:Olive')).toBeInTheDocument();
     expect(await screen.findByText('notes:Welcome')).toBeInTheDocument();
 
+    // The persona switcher lives in the account menu.
+    await userEvent.click(await screen.findByRole('button', { name: /Account menu for Olive/ }));
     await userEvent.selectOptions(screen.getByLabelText('Try the app as'), 'rex@demo');
     expect(await screen.findByText('who:Rex')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByText('Sign out'));
+    await userEvent.click(screen.getByText('Log out'));
     await waitFor(() => expect(screen.getByText('status:signedOut')).toBeInTheDocument());
   });
 });

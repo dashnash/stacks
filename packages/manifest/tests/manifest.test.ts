@@ -51,6 +51,7 @@ describe('validateManifest', () => {
     expect(errorsFor({ roles: [...valid.roles, { id: 'MEMBER', label: 'Again' }] })).toContain('role "MEMBER" is listed twice');
     expect(errorsFor({ modules: ['ai'] })[0]).toMatch(/unknown module "ai"/);
     expect(errorsFor({ colour: 'red' })).toContain('unknown field "colour"');
+    expect(errorsFor({ accountMenu: 'floating' })).toContain('"accountMenu" must be "standard" or "custom"');
     expect(errorsFor({ csp: { scriptSrc: ["'unsafe-eval'"] } })[0]).toMatch(/not an allowed source/);
     expect(errorsFor({ csp: { scriptSrc: ['*'] } })[0]).toMatch(/not an allowed source/);
     expect(errorsFor({ csp: { scriptSrc: ['http://insecure.example'] } })[0]).toMatch(/not an allowed source/);

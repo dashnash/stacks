@@ -54,7 +54,7 @@ await deps.platform.notify(email, 'Your pick won', url);  // into their platform
 ## Built-in routes
 
 `GET /health`, `GET /auth/login?return=/path`, `GET /auth/callback`, `GET /auth/session`,
-`POST /auth/logout`, `GET /stacks/bar` (portal bar), `GET /stacks/members` (members),
+`POST /auth/logout`, `GET /stacks/account` (account menu data), `GET /stacks/members` (members),
 `GET /stacks/access` + `PUT /stacks/access/:email {role|null}` (approvers: the app's own access
 page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`).
 

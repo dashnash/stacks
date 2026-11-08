@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { ErrorNote, Spinner, timeAgo, useAsync } from '@stacks/web';
 import { usePortal } from '../portal';
+import { BackToApp } from './BackToApp';
 
-export function Notifications() {
+export function Notifications({ from }: { from?: string }) {
   const { api, refresh } = usePortal();
   const { data, error } = useAsync(() => api.notifications());
   useEffect(() => {
@@ -10,6 +11,7 @@ export function Notifications() {
   }, [api, data, refresh]);
   return (
     <section className="card narrow">
+      <BackToApp from={from} />
       <h1>Inbox</h1>
       {!data ? <Spinner /> : null}
       <ErrorNote error={error} className="error" />

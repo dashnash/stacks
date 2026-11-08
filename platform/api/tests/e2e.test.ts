@@ -50,8 +50,8 @@ function world() {
         const res = toRes(await platform.app(event('POST', `/api/apps/${slug}/notify`, { body: { email, text, link }, headers: { authorization: `Bearer cred-${slug}` } })));
         if (res.status !== 200) throw new PlatformError(res.status, res.body.error, res.body.code);
       },
-      async portalBar(email) {
-        return toRes(await platform.app(event('GET', `/api/apps/${slug}/bar`, { query: { email }, headers: { authorization: `Bearer cred-${slug}` } }))).body;
+      async account(email) {
+        return toRes(await platform.app(event('GET', `/api/apps/${slug}/account`, { query: { email }, headers: { authorization: `Bearer cred-${slug}` } }))).body;
       },
     };
     let n = 0;
@@ -139,10 +139,15 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     expect(await b.go('https://club.stacks.test/api/auth/login?return=%2F')).toBe('https://club.stacks.test/');
     expect((await b.api('https://club.stacks.test/api/whoami')).body.role).toBe('MEMBER');
 
-    // The portal bar inside an app lists the user's apps.
-    const bar = await b.api('https://club.stacks.test/api/stacks/bar');
-    expect(bar.body.apps.map((a: { slug: string }) => a.slug)).toEqual(['club', 'hello']);
-    expect(bar.body.portalUrl).toBe('https://auth.stacks.test/#/');
+    // The account menu inside an app: the user's apps, role here, links back to the portal.
+    const account = await b.api('https://club.stacks.test/api/stacks/account');
+    expect(account.body.apps.map((a: { slug: string }) => a.slug)).toEqual(['club', 'hello']);
+    expect(account.body).toMatchObject({
+      portalUrl: 'https://auth.stacks.test/#/',
+      profileUrl: 'https://auth.stacks.test/#/profile?from=club',
+      app: { slug: 'club', name: 'Book Club', roleLabel: 'Member' },
+      manage: null,
+    });
 
     // Each app holds its own session cookie; neither can see the other's or the portal's.
     expect([...b.jar.get('club.stacks.test')!.keys()]).toEqual(['__Host-stacks-session']);

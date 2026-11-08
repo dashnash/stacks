@@ -50,7 +50,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Audit | Both: each app keeps its own log, and every event is also copied to a central feed |
 | Data | Fully isolated per app; sharing only through explicit APIs later |
 | Access requests | In-app badge only (no email in v1) |
-| Portal bar | Optional, light, minimizable overlay |
+| Account menu | The same control at the top right of the portal and every app: sign in, your apps, inbox, settings, manage access, app-specific items, sign out (of everything). Required in every app, enforced by a test |
 | Shared modules | All Tier 3 modules except runtime AI inference |
 | Deploys | Only CI deploys. `CODEOWNERS` gates `packages/` and `infra/`; app folders deploy on green CI |
 | Testing | In-browser demo mode for previews; one shared staging platform deployable from a Claude session via CI |
@@ -122,7 +122,7 @@ The handshake is a minimal OAuth-style authorization-code flow that the SDK impl
 - **Public pages** need no session. A signed-out visitor on a private app sees its public pages and a sign-in or Request access button.
 - **Grant check (step 6)**: public app with no grant → auto-grant `defaultRole`; private app with no grant → the portal's request-access page, then back to the app's public view with a pending notice.
 - **Lifetimes**: master and app sessions both slide to 90 days of inactivity (Book Club's rule); the app session also stores the user's `createdAt` so deleting a user ends every session.
-- **Sign-out**: from an app or the portal bar, it ends the master session and every app session for that user.
+- **Sign-out**: there is one "Sign out", in the account menu of the portal and every app. It ends the master session and every app session for that user (an app-only sign-out would silently sign people back in on their next click).
 
 ## Access model
 
@@ -181,7 +181,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
   "publicRoutes": ["/", "/book/*"],
   "modules": ["comments", "votes", "contentPacks", "notifications"],
   "csp": { "imgSrc": ["https:"], "connectSrc": [] },
-  "portalBar": "minimized",
+  "accountMenu": "standard",
   "owners": ["dashiell.nash@gmail.com"]
 }
 ```
@@ -190,7 +190,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
 - `defaultRole` is required for public apps and is the role pre-selected on approval for private ones.
 - `modules` turns on Tier 3 modules; the construct adds only the resources those modules need.
 - `csp` extends the platform's default Content-Security-Policy; anything not listed stays blocked.
-- `portalBar`: `shown`, `minimized` or `off`.
+- `accountMenu`: `standard` (the app renders `<AccountMenu />`) or `custom` (it draws its own from `useAccountMenu()`). The old `portalBar` field is accepted and ignored.
 - Changing `roles` in a way that removes a role in use fails CI until the grants are migrated.
 
 ## Shared services
@@ -208,7 +208,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | Access grid | `AdminPanel.tsx` | Described under Access model |
 | Central audit feed | `audit/log.ts`, `run()` in `app.ts` | Every app event mirrored here; filter by app, actor, action |
 | Notifications and badges | new | In-app notifications per user (access requests, approvals, app-defined events); badge counts |
-| Portal bar | new | Web component: app switcher, avatar menu, notifications, sign out; minimizable, remembers state |
+| Account menu | new | `<AccountMenu>` in `@stacks/web` for apps, `AccountMenuView` for the portal; data from the app's `/api/stacks/account` (server-to-server to the platform) |
 
 **Tier 2 — SDK packages** (shared code, each app's own data)
 
@@ -234,6 +234,36 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | `email` | SES sending from `no-reply@<domain>` with templates; off by default, needs SES production access | new |
 
 Runtime AI inference is deliberately out of v1; it can be added later as a platform-proxied module with per-app budgets.
+
+## Account menu
+
+Signing in and out, switching apps and reaching settings work the same everywhere: through one
+control at the top right of the portal's header and of every app's header.
+
+| State | What it shows |
+| --- | --- |
+| Loading | A placeholder of the same size, so the header doesn't jump |
+| Signed out | **Sign in**: through the platform and back to the same page (silent if the portal session is alive) |
+| Request pending (private app) | **Access requested · check again** |
+| Signed in | Avatar chip (name on wide screens, a count of unread + requests waiting) opening the menu |
+
+The menu, top to bottom: name, email, role in this app · **Your apps** (up to six) · **All apps**
+(the portal) · **Inbox** (unread count) · **Settings** (the platform profile, with "← Back to <app>")
+· **Manage access** (approvers only, with requests waiting: the app's own access page if it has
+one, else the portal grid for this app) · the app's own items (its settings pages) · in demo builds,
+the persona switcher · **Sign out** (of every app).
+
+- **Settings have two homes.** Platform settings (display name, later notification preferences) live
+  on the portal profile. App settings live on the app's own pages and are added to the menu with
+  `items`. Names follow the profile within about 30 seconds, with no new sign-in.
+- **Look.** Neutral by default, themed with `--stacks-menu-*` CSS variables. Apps that want a different
+  control use `useAccountMenu()` and set `"accountMenu": "custom"`.
+- **Phones.** The chip collapses to the avatar and the menu opens as a full-width sheet.
+- **Accessibility.** Menu button pattern: arrow keys, Home/End, Escape returns focus to the chip.
+- **Required, enforced by a test.** Every app exports `App` and `demoOptions()` from
+  `web/src/demo/setup.ts`. `tools/app-conformance` renders each app on its demo backend and fails CI
+  unless exactly one account control is inside a `<header>`, signed out and signed in, with the
+  standard items and a working sign-out. There is no fallback chip.
 
 ## Repo layout
 
@@ -275,6 +305,7 @@ Import rule: `apps/*` may import only `@stacks/*` packages, never another app or
 
 The `/new-app` skill turns a short description into a tested app on staging; scripts produce everything predictable, and Claude writes only the app's own features.
 
+0. **Template guarantees.** Every generated app has `<AccountMenu />` at the top right of its header and exports `web/src/demo/setup.ts`, so it passes `tools/app-conformance` from the first commit.
 1. **Interview** (Claude, few tokens). Ask, one screen at a time, in plain language for non-technical creators: purpose, who uses it, public or private, roles and who approves, the 3–5 things it tracks, what signed-out visitors see, the look and feel (3 adjectives or a reference site), which modules it needs. Write `app.manifest.json` plus `apps/<slug>/BRIEF.md` (the description, entities, user stories). Show both back for a yes.
 2. **Scaffold** (script, zero tokens). `npm run new-app -- <slug>` copies `templates/app/`, fills placeholders from the manifest, adds the stack, wires auth, roles, audit, demo personas (one per role), tests, landing page and footer. It must pass typecheck and tests before Claude writes a line.
 3. **Build** (Claude). Reads only `BRIEF.md`, `packages/*/README.md` (each under ~300 lines, API cheat-sheet style) and, when useful, the matching folder in `apps/mofobookklub` as a worked example. Writes entities, routes, UI and tests. The UI is unconstrained: any layout, styling or component library the CSP allows.
@@ -381,14 +412,14 @@ Gate: a hello-world app synthesizes, its tests pass, and its demo build runs in 
 - [x] Google sign-in at `auth.<domain>`, master session, app handshake, `GET /me`
 - [x] Registry, catalog, public app pages, request access, grants, auto-grant for public apps
 - [x] Access grid, notifications and badges, central audit feed
-- [x] Portal bar web component
+- [x] Portal bar web component (replaced by the account menu, see below)
 
 Gate on staging: sign in once, open two apps on different subdomains with no second prompt; request access to a private app, approve it from the grid, and the user gets in; revoking ends their app session within one request.
 
 Phase 2 build notes:
 - The same gate runs in memory in `platform/api/tests/e2e.test.ts` (two real apps, the real platform, a browser with per-host cookies). It needs repeating on staging once `docs/SETUP.md` is done.
 - **Registry**: each app stack writes `/stacks/<env>/apps/<slug>/manifest` and `/table` to SSM. The platform reads these (cached a minute) and registers an app the first time it sees it, giving the manifest's `owners` the top role.
-- **Portal bar**: a React component in `@stacks/web`, rendered by `<StacksProvider>`. It gets its data from the app's own `/api/stacks/bar`, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed.
+- **Portal bar** (later replaced by the account menu): it got its data from the app's own API, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed. The account menu works the same way (`/api/stacks/account`).
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
 
 **Phase 3 — Book Club migration** (built; cut-over run by Dash, `docs/BOOK_CLUB_MIGRATION.md`)
@@ -405,7 +436,6 @@ Phase 3 build notes:
 - **Members and names** come from the platform (`appMembers`, `getPeople` in `@stacks/api`, cached 30 s), so apps keep no user records. People who lose access show as "Former member".
 - **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
 - **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
-- The **portal bar** moved to the bottom-right: apps usually keep their own account menu top-right.
 - **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. While the old stack still owns that hostname, `holdApps` in `stacks.config.json` keeps it out of production (staging is unaffected).
 - Book Club's `GOOGLE_BOOKS_API_KEY` is not wired yet; book sources work without it at a lower Google Books quota.
 

@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Avatar, ErrorNote } from '@stacks/web';
 import { usePortal } from '../portal';
+import { BackToApp } from './BackToApp';
 
-export function Profile() {
+export function Profile({ from }: { from?: string }) {
   const { api, me, refresh } = usePortal();
   const [name, setName] = useState(me?.user.displayName ?? '');
   const [saved, setSaved] = useState(false);
@@ -22,6 +23,7 @@ export function Profile() {
   };
   return (
     <section className="card narrow">
+      <BackToApp from={from} />
       <h1>Profile</h1>
       <div className="row-gap">
         <Avatar person={{ name: me.user.name, pictureUrl: me.user.pictureUrl ?? undefined }} size={56} className="avatar" />
@@ -37,7 +39,7 @@ export function Profile() {
         <button type="submit" className="button">
           Save
         </button>
-        {saved && <p role="status">Saved. Apps pick it up the next time you sign in to them.</p>}
+        {saved && <p role="status">Saved. Every app shows your new name within a minute.</p>}
         <ErrorNote error={error} className="error" />
       </form>
     </section>

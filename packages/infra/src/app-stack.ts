@@ -251,7 +251,7 @@ export class AppStack extends cdk.Stack {
     const site = new s3deploy.BucketDeployment(this, 'DeployWeb', {
       sources: [
         s3deploy.Source.asset(webDist, { exclude: ['assets', 'assets/**'] }),
-        s3deploy.Source.jsonData('config.json', { app: slug, name: manifest.name, env: envName, authOrigin: auth, portalBar: manifest.portalBar ?? 'minimized' }),
+        s3deploy.Source.jsonData('config.json', { app: slug, name: manifest.name, env: envName, authOrigin: auth }),
       ],
       destinationBucket: webBucket,
       exclude: ['assets/*'],

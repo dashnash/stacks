@@ -25,6 +25,13 @@ function App() {
   `Avatar`, `Spinner`, `ErrorNote`, `RequestAccess` (render-prop for custom UI).
 - Format: `timeAgo(iso)`, `formatShortDate`, `formatDateTime`, `firstName`.
 - `useOptionalStacks()` is `useStacks()` that returns null outside a provider (for components tested with fakes).
-- The portal bar (bottom-right pill: other apps, inbox count, sign out of everything) is rendered by
-  `<StacksProvider portalBar="minimized|shown|off">`; pass the manifest's `portalBar`.
+- **Account menu (required):** put `<AccountMenu />` at the top right of your header, signed in or
+  out. It shows Sign in, or the menu: your apps, inbox, settings (platform profile), manage access
+  (approvers), your `items`, sign out of everything.
+  ```tsx
+  <header>… <AccountMenu items={[{ label: 'Reading reminders', href: '#/settings' }]} manageAccessHref="#/admin" /></header>
+  ```
+  Theme with `--stacks-menu-bg|fg|muted|border|accent|accent-fg|muted-bg|hover|radius|font` on a
+  wrapper class. For a fully custom control use `useAccountMenu()` and set `"accountMenu": "custom"`.
+  `tools/app-conformance` fails CI if an app's header doesn't have one.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.email + session.role} />`.
