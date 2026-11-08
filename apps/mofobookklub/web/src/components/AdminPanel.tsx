@@ -25,6 +25,7 @@ export function AdminPanel({
   const access = useAsync(() => api.access(), []);
   const members = { data: access.data?.members, error: access.error };
   const pending = access.data?.pending ?? [];
+  const blocked = access.data?.blocked ?? [];
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -59,6 +60,15 @@ export function AdminPanel({
               </p>
             </div>
             <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn-ghost !px-4 !py-1.5"
+                disabled={busy !== null}
+                onClick={() => act(u.email, () => api.setAccess(u.email, 'BLOCKED'))}
+                title="Turn them away and stop further requests"
+              >
+                Block
+              </button>
               <button
                 type="button"
                 className="btn-ghost !px-4 !py-1.5"
@@ -147,8 +157,27 @@ export function AdminPanel({
           </li>
         ))}
       </ul>
+      {blocked.length > 0 && (
+        <>
+          <p className="kicker pt-4">Blocked · {blocked.length}</p>
+          <ul aria-label="Blocked">
+            {blocked.map((u) => (
+              <li key={u.email} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
+                <Avatar person={u} size={32} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold leading-tight">{u.name}</p>
+                  <p className="truncate text-xs text-ink/60">{u.email}</p>
+                </div>
+                <button type="button" className="btn-ghost !px-4 !py-1.5" disabled={busy !== null} onClick={() => act(u.email, () => api.setAccess(u.email, null))}>
+                  Unblock
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <p className="text-xs text-ink/60">
-        Removed people lose access straight away, in this app and the portal. Their comments, nominations and votes
+        Blocked people can't ask to join again until someone unblocks them. Removed people lose access straight away, in this app and the portal. Their comments, nominations and votes
         stay, credited to “Former member”. If they sign in again they ask for access like anyone new.
         {isOwner
           ? ' As the owner, you can also make people admins, and remove admins.'

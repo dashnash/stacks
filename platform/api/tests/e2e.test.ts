@@ -257,6 +257,16 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     expect(await stranger.silentSignIn('https://club.stacks.test')).toEqual({ error: 'login_required', signedIn: false });
   });
 
+  it('silent sign-in tells a blocked person access_denied and does not auto-grant a public app', async () => {
+    const w = world();
+    await w.platform.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
+    const b = new w.Browser();
+    await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:troll@test.dev' });
+    expect(await b.silentSignIn('https://hello.stacks.test')).toEqual({ error: 'access_denied', signedIn: false });
+    const res = await b.go('https://hello.stacks.test/api/auth/login?return=%2F');
+    expect(res).toContain('stacks_access=access_denied');
+  });
+
   it('only the app\'s own origin can read the silent answer', async () => {
     const w = world();
     const b = new w.Browser();

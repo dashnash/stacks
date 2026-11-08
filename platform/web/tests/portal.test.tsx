@@ -103,6 +103,15 @@ describe('access grid', () => {
     await waitFor(() => expect(screen.getByLabelText('sam@demo.stacks in MOFO Book Klub')).toHaveValue('MEMBER'));
   });
 
+  it('blocks a requester from the grid, and shows blocked people as Blocked', async () => {
+    renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: /Access/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Block sam@demo.stacks from MOFO Book Klub' }));
+    await waitFor(() => expect(screen.getByLabelText('sam@demo.stacks in MOFO Book Klub')).toHaveValue('BLOCKED'));
+    expect(screen.getByLabelText('troll@demo.stacks in Hello Board')).toHaveValue('BLOCKED');
+  });
+
   it('does not let admins hand out approver roles', async () => {
     renderPortal();
     await signInAs('Priya Rao');

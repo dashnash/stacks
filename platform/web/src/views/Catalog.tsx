@@ -5,6 +5,7 @@ import { usePortal } from '../portal';
 
 export function accessBadge(app: CatalogApp): { text: string; tone: string } {
   if (app.access === 'PENDING') return { text: 'Requested', tone: 'warn' };
+  if (app.access === 'BLOCKED') return { text: 'No access', tone: 'muted' };
   if (app.access) return { text: app.accessLabel ?? app.access, tone: 'ok' };
   return app.visibility === 'public' ? { text: 'Open to all', tone: 'info' } : { text: 'Private', tone: 'muted' };
 }
@@ -14,7 +15,7 @@ function AppCard({ app, onChange }: { app: CatalogApp; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const badge = accessBadge(app);
-  const canOpen = app.access && app.access !== 'PENDING';
+  const canOpen = app.access && app.access !== 'PENDING' && app.access !== 'BLOCKED';
 
   const run = (fn: () => Promise<unknown>) => async () => {
     setBusy(true);
@@ -55,7 +56,7 @@ function AppCard({ app, onChange }: { app: CatalogApp; onChange: () => void }) {
       </div>
       <div className="app-card-bottom">
         <span className={`pill ${badge.tone}`}>{badge.text}</span>
-        {canOpen || app.visibility === 'public' || status === 'signedOut' ? (
+        {app.access === 'BLOCKED' ? null : canOpen || app.visibility === 'public' || status === 'signedOut' ? (
           <a className="button small" href={app.url}>
             Open
           </a>

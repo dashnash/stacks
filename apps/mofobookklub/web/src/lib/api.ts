@@ -101,9 +101,9 @@ export function createApi(client: Client) {
 
     members: () => request<{ users: (Person & { role: Role })[] }>('GET', '/users'),
     /** Admins: members and requests, from the platform. */
-    access: () => request<{ members: AccessPerson[]; pending: AccessPerson[] }>('GET', '/stacks/access'),
-    /** Admins: approve, change a role, or remove (null). The platform applies its rules (only owners make admins). */
-    setAccess: (email: string, role: Role | null) => request<unknown>('PUT', `/stacks/access/${encodeURIComponent(email)}`, { role }),
+    access: () => request<{ members: AccessPerson[]; pending: AccessPerson[]; blocked?: AccessPerson[] }>('GET', '/stacks/access'),
+    /** Admins: approve, change a role, remove (null) or block. The platform applies its rules (only owners make admins). */
+    setAccess: (email: string, role: Role | 'BLOCKED' | null) => request<unknown>('PUT', `/stacks/access/${encodeURIComponent(email)}`, { role }),
     /** Links to the platform portal (profile, all apps). */
     portal: () => request<{ portalUrl: string }>('GET', '/stacks/bar'),
     /** The activity log, newest first. `action` may be a prefix such as "comment". */

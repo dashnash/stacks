@@ -57,6 +57,7 @@ class DemoPlatform implements PlatformClient {
     private readonly personas: Persona[],
     private pendingPeople: { email: string; name: string }[],
   ) {}
+  private blockedPeople: { email: string; name: string }[] = [];
   /** Set by the demo when someone signs in, so the menu shows their role. */
   current: Persona | null = null;
   async account(): Promise<AccountData> {
@@ -74,15 +75,21 @@ class DemoPlatform implements PlatformClient {
   }
   async access(): Promise<AppAccess> {
     return {
-      members: this.personas.filter((p) => p.role).map((p) => ({ email: p.email, name: p.name, role: p.role, ...(p.pictureUrl ? { pictureUrl: p.pictureUrl } : {}) })),
+      members: this.personas.filter((p) => p.role && p.role !== 'BLOCKED').map((p) => ({ email: p.email, name: p.name, role: p.role, ...(p.pictureUrl ? { pictureUrl: p.pictureUrl } : {}) })),
       pending: this.pendingPeople.map((p) => ({ ...p, role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' })),
+      blocked: [
+        ...this.personas.filter((p) => p.role === 'BLOCKED').map((p) => ({ email: p.email, name: p.name, role: 'BLOCKED' })),
+        ...this.blockedPeople.map((p) => ({ ...p, role: 'BLOCKED' })),
+      ],
     };
   }
   async setAccess(_actor: string, email: string, role: string | null): Promise<void> {
-    const waiting = this.pendingPeople.find((p) => p.email === email);
+    const waiting = this.pendingPeople.find((p) => p.email === email) ?? this.blockedPeople.find((p) => p.email === email);
     this.pendingPeople = this.pendingPeople.filter((p) => p.email !== email);
+    this.blockedPeople = this.blockedPeople.filter((p) => p.email !== email);
     const persona = this.personas.find((p) => p.email === email);
     if (persona) persona.role = role ?? '';
+    else if (waiting && role === 'BLOCKED') this.blockedPeople.push(waiting);
     else if (waiting && role) this.personas.push({ ...waiting, role, blurb: 'just approved' });
   }
   async notify(email: string, text: string, link?: string): Promise<void> {

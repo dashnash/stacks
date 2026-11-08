@@ -42,7 +42,7 @@ import {
   storeAudit,
   userForIdentity,
 } from './core';
-import { appOrigin, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
+import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
 const CSRF_HEADER = 'x-stacks-request';
 const CODE_TTL_MS = 60_000;
@@ -77,7 +77,7 @@ export function createPlatformApp(deps: PlatformDeps) {
   async function accountFor(app: AppEntry, rawEmail: string): Promise<RouteResult> {
     const email = rawEmail.toLowerCase();
     const slug = app.manifest.slug;
-    const grants = (await grantsForUser(deps, email)).filter((g) => g.role !== PENDING);
+    const grants = (await grantsForUser(deps, email)).filter((g) => holdsRole(g.role));
     const apps = (await listApps(deps)).filter((a) => grants.some((g) => g.app === a.manifest.slug));
     const unread = (await listNotifications(deps, email)).filter((n) => !n.read).length;
     const role = grants.find((g) => g.app === slug)?.role;
@@ -140,7 +140,7 @@ export function createPlatformApp(deps: PlatformDeps) {
     url: `${appOrigin(deps.config, app.manifest.slug)}/`,
     status: app.status,
     access,
-    accessLabel: access && access !== PENDING ? (roleDef(app.manifest, access)?.label ?? access) : null,
+    accessLabel: holdsRole(access) ? (roleDef(app.manifest, access)?.label ?? access) : null,
     favorite,
   });
 
@@ -198,6 +198,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       }
       let grant = await getGrant(deps, slug, user.email);
       if (!grant) grant = await requestAccess(deps, user, app.manifest); // public: default role; private: pending request
+      if (grant.role === BLOCKED) return back({ error: 'access_denied' });
       if (grant.role === PENDING) return back({ error: 'access_pending' });
       const code = await issueCode(user, slug, redirectUri, challenge);
       return back({ code });
@@ -219,6 +220,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       let grant = await getGrant(deps, app.manifest.slug, user.email);
       if (!grant && app.manifest.visibility === 'public') grant = await requestAccess(deps, user, app.manifest);
       if (!grant) return answer({ error: 'access_required' });
+      if (grant.role === BLOCKED) return answer({ error: 'access_denied' });
       if (grant.role === PENDING) return answer({ error: 'access_pending' });
       return answer({ code: await issueCode(user, app.manifest.slug, redirectUri!, challenge), state });
     })
@@ -235,7 +237,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       if (base64url(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))) !== stored.challenge) throw invalid();
       const user = await getUser(deps, stored.email);
       const grant = user && (await getGrant(deps, app.manifest.slug, user.email));
-      if (!user || !grant || grant.role === PENDING) throw forbidden('No access to this app');
+      if (!user || !grant || !holdsRole(grant.role)) throw forbidden('No access to this app');
       return { body: { user: appView(user), role: grant.role } };
     })
     .add('POST', '/apps/:slug/audit', async (req) => {
@@ -269,7 +271,7 @@ export function createPlatformApp(deps: PlatformDeps) {
         .filter((p) => p.u)
         .map(({ g, u }) => ({ email: g.email, name: shownName(u!), ...(u!.pictureUrl ? { pictureUrl: u!.pictureUrl } : {}), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      return { body: { members: view.filter((p) => p.role !== PENDING), pending: view.filter((p) => p.role === PENDING) } };
+      return { body: { members: view.filter((p) => holdsRole(p.role)), pending: view.filter((p) => p.role === PENDING), blocked: view.filter((p) => p.role === BLOCKED) } };
     })
     // An app's own admin page changing a grant. The app vouches for the actor (from its session);
     // the platform still checks that the actor manages this app, with the same rules as the grid.
@@ -288,7 +290,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       const text = String(req.body.text ?? '').slice(0, 300);
       if (!email || !text) throw badRequest('"email" and "text" are required');
       const grant = await getGrant(deps, app.manifest.slug, email);
-      if (!grant || grant.role === PENDING) throw forbidden('Apps can only notify their own members');
+      if (!grant || !holdsRole(grant.role)) throw forbidden('Apps can only notify their own members');
       const link = typeof req.body.link === 'string' && req.body.link.startsWith(appOrigin(deps.config, app.manifest.slug)) ? req.body.link : `${appOrigin(deps.config, app.manifest.slug)}/`;
       await notify(deps, email, { text, link, app: app.manifest.slug });
       return { body: { ok: true } };

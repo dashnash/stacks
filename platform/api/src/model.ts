@@ -22,8 +22,15 @@ export function shownName(u: Pick<PlatformUser, 'name' | 'displayName' | 'email'
 
 export const MAX_DISPLAY_NAME = 30;
 export const PENDING = 'PENDING';
+/** Kept out of the app: no role, no auto-grant on a public app, no new requests on a private one. */
+export const BLOCKED = 'BLOCKED';
 
-/** One user's access to one app: a manifest role, or a pending request. */
+/** Does this grant give access (a manifest role), rather than a pending request or a block? */
+export function holdsRole(role: string | null | undefined): role is string {
+  return !!role && role !== PENDING && role !== BLOCKED;
+}
+
+/** One user's access to one app: a manifest role, a pending request, or a block. */
 export interface Grant {
   app: string;
   email: string;

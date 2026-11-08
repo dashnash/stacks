@@ -114,6 +114,7 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 .grid thead .sticky { z-index: 3; }
 .grid select { min-width: 110px; padding: 5px 8px; }
 .grid select.has-role { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+.grid select.blocked { border-color: var(--danger, #b42318); color: var(--danger, #b42318); font-weight: 600; }
 .person { display: flex; gap: 10px; align-items: center; font-weight: 500; }
 .pending-cell { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
 .grid.audit td { font-size: 0.9rem; }
