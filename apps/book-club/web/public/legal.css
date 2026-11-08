@@ -1,0 +1,33 @@
+/* Shared styles for the static legal pages (privacy.html, tos.html). Matches the app's poster look. */
+:root {
+  --ink: #111111;
+  --paper: #f4f1ea;
+  --coral: #ff5a47;
+  --muted: rgba(17, 17, 17, 0.7);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ink: #f4f1ea;
+    --paper: #151515;
+    --muted: rgba(244, 241, 234, 0.75);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.65 'Familjen Grotesk', system-ui, sans-serif;
+}
+header, main, footer { max-width: 46rem; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 28px; padding-bottom: 20px; border-bottom: 2px solid var(--ink); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.logo { font: 900 1.6rem/1 'Big Shoulders Display', Impact, sans-serif; text-transform: uppercase; color: var(--ink); text-decoration: none; }
+.logo em { font: italic 400 1.15em 'Instrument Serif', Georgia, serif; text-transform: none; color: var(--coral); }
+h1 { font: 900 clamp(2.8rem, 9vw, 4.5rem)/0.92 'Big Shoulders Display', Impact, sans-serif; text-transform: uppercase; margin: 40px 0 8px; }
+h2 { font: 800 1.6rem/1.1 'Big Shoulders Display', Impact, sans-serif; text-transform: uppercase; margin: 36px 0 8px; }
+.updated { font: italic 1.25rem 'Instrument Serif', Georgia, serif; color: var(--muted); margin: 0 0 24px; }
+a { color: inherit; text-decoration-color: var(--coral); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+ul { padding-left: 1.2rem; }
+li { margin: 4px 0; }
+.note { border: 2px solid var(--ink); padding: 12px 16px; margin: 24px 0; }
+footer { margin-top: 56px; padding-top: 20px; padding-bottom: 40px; border-top: 2px solid var(--ink); font-size: 0.9rem; color: var(--muted); display: flex; gap: 20px; flex-wrap: wrap; }

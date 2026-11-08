@@ -8,8 +8,10 @@
   },
   "workspaces": [
     "packages/*",
+    "packages/modules/*",
     "platform/*",
     "apps/*",
+    "tools/*",
     "infra"
   ],
   "scripts": {

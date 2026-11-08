@@ -1,0 +1,37 @@
+{
+  "name": "@stacks-apps/book-club",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config web/vite.config.ts",
+    "demo": "vite --config web/vite.demo.config.ts",
+    "build": "vite build --config web/vite.config.ts && vite build --config web/vite.demo.config.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@stacks/api": "*",
+    "@stacks/comments": "*",
+    "@stacks/demo": "*",
+    "@stacks/manifest": "*",
+    "@stacks/web": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@stacks/testing": "*",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/aws-lambda": "^8.10.145",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.19",
+    "vite": "^7.3.7"
+  }
+}

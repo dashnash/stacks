@@ -124,6 +124,11 @@ export function useStacks(): StacksContextValue {
   return ctx;
 }
 
+/** Like useStacks, but null outside a <StacksProvider> (for components tested with fakes). */
+export function useOptionalStacks(): StacksContextValue | null {
+  return useContext(StacksContext);
+}
+
 /** The API client for the app's own `/api`. */
 export function useApi(): Client {
   return useStacks().api;

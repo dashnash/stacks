@@ -1,0 +1,18 @@
+{
+  "name": "@stacks/comments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@stacks/api": "*"
+  },
+  "devDependencies": {
+    "@stacks/manifest": "*",
+    "@stacks/testing": "*"
+  }
+}

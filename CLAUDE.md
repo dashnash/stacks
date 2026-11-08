@@ -6,10 +6,10 @@ of truth for architecture, decisions and the phased build plan.
 
 ## Current state
 
-Phases 1 (Foundations) and 2 (Platform) are built: `packages/*` (SDK), `platform/api` (Platform
-API), `platform/web` (portal), the `hello` reference app, `infra/` (CDK app) and the workflows.
-The phase 2 gate passes in memory; it still needs a staging run after `docs/SETUP.md`. Next is
-**Phase 3 — Book Club migration**.
+Phases 1-3 are built: `packages/*` (SDK) and `packages/modules/comments`, `platform/api` and
+`platform/web`, the `hello` and `book-club` apps, `tools/migrate-book-club`, `infra/` and the
+workflows. The Book Club cut-over itself is run by Dash (`docs/BOOK_CLUB_MIGRATION.md`). Next is
+**Phase 4 — `/new-app`**.
 
 ## Commands
 
@@ -20,7 +20,9 @@ The phase 2 gate passes in memory; it still needs a staging run after `docs/SETU
 ## Where things are
 
 - Package APIs: `packages/*/README.md` (read these, not the source, when building an app)
-- Worked example: `apps/hello/` (manifest, `api/routes.ts`, `api/demo-data.ts`, `web/src/App.tsx`, tests)
+- Worked examples: `apps/hello/` (small: manifest, `api/routes.ts`, `api/demo-data.ts`, `web/src/App.tsx`, tests)
+  and `apps/book-club/` (large: comments module, content bucket, admin page on `/stacks/access`)
+- Media of real people (photos) never goes in git: it lives in the app's content bucket.
 
 ## Reference implementation
 

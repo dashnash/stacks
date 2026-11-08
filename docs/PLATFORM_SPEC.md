@@ -391,13 +391,22 @@ Phase 2 build notes:
 - **Portal bar**: a React component in `@stacks/web`, rendered by `<StacksProvider>`. It gets its data from the app's own `/api/stacks/bar`, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed.
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
 
-**Phase 3 — Book Club migration**
+**Phase 3 — Book Club migration** (built; cut-over run by Dash, `docs/BOOK_CLUB_MIGRATION.md`)
 
-- [ ] `apps/book-club` on the SDK and shared modules
-- [ ] Migration script, dry run on a copy of production data
+- [x] `apps/book-club` on the SDK and shared modules
+- [x] Migration script (`tools/migrate-book-club`); dry run on a copy of production data is the first cut-over step
 - [ ] Production cut-over and redirect
 
 Gate: every existing member's data visible after sign-in; grid shows their roles.
+
+Phase 3 build notes:
+- **Votes stay in Book Club** for now: its votes are tied to The Lineup's key layout. A generic `votes` module is extracted in phase 4 with the other remaining modules.
+- **App admin pages manage access through the platform**: `GET /stacks/access` and `PUT /stacks/access/:email` in every app (approvers only) call the Platform API (`/api/apps/:slug/access`), which applies the grid's rules with the app vouching for the acting user.
+- **Members and names** come from the platform (`appMembers`, `getPeople` in `@stacks/api`, cached 30 s), so apps keep no user records. People who lose access show as "Former member".
+- **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
+- **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
+- The **portal bar** moved to the bottom-right: apps usually keep their own account menu top-right.
+- Book Club's `GOOGLE_BOOKS_API_KEY` is not wired yet; book sources work without it at a lower Google Books quota.
 
 **Phase 4 — `/new-app`**
 
@@ -424,3 +433,5 @@ These are defaulted as written above; change any by editing this spec or comment
 - [ ] Should private apps be listed in the catalog to everyone, or only the name and tagline with Request access? Default: listed with Request access.
 - [ ] SES: request production access now so `email` works on day one, or defer until an app needs it?
 - [ ] Who besides Dash is in `PLATFORM_ADMINS`?
+- [ ] Should public apps have a "blocked" state? Removing someone from a public app today only lasts until they sign in again (they get the default role back).
+- [ ] Book Club's old address: which domain, and redirect it to `book-club.<domain>`?

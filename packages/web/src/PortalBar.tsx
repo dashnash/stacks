@@ -30,7 +30,8 @@ function writeOpen(open: boolean) {
 }
 
 const font = '13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif';
-const shell: CSSProperties = { position: 'fixed', top: 10, right: 10, zIndex: 2147482000, font, color: '#111' };
+// Bottom-right: apps usually keep their own account menu at the top right.
+const shell: CSSProperties = { position: 'fixed', bottom: 12, right: 12, zIndex: 2147482000, font, color: '#111', display: 'flex', flexDirection: 'column-reverse', alignItems: 'flex-end' };
 const pill: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -46,7 +47,7 @@ const pill: CSSProperties = {
   color: '#111',
 };
 const panel: CSSProperties = {
-  marginTop: 6,
+  marginBottom: 6,
   width: 240,
   maxWidth: 'calc(100vw - 20px)',
   padding: 8,

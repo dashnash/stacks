@@ -19,7 +19,9 @@ export {
 export type { RouteResult } from './http';
 export type { AppConfig, AppDeps, StacksUser, Viewer } from './model';
 export { HttpPlatformClient, PlatformError } from './platform';
-export type { PlatformClient, PortalBarData } from './platform';
+export type { AppAccess, AppMember, PlatformClient, PortalBarData } from './platform';
+export { appMembers, forgetMembers, getPeople } from './people';
+export type { Person } from './people';
 export { Router } from './router';
 export type { HttpMethod, RequestContext } from './router';
 export { clearCookie, cookie, createSession, endSession, endUserSessions, readSession, SESSION_COOKIE, SESSION_IDLE_DAYS, userSessionsKey } from './session';

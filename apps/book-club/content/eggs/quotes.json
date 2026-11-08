@@ -1,0 +1,302 @@
+[
+  {
+    "id": "caterpillar",
+    "quote": "An explosive critique of early 19th-century agrarian policy disguised as a story about a hungry caterpillar.",
+    "characterName": "Chip Prescott IV"
+  },
+  {
+    "id": "moby-dick",
+    "quote": "Moby-Dick is, at its heart, a 600-page plea for better maritime HR practices.",
+    "characterName": "Tucker Vanderbilt, Sailing Club Commodore"
+  },
+  {
+    "id": "goodnight-moon",
+    "quote": "Goodnight Moon is the most chilling surveillance thriller of the century. Note how nothing in that room escapes being catalogued.",
+    "characterName": "Brody McAllister"
+  },
+  {
+    "id": "hamlet",
+    "quote": "Hamlet is a gripping workplace drama about a man who simply cannot reply to an email.",
+    "characterName": "Bradley Sinclair, CFA (Level I)"
+  },
+  {
+    "id": "pride-prejudice",
+    "quote": "Pride and Prejudice: a sweeping epic about real estate, with some dancing to pad the page count.",
+    "characterName": "Trip Harrington"
+  },
+  {
+    "id": "green-eggs",
+    "quote": "Green Eggs and Ham dismantles the entire food-safety regulatory apparatus in under 800 words. Terrifying.",
+    "characterName": "Hunter Davenport, Former D3 Lacrosse"
+  },
+  {
+    "id": "giving-tree",
+    "quote": "The Giving Tree is the only honest book ever written about venture capital.",
+    "characterName": "Chad Whitmore, Angel Investor"
+  },
+  {
+    "id": "gatsby",
+    "quote": "The Great Gatsby is a cautionary tale about what happens when you throw parties without checking the RSVPs.",
+    "characterName": "Skip Thornton-Wells, Nantucket Summers"
+  },
+  {
+    "id": "hobbit",
+    "quote": "The Hobbit is a searing indictment of unsolicited dinner guests and the collapse of the pantry-based economy.",
+    "characterName": "Connor \"Con Air\" Fitzgerald"
+  },
+  {
+    "id": "frankenstein",
+    "quote": "Frankenstein is a gentle romantic comedy about a man who should have read the terms and conditions.",
+    "characterName": "Brett Kensington, Patagonia Vest Ambassador"
+  },
+  {
+    "id": "war-and-peace",
+    "quote": "War and Peace is mostly a very long seating chart with occasional cannon fire.",
+    "characterName": "Grayson Ashby"
+  },
+  {
+    "id": "nineteen-eighty-four",
+    "quote": "1984 is a cozy domestic story about a man who just wants a quiet room and a nice diary.",
+    "characterName": "Tanner Whitfield"
+  },
+  {
+    "id": "lord-of-the-flies",
+    "quote": "Lord of the Flies is the definitive guide to group project dynamics.",
+    "characterName": "Preston Cole, Team Lead"
+  },
+  {
+    "id": "odyssey",
+    "quote": "The Odyssey is a ten-year travel blog by a man who refuses to ask for directions.",
+    "characterName": "Brock Lindgren"
+  },
+  {
+    "id": "little-women",
+    "quote": "Little Women is a tense corporate thriller about four sisters fighting over one Christmas budget.",
+    "characterName": "Teddy \"T-Bone\" Abernathy"
+  },
+  {
+    "id": "charlottes-web",
+    "quote": "Charlotte's Web is the most effective PR campaign in agricultural history.",
+    "characterName": "Wyatt Chadwick, Marketing (Brand Side)"
+  },
+  {
+    "id": "the-road",
+    "quote": "The Road is an aspirational van-life memoir. Light on amenities, big on vibes.",
+    "characterName": "\"Big Mike\" Donnelly"
+  },
+  {
+    "id": "don-quixote",
+    "quote": "Don Quixote is about a man who took a LinkedIn post about slaying your dragons far too literally.",
+    "characterName": "Carter Rhodes, Golf Membership Pending"
+  },
+  {
+    "id": "catcher-in-the-rye",
+    "quote": "The Catcher in the Rye is a three-day Yelp review of New York City.",
+    "characterName": "Beau Whitaker"
+  },
+  {
+    "id": "jane-eyre",
+    "quote": "Jane Eyre is a property-disclosure horror story. Always ask about the attic.",
+    "characterName": "Sterling Hayes, Realtor"
+  },
+  {
+    "id": "alice-in-wonderland",
+    "quote": "Alice in Wonderland is a scathing exposé of unregulated food and beverage labeling.",
+    "characterName": "Parker Sloane"
+  },
+  {
+    "id": "crime-and-punishment",
+    "quote": "Crime and Punishment is 500 pages of a man overthinking a text he already sent.",
+    "characterName": "Davis Whitley"
+  },
+  {
+    "id": "where-the-wild-things-are",
+    "quote": "Where the Wild Things Are follows a boy who got sent to his room and came out with a startup.",
+    "characterName": "Reed Montgomery, Founder & CEO"
+  },
+  {
+    "id": "cat-in-the-hat",
+    "quote": "The Cat in the Hat is a cautionary tale about letting a consultant into your house.",
+    "characterName": "Spencer Prentiss, Strategy Associate"
+  },
+  {
+    "id": "of-mice-and-men",
+    "quote": "Of Mice and Men is the best book ever written about a roommate's big plans for rabbits.",
+    "characterName": "Chase Brennan"
+  },
+  {
+    "id": "dracula",
+    "quote": "Dracula is the story of a landlord who absolutely will not stop texting.",
+    "characterName": "Mason Kellerman"
+  },
+  {
+    "id": "old-man-and-the-sea",
+    "quote": "The Old Man and the Sea is a brutal one-star review of a fishing charter.",
+    "characterName": "Colby Hastings"
+  },
+  {
+    "id": "romeo-and-juliet",
+    "quote": "Romeo and Juliet is a three-day situationship that got wildly out of hand.",
+    "characterName": "Hayden Pruitt"
+  },
+  {
+    "id": "little-prince",
+    "quote": "The Little Prince is a sharp critique of a portfolio concentrated in exactly one rose.",
+    "characterName": "Bennett Ashford, Wealth Management"
+  },
+  {
+    "id": "robinson-crusoe",
+    "quote": "Robinson Crusoe is the original \"taking some time for myself\" post.",
+    "characterName": "Cole Sutherland"
+  },
+  {
+    "id": "metamorphosis",
+    "quote": "The Metamorphosis is a workplace story about a man whose boss is mainly upset he missed the 7am train.",
+    "characterName": "Garrett Lowell"
+  },
+  {
+    "id": "ulysses",
+    "quote": "Ulysses is the single greatest novel ever written about running errands.",
+    "characterName": "Fitz Carrington"
+  },
+  {
+    "id": "pinocchio",
+    "quote": "Pinocchio is a gripping legal drama about the admissibility of nasal evidence.",
+    "characterName": "Lawson Pierce, JD Candidate"
+  },
+  {
+    "id": "the-giver",
+    "quote": "The Giver is about a guy who finally finds the color settings.",
+    "characterName": "Drew Hollister"
+  },
+  {
+    "id": "treasure-island",
+    "quote": "Treasure Island is a sobering look at what happens when you crowdsource a retirement plan.",
+    "characterName": "Holt Wexford"
+  },
+  {
+    "id": "sense-and-sensibility",
+    "quote": "Sense and Sensibility is two sisters sharing one Notes app full of red flags.",
+    "characterName": "Jameson \"Jamo\" Reilly"
+  },
+  {
+    "id": "heart-of-darkness",
+    "quote": "Heart of Darkness is a corporate offsite that went extremely off-agenda.",
+    "characterName": "Thatcher Bainbridge"
+  },
+  {
+    "id": "animal-farm",
+    "quote": "Animal Farm is the most accurate set of HOA meeting minutes ever published.",
+    "characterName": "Cooper Langford, HOA Treasurer"
+  },
+  {
+    "id": "peter-pan",
+    "quote": "Peter Pan is about a man who never moved out of his college town, and honestly, respect.",
+    "characterName": "Ryder Kincaid"
+  },
+  {
+    "id": "harry-potter",
+    "quote": "Harry Potter is seven books about a boy who gets into an elite school on a legacy admission.",
+    "characterName": "Archer Delaney"
+  },
+  {
+    "id": "hunger-games",
+    "quote": "The Hunger Games is the most thorough critique of reality TV casting practices ever written.",
+    "characterName": "Landon Briggs"
+  },
+  {
+    "id": "three-little-pigs",
+    "quote": "The Three Little Pigs is a dense treatise on residential building codes.",
+    "characterName": "Graham Pembroke, Real Estate Development"
+  },
+  {
+    "id": "goldilocks",
+    "quote": "Goldilocks and the Three Bears is the first recorded Airbnb dispute.",
+    "characterName": "Blake Huntington"
+  },
+  {
+    "id": "the-raven",
+    "quote": "The Raven is about a man haunted by a bird with exactly one talking point.",
+    "characterName": "Tate Maxwell"
+  },
+  {
+    "id": "gullivers-travels",
+    "quote": "Gulliver's Travels is a frequent-flyer memoir in which every lounge is the wrong size.",
+    "characterName": "Brooks Ellington, Platinum Medallion"
+  },
+  {
+    "id": "waiting-for-godot",
+    "quote": "Waiting for Godot is two hours of men waiting for the group chat organizer to show up.",
+    "characterName": "Grant Holloway"
+  },
+  {
+    "id": "tortoise-and-hare",
+    "quote": "The Tortoise and the Hare is a pointed critique of sprinting a marathon after one spin class.",
+    "characterName": "Logan Mercer"
+  },
+  {
+    "id": "scarlet-letter",
+    "quote": "The Scarlet Letter is the first recorded case of a personal brand going viral.",
+    "characterName": "Pierce Langley"
+  },
+  {
+    "id": "great-expectations",
+    "quote": "Great Expectations is the definitive text on networking upward.",
+    "characterName": "Hollis Kingsley"
+  },
+  {
+    "id": "wizard-of-oz",
+    "quote": "The Wizard of Oz is an exposé of a C-suite that turns out to be one guy behind a curtain.",
+    "characterName": "Mac Sterling, Chief of Staff"
+  },
+  {
+    "id": "christmas-carol",
+    "quote": "A Christmas Carol is a three-step performance improvement plan.",
+    "characterName": "Whit Ashcombe"
+  },
+  {
+    "id": "jurassic-park",
+    "quote": "Jurassic Park is a cautionary tale about skipping the risk committee.",
+    "characterName": "Rhett Calloway, Risk & Compliance"
+  },
+  {
+    "id": "princess-and-the-pea",
+    "quote": "The Princess and the Pea is the most important mattress review ever written.",
+    "characterName": "Tyler \"Ty\" Bancroft"
+  },
+  {
+    "id": "rapunzel",
+    "quote": "Rapunzel is a nuanced look at a long-term lease with a very difficult landlord.",
+    "characterName": "Easton Pryor"
+  },
+  {
+    "id": "monte-cristo",
+    "quote": "The Count of Monte Cristo is a 1,200-page revenge plan that could have been an email.",
+    "characterName": "Callum Ashworth"
+  },
+  {
+    "id": "boy-who-cried-wolf",
+    "quote": "The Boy Who Cried Wolf is a landmark study in alert fatigue.",
+    "characterName": "Nolan Hartwell, DevOps"
+  },
+  {
+    "id": "hansel-and-gretel",
+    "quote": "Hansel and Gretel is a cautionary tale about the free snacks at a recruiting event.",
+    "characterName": "Sawyer Whitcombe"
+  },
+  {
+    "id": "sun-also-rises",
+    "quote": "The Sun Also Rises is just a bachelor party that lasts an entire book.",
+    "characterName": "Jett Calder"
+  },
+  {
+    "id": "winnie-the-pooh",
+    "quote": "Winnie-the-Pooh is a fearless investigation into one bear's honey supply chain.",
+    "characterName": "Ford Lindsey"
+  },
+  {
+    "id": "secret-garden",
+    "quote": "The Secret Garden is a quietly ruthless story about a hostile takeover of the landscaping.",
+    "characterName": "Dalton Price, Private Equity"
+  }
+]
