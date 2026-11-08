@@ -308,7 +308,21 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 - `ci.yml` on every PR: install, lint (incl. the import rule and the path guard for app branches), typecheck, tests for changed workspaces, manifest validation, `cdk synth` of changed stacks.
 - `deploy.yml` on `main`: deploy `platform` first if `platform/`, `packages/` or `infra/` changed, then each changed `app-<slug>` stack in parallel (max 4). A packages change redeploys all apps.
 - `deploy-test.yml`: same steps against the staging context; posts the URL as the run summary.
-- Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). The prod role trusts only `main`; the staging role trusts any branch.
+- Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
+
+**Staging deploys without AWS credentials**
+
+Developers and Claude sessions never hold AWS credentials; anyone with push access starts a staging deploy with `gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>`, and GitHub OIDC gives the workflow 1-hour credentials. Because a dispatched workflow normally runs the branch's own copy of the workflow file, and app code runs during install and synth, the pipeline is built so no branch code ever runs next to credentials:
+
+| Control | Rule |
+| --- | --- |
+| Workflow from `main` | `deploy-test.yml` is always dispatched on `main`; the branch is only an input. The staging IAM role trusts only `repo:dashnash/stacks:environment:staging`, and the `staging` GitHub environment allows only `main`. |
+| Build and deploy split | Job 1 checks out the branch, installs, tests and synthesizes the cloud assembly with no AWS credentials (no CDK context lookups; config comes from `stacks.config.json`). Job 2 alone gets credentials and runs no app code: only `cdk deploy --app <assembly>`. |
+| Assembly check | Job 2 refuses an assembly containing any stack other than `app-<slug>-test`, or IAM resources outside the allowed name patterns. |
+| Permissions boundary | The staging CDK deploy and execution roles are limited by a boundary to `stacks-test-*` resources and cannot create IAM users or touch production resources. |
+| Production | The prod role trusts only the `production` environment, which allows only `main`. |
+
+One AWS account is kept on purpose; these controls are the isolation. If a Claude session cannot dispatch workflows through its GitHub proxy (check in phase 1), pushing a `test/<slug>` branch triggers the same `main`-hosted pipeline.
 
 **Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId`, `googleClientId`, `platformAdmins`. Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
 
@@ -337,7 +351,7 @@ The design assumes any single app may be buggy or malicious and limits what it c
 
 - **Sessions**: master session cookie `__Host-stacks` on `auth.<domain>` only. App sessions are opaque 256-bit tokens in an HttpOnly, Secure, `SameSite=Lax`, host-only cookie on the app's own subdomain. Only SHA-256 hashes are stored. No tokens in `localStorage` (a change from Book Club).
 - **Handshake**: `state` and PKCE-style verifier, single-use authorization codes valid 60 seconds, `redirect_uri` must equal a registered app's origin, codes bound to the app slug.
-- **IAM**: each app Lambda can read and write only its own table and buckets; it reaches the platform only through the platform API with a per-app credential, never the platform table directly. Audit writes are restricted to that app's partition.
+- **IAM**: each app Lambda can read and write only its own table and buckets; it reaches the platform only through the platform API with a per-app credential, never the platform table directly. Audit writes are restricted to that app's partition. CI deploy roles follow the staging rules under Environments and CI/CD, including a permissions boundary on the staging role.
 - **CSRF**: state-changing app routes need the cookie plus a custom header (`X-Stacks-Request: 1`) added by `@stacks/web`; CORS stays off because API and SPA share an origin.
 - **Headers**: CSP per app (default from Book Club's policy plus manifest additions), HSTS, `nosniff`, `frame-ancestors 'none'`, strict referrer policy.
 - **Throttling**: API Gateway rate limits per app; the platform API has its own, tighter limits on login and request-access.
