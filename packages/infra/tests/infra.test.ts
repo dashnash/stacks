@@ -181,4 +181,21 @@ describe('CiStack', () => {
     });
     template.hasResourceProperties('AWS::IAM::ManagedPolicy', { ManagedPolicyName: 'stacks-test-boundary' });
   });
+
+  it('trusts the immutable subject claim when the repo uses one', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(
+      new CiStack(app, 'stacks-ci', { githubRepo: 'dashnash/stacks', githubSubjectPrefix: 'repo:dashnash@3804293/stacks@1449992124', region: 'us-east-1' }),
+    );
+    template.hasResourceProperties('AWS::IAM::Role', {
+      RoleName: 'stacks-ci-production',
+      AssumeRolePolicyDocument: {
+        Statement: [
+          Match.objectLike({
+            Condition: { StringEquals: Match.objectLike({ 'token.actions.githubusercontent.com:sub': 'repo:dashnash@3804293/stacks@1449992124:environment:production' }) },
+          }),
+        ],
+      },
+    });
+  });
 });

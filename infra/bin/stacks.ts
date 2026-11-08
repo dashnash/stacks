@@ -23,7 +23,7 @@ const envName = (app.node.tryGetContext('env') ?? 'staging') as EnvName;
 if (envName !== 'staging' && envName !== 'production') throw new Error('-c env must be staging or production');
 
 if (app.node.tryGetContext('ci') === 'true') {
-  new CiStack(app, 'stacks-ci', { githubRepo: config.githubRepo, region: config.region });
+  new CiStack(app, 'stacks-ci', { githubRepo: config.githubRepo, githubSubjectPrefix: config.githubSubjectPrefix, region: config.region });
 } else if (app.node.tryGetContext('only') === 'platform') {
   new PlatformStack(app, { envName, env: config.environments[envName], region: config.region, repoRoot });
 } else {
