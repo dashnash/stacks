@@ -99,6 +99,11 @@ async function screenshots(): Promise<void> {
   }
   process.stdout.write('• screenshots … ');
   const { personas } = (await import(pathToFileURL(path.join(appDir, 'api/demo-data.ts')).href)) as { personas: { email: string; name: string; role: string }[] };
+  // Inner pages the app asks for (web/src/demo/pages.ts), shot signed in.
+  const pagesFile = path.join(appDir, 'web/src/demo/pages.ts');
+  const extraPages = existsSync(pagesFile)
+    ? ((await import(pathToFileURL(pagesFile).href)) as { screenshotPages?: { name: string; hash: string; as?: string[] }[] }).screenshotPages ?? []
+    : [];
   const outDir = path.join(appDir, '.stacks/screenshots');
   mkdirSync(outDir, { recursive: true });
   const { server, url } = await serve(path.join(appDir, 'web/dist-demo'));
@@ -106,13 +111,20 @@ async function screenshots(): Promise<void> {
   const problems: string[] = [];
   const shots: string[] = [];
   try {
-    const who = [{ id: 'signed-out', as: null as string | null }, ...personas.map((p) => ({ id: `${p.role.toLowerCase()}-${p.name.toLowerCase()}`, as: p.email }))];
+    const personaId = (p: { role: string; name: string }) => `${p.role.toLowerCase()}-${p.name.toLowerCase()}`;
+    const who: { id: string; as: string | null; hash: string }[] = [
+      { id: 'signed-out', as: null, hash: '' },
+      ...personas.map((p) => ({ id: personaId(p), as: p.email, hash: '' })),
+      ...extraPages.flatMap((page) =>
+        personas.filter((p) => !page.as || page.as.includes(p.email)).map((p) => ({ id: `${page.name}-${personaId(p)}`, as: p.email, hash: page.hash.startsWith('#') ? page.hash : `#${page.hash}` })),
+      ),
+    ];
     for (const viewport of [{ id: 'desktop', width: 1280, height: 800 }, { id: 'phone', width: 390, height: 844 }]) {
       for (const w of who) {
         const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
         page.on('pageerror', (e) => problems.push(`${w.id}/${viewport.id}: ${e.message}`));
         page.on('console', (m) => m.type() === 'error' && problems.push(`${w.id}/${viewport.id}: console: ${m.text()}`));
-        await page.goto(`${url}/demo.html${w.as ? `?as=${encodeURIComponent(w.as)}` : ''}`);
+        await page.goto(`${url}/demo.html${w.as ? `?as=${encodeURIComponent(w.as)}` : ''}${w.hash}`);
         await page.waitForSelector(w.as ? '[data-stacks-account-menu="signedIn"]' : '[data-stacks-account-menu="signedOut"]', { timeout: 15_000 }).catch(() => problems.push(`${w.id}/${viewport.id}: the account menu never showed the expected state`));
         await page.waitForTimeout(400);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);

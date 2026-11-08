@@ -94,7 +94,11 @@ Then replace the starter notes feature (`templates/app/README.md` lists what to 
   the SDK helpers; add `{ audit: '<thing>.<verb>' }` to every change. Design keys for the single table
   (`PK`/`SK`, `GSI1PK`/`GSI1SK`) around how screens read data. Public routes never return emails.
 - **Demo data** (`api/demo-data.ts`): keep one persona per role (top role first); seed realistic,
-  friendly sample data so every screen has something on it.
+  friendly sample data so every screen has something on it. Dates relative to `deps.now()`, with
+  times set in local time (`setHours`, not `setUTCHours`): the demo runs in the visitor's browser.
+  Use fixed, readable ids for seeded records (`'harvest'`) so pages can be linked.
+- **Pages to check** (`web/src/demo/pages.ts`): list the main inner pages by hash
+  (`{ name: 'event', hash: '#/e/harvest' }`) so `verify-app` screenshots them too.
 - **UI** (`web/src/`): any layout or style the brief asks for. Phone first. Real labels on inputs and
   buttons (tests and screen readers use them). Use `useHashRoute` for pages.
 - **Tests**: an API test per route (who may and may not call it, validation, audit) and UI tests for
@@ -122,19 +126,25 @@ Iterate: change → `verify-app` → show. Then `npm run app-usage -- <slug> ver
 ```bash
 git add apps/<slug> package-lock.json && git commit -m "<Name>: first version"
 git push -u origin <branch>
-gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>
-gh run list --workflow deploy-test.yml --limit 1   # then: gh run watch <id> --exit-status
+gh api -X POST repos/dashnash/stacks/actions/workflows/deploy-test.yml/dispatches \
+  -f ref=main -f "inputs[app]=<slug>" -f "inputs[ref]=<branch>"
+gh api "repos/dashnash/stacks/actions/workflows/deploy-test.yml/runs?per_page=1" --jq '.workflow_runs[0] | [.id, .status] | @tsv'
+# wait: gh api repos/dashnash/stacks/actions/runs/<id> --jq '[.status, .conclusion] | @tsv'
 ```
+
+Use `gh api` (REST), not `gh workflow run` / `gh run watch`: cloud sessions block GitHub's GraphQL
+API, which those commands use.
 
 When it's green, the app is at `https://<slug>.test.iamdashnash.com` (staging `rootDomain` in
 `stacks.config.json`). It uses the real Google sign-in and the test platform's data, which is
-separate from production. If the run fails, read only the failing step's log
-(`gh run view <id> --log-failed | tail -60`), fix, push, and run it again. Then
+separate from production. If the run fails, read only the failing job's log
+(`gh api repos/dashnash/stacks/actions/jobs/<job id>/logs | tail -60`; job ids from
+`…/runs/<id>/jobs`), fix, push, and run it again. Then
 `npm run app-usage -- <slug> stage`.
 
 ## 6. Ship
 
-Open a PR from the app branch: title `New app: <Name>`. In the body: the tagline, who it's for, the
+Open a PR from the app branch (`gh api repos/dashnash/stacks/pulls -f title=… -f head=<branch> -f base=main -f body=…`): title `New app: <Name>`. In the body: the tagline, who it's for, the
 roles, what it tracks, the test-site link, and anything someone must do by hand (for example each
 secret's `aws ssm put-parameter` command from `docs/SETUP.md` §7: Dash runs those, never the
 creator). Commit `apps/<slug>/.stacks/usage.json` with it. `npm run app-usage -- <slug> ship`.

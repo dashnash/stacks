@@ -91,7 +91,8 @@ export function scaffold(opts: { repoRoot: string; slug: string; flags?: NewAppF
   const manifestFile = path.join(dir, 'app.manifest.json');
 
   if (existsSync(dir)) {
-    const extra = listFiles(dir).filter((f) => !KEEP.has(f));
+    // The interview may also have started the usage log (.stacks/).
+    const extra = listFiles(dir).filter((f) => !KEEP.has(f) && !f.startsWith('.stacks/'));
     if (extra.length) throw new Error(`apps/${slug} already has files (${extra.slice(0, 3).join(', ')}${extra.length > 3 ? ', …' : ''}); the scaffold only fills a new app`);
   }
 

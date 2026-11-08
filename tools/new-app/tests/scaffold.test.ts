@@ -49,6 +49,8 @@ describe('scaffold (fast)', () => {
     mkdirSync(dir);
     writeFileSync(path.join(dir, 'app.manifest.json'), JSON.stringify({ ...threeRoles, name: 'Pot <luck>' }));
     writeFileSync(path.join(dir, 'BRIEF.md'), '# Our brief');
+    mkdirSync(path.join(dir, '.stacks'));
+    writeFileSync(path.join(dir, '.stacks/usage.json'), '{"entries":[]}');
     const result = scaffold({ repoRoot: root, slug: 'potluck' });
     expect(result.kept.sort()).toEqual(['BRIEF.md', 'app.manifest.json']);
     expect(readFileSync(path.join(dir, 'BRIEF.md'), 'utf8')).toBe('# Our brief');

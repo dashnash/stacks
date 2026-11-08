@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -17,7 +17,8 @@ interface AppSetup {
 
 const setups = import.meta.glob<AppSetup>('../../../apps/*/web/src/demo/setup.ts');
 const appsDir = path.resolve(__dirname, '../../../apps');
-const appDirs = readdirSync(appsDir).filter((d) => statSync(path.join(appsDir, d)).isDirectory());
+// An app is a folder with a manifest (as infra/ sees it); leftover build output alone doesn't count.
+const appDirs = readdirSync(appsDir).filter((d) => statSync(path.join(appsDir, d)).isDirectory() && existsSync(path.join(appsDir, d, 'app.manifest.json')));
 
 it('every app exports web/src/demo/setup.ts', () => {
   const found = Object.keys(setups).map((p) => p.split('/apps/')[1]!.split('/')[0]);
