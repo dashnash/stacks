@@ -20,9 +20,17 @@ For each environment: `rootDomain` (apps live at `<slug>.<rootDomain>`), the Rou
 The real secrets never touch the repo: AWS access comes from GitHub OIDC (no stored keys), and each
 app's Platform API credential is generated inside AWS Secrets Manager by its stack.
 
-Until the platform stack exists (phase 2), leave `hostedZoneId` empty: apps are then served on
-their CloudFront domain instead of `<slug>.<rootDomain>`, because the wildcard certificate is
-created by the platform stack.
+`hostedZoneId` must be set for sign-in to work across apps: the platform stack creates the
+wildcard certificate (`*.<rootDomain>`) and the `auth.` and app hostnames in that zone. With it
+empty, stacks still synth and deploy on CloudFront's own domains, which is only useful for smoke tests.
+
+## 1b. Google OAuth client (one per environment)
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an **OAuth client
+ID** of type **Web application** for each environment. Under **Authorised JavaScript origins** add
+exactly one origin: `https://auth.<rootDomain>` (e.g. `https://auth.iamdashnash.com` and
+`https://auth.test.iamdashnash.com`). No redirect URIs and no client secret are needed; apps never
+talk to Google. Put each client ID in `googleClientId`.
 
 ## 2. Bootstrap production and deploy the CI stack
 
@@ -56,7 +64,13 @@ Staging deploys can now only do what `stacks-test-cfn-exec` allows: no IAM users
   `AWS_STAGING_ROLE_ARN` / `AWS_PRODUCTION_ROLE_ARN` with the ARN from step 2.
 - **Branch protection on `main`**: require the `CI / check` status and review from code owners.
 
-## 5. Try it
+## 5. First deploy
+
+Merge to `main` (or re-run the **Deploy** workflow). It deploys `stacks-test-platform`, then
+`stacks-prod-platform`, then every production app. The first platform deploy waits for the
+certificate's DNS validation (a few minutes). Then open `https://auth.<rootDomain>`.
+
+## 6. Try a staging app deploy
 
 ```bash
 gh workflow run deploy-test.yml -f app=hello -f ref=main

@@ -6,14 +6,15 @@ of truth for architecture, decisions and the phased build plan.
 
 ## Current state
 
-Phase 1 (Foundations) is built: `packages/{manifest,api,web,testing,demo,infra}`, the `hello`
-reference app, `infra/` (CDK app), the CI and deploy workflows, and `docs/SETUP.md`. Next is
-**Phase 2 — Platform**. Work phase by phase; do not start a phase until the previous gate is shown.
+Phases 1 (Foundations) and 2 (Platform) are built: `packages/*` (SDK), `platform/api` (Platform
+API), `platform/web` (portal), the `hello` reference app, `infra/` (CDK app) and the workflows.
+The phase 2 gate passes in memory; it still needs a staging run after `docs/SETUP.md`. Next is
+**Phase 3 — Book Club migration**.
 
 ## Commands
 
 - `npm test`, `npm run typecheck`, `npm run lint` (import rule), `npm run build`
-- `npm run demo -w apps/<slug>`: the app's in-browser demo
+- `npm run demo -w apps/<slug>`: the app's in-browser demo; `npm run demo -w platform/web`: the portal's
 - `cd infra && npx cdk synth -c env=staging [-c app=<slug>]`: no AWS credentials needed
 
 ## Where things are
