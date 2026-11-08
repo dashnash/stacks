@@ -6,9 +6,10 @@ of truth for architecture, decisions and the phased build plan.
 
 ## Current state
 
-Phases 1-3 are built: `packages/*` (SDK) and `packages/modules/comments`, `platform/api` and
-`platform/web`, the `hello` and `book-club` apps, `tools/migrate-book-club`, `infra/` and the
-workflows. The Book Club cut-over itself is run by Dash (`docs/BOOK_CLUB_MIGRATION.md`). Next is
+Phases 1-3 are built and live: `packages/*` (SDK) and `packages/modules/comments`, `platform/api`
+and `platform/web`, the `hello` and `mofobookklub` apps, `infra/` and the workflows. The Book Club
+cut-over is done: production runs at mofobookklub.iamdashnash.com on Stacks and its data was
+migrated with `tools/migrate-book-club` (`docs/BOOK_CLUB_MIGRATION.md`). Next is
 **Phase 4 — `/new-app`**.
 
 ## Commands

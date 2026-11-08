@@ -1,5 +1,8 @@
 # Book Club cut-over
 
+> **Done on 2026-11-08.** Steps 1-5 are complete. Remaining: step 6 (retire the old site) after
+> 2026-12-08. Kept as the pattern for migrating other existing apps.
+
 Moves the MOFO Book Club Portal (`BookClubStack`, repo `dashnash/MofoBookKlubPortal`) onto Stacks
 as `apps/mofobookklub`, **keeping its address `https://mofobookklub.iamdashnash.com`**. Run every
 AWS command on your own machine with admin credentials (`export AWS_PROFILE=admin AWS_REGION=us-east-1`),
