@@ -13,7 +13,7 @@ createRoot(el).render(<DemoApp demo={demo}><App /></DemoApp>);
 - `seed(deps)`: write sample data with `deps.store`. Runs on first load and on Reset.
 - Changes persist in localStorage (`storageKey: false` to disable).
 - `demo.signInAs(email | null)`, `demo.reset()` for scripted checks; `demo.html?as=<email>` opens the
-  demo signed in as that persona (`<DemoApp startAs>` overrides).
+  demo signed in as that persona (`<DemoApp startAs>` overrides); `window.__stacksDemo.personas` lists them.
 - The persona switcher and Reset live in the account menu ("Demo: try the app as").
 - Every app exports `App` and `demoOptions()` from `web/src/demo/setup.ts`; the demo entry and
   `tools/app-conformance` both use it.

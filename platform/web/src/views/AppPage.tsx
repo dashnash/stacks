@@ -1,6 +1,6 @@
 import { ErrorNote, Spinner, useAsync } from '@stacks/web';
 import { usePortal } from '../portal';
-import { accessBadge } from './Catalog';
+import { accessBadge, AppPreview } from './Catalog';
 
 /** An app's public page: what it is, and the way in. */
 export function AppPage({ slug }: { slug: string }) {
@@ -19,6 +19,7 @@ export function AppPage({ slug }: { slug: string }) {
       </p>
       <h1>{app.name}</h1>
       <p className="lead">{app.tagline}</p>
+      <AppPreview app={app} className="large" />
       <p>{app.description}</p>
       <p>
         <span className={`pill ${badge.tone}`}>{badge.text}</span>

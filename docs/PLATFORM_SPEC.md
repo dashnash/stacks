@@ -222,7 +222,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | Identity and sessions | `backend/src/auth/google.ts`, `auth/session.ts` | Google ID token verification, hashed master sessions, 90-day sliding expiry, the app handshake |
 | Global profile | `users/`, `shownName()`, `SettingsView` | Name, display name (30 chars), avatar; `GET /me` for apps |
 | Grants and requests | Book Club's PENDING flow, `admin/users/*` | Grant CRUD, request access, approve, revoke, auto-grant for public apps |
-| App registry and catalog | new | Registered from manifests on deploy; catalog page with search, categories, favorites, recently used |
+| App registry and catalog | new | Registered from manifests on deploy; catalog page with search, categories, favorites, recently used. Each card shows the app's preview (`https://<slug>.<domain>/preview.png`, written from the demo by `verify-app` into `web/public/`, demo data only; the initial on a tile when missing). Clicking a card opens the app (signed-out and no-access visitors get its landing page, which offers sign-in or Request access); **Details** opens the app's portal page |
 | Access grid | `AdminPanel.tsx` | Described under Access model |
 | Central audit feed | `audit/log.ts`, `run()` in `app.ts` | Every app event mirrored here; filter by app, actor, action |
 | Notifications and badges | new | In-app notifications per user (access requests, approvals, app-defined events); badge counts |
@@ -344,7 +344,8 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 **Guardrails for non-technical creators**
 
 - No AWS credentials in sessions; only CI deploys.
-- `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task; CI fails a PR from an app branch that touches `packages/`, `platform/`, `infra/` or another app.
+- `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task. CI's path check (`scripts/pr-paths.mjs`): a PR from an `app/<slug>/…` branch may change only `apps/<slug>/` (and the lockfile); any other PR that changes only `apps/` may change one app, never two; a PR that changes anything outside `apps/` is platform work for `CODEOWNERS` review. The check writes the PR's kind to the run summary.
+- Enforcement at merge needs branch protection (required checks and code-owner review), which GitHub offers for private repos only on paid plans. Until then these rules hold only if whoever merges follows them; keep merge rights to the platform owner.
 - The manifest schema caps CSP additions and module choices; anything else needs a platform PR.
 
 ## Environments and CI/CD
@@ -482,7 +483,7 @@ These are defaulted as written above; change any by editing this spec or comment
 - [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
 - [x] Book Club uses its slug host `mofobookklub.<domain>`, which is also its old address.
 - [x] Session lifetime: 90-day sliding expiry for both master and app sessions (as built).
-- [x] Private apps are listed in the catalog for everyone, with Request access (as built).
+- [x] Private apps are listed in the catalog for everyone; their card opens the app's landing page, which offers Request access.
 - [x] SES: deferred until an app needs email. The `email` module waits until then.
 - [x] `PLATFORM_ADMINS` is just Dash for now.
 - [x] Public (and private) apps have a `BLOCKED` grant state: see access rule 8.
