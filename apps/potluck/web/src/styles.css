@@ -80,3 +80,4 @@ legend { font-weight: 800; margin-bottom: 6px; }
 .dish-form { margin-top: 8px; background: var(--card); border: 2px solid var(--mustard); border-radius: 14px; padding: 12px; }
 .needs { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 .foot { margin-top: 48px; text-align: center; }
+.build { color: inherit; font-family: ui-monospace, Menlo, monospace; }

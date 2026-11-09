@@ -1,4 +1,4 @@
-import { AccountMenu, matchRoute, Spinner, useApi, useAsync, useHashRoute, useStacks } from '@stacks/web';
+import { AccountMenu, BuildVersion, matchRoute, Spinner, useApi, useAsync, useHashRoute, useStacks } from '@stacks/web';
 import { manifest } from '../../api/manifest';
 import { EditEvent, NewEvent } from './views/EventForm';
 import { EventList } from './views/EventList';
@@ -60,7 +60,9 @@ export function App() {
         <AccountMenu className="account" />
       </header>
       <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <SignedIn key={`${session.user.email}:${session.role}`} /> : <Landing />}</main>
-      <footer className="foot muted small">{manifest.name} · made for sharing</footer>
+      <footer className="foot muted small">
+        {manifest.name} · made for sharing · <BuildVersion className="build" />
+      </footer>
     </div>
   );
 }
