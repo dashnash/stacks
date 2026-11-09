@@ -52,6 +52,29 @@ function Header() {
   );
 }
 
+/** Which commit is deployed ("Build 1a2b3c4"), linking to it on GitHub when the repository is known. */
+export function BuildVersion({ sha = __BUILD_SHA__, commitUrl = __BUILD_COMMIT_URL__ }: { sha?: string; commitUrl?: string }) {
+  if (!sha) return null;
+  const label = `Build ${sha.slice(0, 7)}`;
+  return commitUrl ? (
+    <a href={commitUrl} target="_blank" rel="noopener noreferrer" className="build">
+      {label}
+    </a>
+  ) : (
+    <span className="build">{label}</span>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="foot">
+      <span>© {new Date().getFullYear()} Stacks</span>
+      <a href="#/">All apps</a>
+      <BuildVersion />
+    </footer>
+  );
+}
+
 export function App() {
   const { status } = usePortal();
   const { path, query } = useHash();
@@ -68,6 +91,7 @@ export function App() {
     <div className="shell">
       <Header />
       <main className="content">{view}</main>
+      <Footer />
     </div>
   );
 }
