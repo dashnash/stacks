@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ApiError } from '@stacks/web';
+import { ApiError, isMaintenance, MaintenanceNotice } from '@stacks/web';
 import type { Me, PortalApi } from './api';
 
 /** How people sign in: Google in production; named personas in the demo. */
@@ -19,12 +19,16 @@ const PortalContext = createContext<PortalContextValue | null>(null);
 export function PortalProvider({ api, signInMethod, children }: { api: PortalApi; signInMethod: SignInMethod; children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [status, setStatus] = useState<PortalContextValue['status']>('loading');
+  const [maintenance, setMaintenance] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setMe(await api.me());
+      setMaintenance(false);
       setStatus('signedIn');
     } catch (err) {
+      setMaintenance(isMaintenance(err));
+      if (isMaintenance(err)) return;
       if (!(err instanceof ApiError && err.status === 401)) console.error(err);
       setMe(null);
       setStatus('signedOut');
@@ -51,7 +55,7 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
     }),
     [api, me, status, signInMethod, refresh],
   );
-  return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
+  return <PortalContext.Provider value={value}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</PortalContext.Provider>;
 }
 
 export function usePortal(): PortalContextValue {

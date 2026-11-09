@@ -146,8 +146,8 @@ describe('access grid', () => {
       {
         isPlatformAdmin: true,
         apps: [{ slug: 'a', name: 'A', status: 'live', topRole: 'O', defaultRole: 'M', roles: [], canManageApprovers: true }],
-        users: [{ email: 'x@y.z', name: 'Lee, Jo', pictureUrl: null }],
-        grants: [{ app: 'a', email: 'x@y.z', role: 'M', requestedAt: null, grantedAt: null }],
+        users: [{ id: 'u_x', email: 'x@y.z', name: 'Lee, Jo', pictureUrl: null }],
+        grants: [{ app: 'a', userId: 'u_x', role: 'M', requestedAt: null, grantedAt: null }],
       },
       [{ slug: 'a', name: 'A', status: 'live', topRole: 'O', defaultRole: 'M', roles: [], canManageApprovers: true }],
     );

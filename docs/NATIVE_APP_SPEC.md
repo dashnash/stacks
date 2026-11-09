@@ -240,15 +240,21 @@ switch from emails to display names in N1.
 
 **Cut-over (one coordinated migration, like the Book Club one)**
 
+Runbook: `docs/USER_IDS_CUTOVER.md`.
+
 1. Ship SDK and platform code that read and write IDs, plus `tools/migrate-user-ids`.
-2. Every app provides `apps/<slug>/migrations/user-ids.ts`: a pure, tested function that rewrites
-   that app's items given an `email → userId` map (the template gets one; `hello`, `flippy-work-table`,
-   `mofobookklub` and the comments module are written as part of this phase).
-3. A `maintenance` flag in `stacks.config.json` puts the platform and apps into read-only mode
-   ("Back in a few minutes"); deploy.
-4. Dash runs the tool with admin credentials: `--dry-run` on staging, then on a copy of production,
-   then production. It assigns IDs, writes identities and the email index, rewrites grants,
-   notifications and audit actors, runs every app's migration, and drops all sessions.
+2. Every app that stored emails provides `apps/<slug>/api/migrations/user-ids.ts` (`migrate`, an
+   `ItemMigration` composed from the SDK's, its modules' and its own); `hello`, `flippy-work-table`,
+   `mofobookklub` and the comments module have one. New apps (and the template) need none: they never
+   stored emails.
+3. A `maintenance` flag per environment in `stacks.config.json` makes the platform and every app API
+   answer 503 (except health checks) and their pages show "Back in a few minutes". The same PR turns
+   it on, so the merge deploys straight into maintenance.
+4. Dash runs the tool with admin credentials: `--dry-run` against both environments *before* merging
+   (it only reads), then for real on staging, then production. It assigns IDs, writes the email index,
+   rewrites grants, notifications and audit actors, gives grant holders who never signed in an account,
+   runs every app's migration, and drops all sessions. Google identities (`IDENTITY#google#<sub>`) are
+   linked on each person's next sign-in, by their verified email.
 5. Lift maintenance. Everyone signs in once more.
 
 Done when every existing user signs in with Google and sees the same apps, roles, history, comments
@@ -428,11 +434,11 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 
 Each phase ends with a gate. N1 is pure platform work and can start before any iOS code.
 
-**N1 — Identity v2** (platform)
-- [ ] User IDs, identities, email index; SDK and modules on IDs; apps see no email by default
-- [ ] `tools/migrate-user-ids` + per-app migrations; maintenance flag; cut-over on staging, then production
-- [ ] Book Club's admin page, meeting form and audit filter show display names, not emails
-- [ ] Settings › Sign-in methods with self-serve merge (aliases, grant rules, `user.merged` webhook)
+**N1 — Identity v2** (platform), in three PRs
+- [x] **N1a**: user IDs, Google identities by `sub`, email index; platform, SDK, comments module and all three apps on IDs; `tools/migrate-user-ids` + per-app migrations; maintenance mode
+- [ ] N1a cut-over on staging, then production (`docs/USER_IDS_CUTOVER.md`)
+- [ ] **N1b**: apps see no email by default (`needsEmail` in the manifest); Book Club's admin page shows display names, not emails
+- [ ] **N1c**: Settings › Sign-in methods with self-serve merge (aliases, grant rules, `user.merged` webhook)
 
 Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching, linking and merging (incl. block-wins and alias resolution).
 

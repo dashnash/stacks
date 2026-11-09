@@ -126,6 +126,7 @@ export class PlatformStack extends cdk.Stack {
         STACKS_ROOT_DOMAIN: env.rootDomain,
         GOOGLE_CLIENT_ID: env.googleClientId,
         PLATFORM_ADMINS: env.platformAdmins.join(','),
+        ...(env.maintenance ? { STACKS_MAINTENANCE: '1' } : {}),
         NODE_OPTIONS: '--enable-source-maps',
       },
     });

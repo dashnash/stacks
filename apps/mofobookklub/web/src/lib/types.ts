@@ -9,6 +9,8 @@ import type { Person } from '../../../api/users/repo';
  * platform profile), `role` their Book Club role.
  */
 export interface User {
+  /** Platform user id. */
+  id: string;
   email: string;
   name: string;
   role: Role;
@@ -87,11 +89,11 @@ export interface Meeting {
   title: string;
   dateTime: string;
   videoUrl?: string;
-  leaderEmail: string;
+  leaderId: string;
   bookIsbn?: string;
   status: 'UPCOMING' | 'PAST';
   phase: MeetingPhase;
-  nextLeaderEmail?: string;
+  nextLeaderId?: string;
   createdAt: string;
 }
 
@@ -158,7 +160,7 @@ export interface MeetingInput {
   title?: string;
   dateTime: string;
   videoUrl?: string;
-  leaderEmail?: string;
+  leaderId?: string;
 }
 
 /** Book details for signed-out visitors: nothing about members. */

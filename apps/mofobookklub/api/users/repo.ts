@@ -8,7 +8,8 @@ export type { Person };
  * Members come from the platform now (it owns grants). `name` and `displayName` are both the
  * display name the platform gives, so `shownName()` keeps working unchanged.
  */
-const toUser = (m: { email: string; name: string; pictureUrl?: string; role: string }): User => ({
+const toUser = (m: { id: string; email: string; name: string; pictureUrl?: string; role: string }): User => ({
+  id: m.id,
   email: m.email,
   name: m.name,
   displayName: m.name,
@@ -17,8 +18,8 @@ const toUser = (m: { email: string; name: string; pictureUrl?: string; role: str
   createdAt: '',
 });
 
-export async function getUser(deps: Deps, email: string): Promise<User | undefined> {
-  const m = (await appMembers(deps)).find((x) => x.email === email.toLowerCase());
+export async function getUser(deps: Deps, id: string): Promise<User | undefined> {
+  const m = (await appMembers(deps)).find((x) => x.id === id);
   return m ? toUser(m) : undefined;
 }
 
@@ -27,11 +28,11 @@ export async function listApprovedUsers(deps: Deps): Promise<User[]> {
   return (await appMembers(deps)).map(toUser).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function person(user: User | undefined, fallbackEmail: string): Person {
+export function person(user: User | undefined, fallbackId: string): Person {
   return user
-    ? { email: user.email, name: user.displayName ?? user.name, ...(user.pictureUrl ? { pictureUrl: user.pictureUrl } : {}) }
-    : // Someone who lost access (their posts stay): don't show their email address instead.
-      { email: fallbackEmail, name: 'Former member' };
+    ? { id: user.id, name: user.displayName ?? user.name, ...(user.pictureUrl ? { pictureUrl: user.pictureUrl } : {}) }
+    : // Someone who lost access (their posts stay).
+      { id: fallbackId, name: 'Former member' };
 }
 
-export const getPeople = (deps: Deps, emails: string[]) => sdkGetPeople(deps, emails);
+export const getPeople = (deps: Deps, ids: string[]) => sdkGetPeople(deps, ids);

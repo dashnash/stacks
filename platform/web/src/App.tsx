@@ -36,7 +36,7 @@ function Header() {
         <AccountMenuView
           className="account"
           state={status === 'loading' ? 'loading' : me ? 'signedIn' : 'signedOut'}
-          user={me ? { email: me.user.email, name: me.user.name, ...(me.user.pictureUrl ? { pictureUrl: me.user.pictureUrl } : {}) } : null}
+          user={me ? { id: me.user.id, email: me.user.email, name: me.user.name, ...(me.user.pictureUrl ? { pictureUrl: me.user.pictureUrl } : {}) } : null}
           subtitle={me?.user.isPlatformAdmin ? 'Platform admin' : null}
           apps={myApps.map((a) => ({ slug: a.slug, name: a.name, url: a.url }))}
           allAppsHref="#/"

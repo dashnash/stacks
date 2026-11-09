@@ -25,7 +25,7 @@ function details(overrides: Partial<BookDetails> = {}): BookDetails {
     nomination: {
       id: 'n1',
       createdAt: '2026-01-01T00:00:00Z',
-      nominatedBy: { email: 'marcus@club.test', name: 'Marcus Bell' },
+      nominatedBy: { id: 'marcus@club.test', name: 'Marcus Bell' },
       canWithdraw: false,
       votes: 2,
       myVote: false,

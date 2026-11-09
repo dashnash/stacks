@@ -29,9 +29,9 @@ async function requireBook(deps: Deps, rawIsbn: string): Promise<Book> {
 export async function canEditBook(deps: Deps, user: User, isbn: string): Promise<boolean> {
   if (isAdmin(user)) return true;
   const [lineup, meetings] = await Promise.all([listLineup(deps), listMeetings(deps)]);
-  if (lineup.some((n) => n.bookIsbn === isbn && n.nominatedByEmail === user.email)) return true;
+  if (lineup.some((n) => n.bookIsbn === isbn && n.nominatedById === user.id)) return true;
   return meetings.some(
-    (m) => m.bookIsbn === isbn && m.chosenNomination?.nominatedByEmail === user.email,
+    (m) => m.bookIsbn === isbn && m.chosenNomination?.nominatedById === user.id,
   );
 }
 
@@ -68,7 +68,7 @@ export const getBookDetails: Handler = async (req, user, deps) => {
     canEditBook(deps, user, found.isbn),
   ]);
   const meetings = allMeetings.filter((m) => m.bookIsbn === found.isbn);
-  const leaders = await getPeople(deps, meetings.map((m) => m.leaderEmail));
+  const leaders = await getPeople(deps, meetings.map((m) => m.leaderId));
   return {
     body: {
       book: bookView(book ?? found),
@@ -78,7 +78,7 @@ export const getBookDetails: Handler = async (req, user, deps) => {
         title: m.title,
         dateTime: m.dateTime,
         status: m.status,
-        leader: leaders.get(m.leaderEmail),
+        leader: leaders.get(m.leaderId),
       })),
       commentCount: commentCount ?? 0,
       canEdit,
@@ -174,7 +174,7 @@ export const updateBook: Handler = async (req, user, deps) => {
     else throw badRequest('"amazonUrl" must be a link or null');
   }
 
-  next.editedBy = user.email;
+  next.editedBy = user.id;
   next.editedAt = deps.now().toISOString();
   await saveBook(deps, next);
   // For the activity log: each changed field, before → after (long text just marked as changed).

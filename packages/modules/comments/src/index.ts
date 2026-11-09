@@ -1,4 +1,4 @@
-import { badRequest, forbidden, getPeople, notFound, strip, type AppDeps, type AppRoutes, type Item, type Person, type Store, type Viewer } from '@stacks/api';
+import { badRequest, forbidden, getPeople, notFound, renameEmailField, strip, type AppDeps, type AppRoutes, type Item, type ItemMigration, type Person, type Store, type Viewer } from '@stacks/api';
 
 /**
  * Threaded comments on anything an app has (the `comments` module), generalized from Book Club.
@@ -15,7 +15,8 @@ export interface ThreadTarget {
 export interface Comment {
   id: string;
   parentId?: string;
-  authorEmail: string;
+  /** The author's platform user id. */
+  authorId: string;
   body: string;
   createdAt: string;
   editedAt?: string;
@@ -102,7 +103,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
     return strip(item) as Comment;
   }
   async function view(v: Viewer<D>, comments: Comment[]): Promise<CommentView[]> {
-    const people = await getPeople(v.deps, comments.filter((c) => !c.deleted).map((c) => c.authorEmail));
+    const people = await getPeople(v.deps, comments.filter((c) => !c.deleted).map((c) => c.authorId));
     return comments.map((c) => ({
       id: c.id,
       parentId: c.parentId ?? null,
@@ -110,9 +111,9 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       editedAt: c.editedAt ?? null,
       deleted: !!c.deleted,
       body: c.deleted ? '' : c.body,
-      author: c.deleted ? null : (people.get(c.authorEmail) ?? null),
-      canEdit: !c.deleted && c.authorEmail === v.user.email,
-      canDelete: !c.deleted && (c.authorEmail === v.user.email || canModerate(v)),
+      author: c.deleted ? null : (people.get(c.authorId) ?? null),
+      canEdit: !c.deleted && c.authorId === v.user.id,
+      canDelete: !c.deleted && (c.authorId === v.user.id || canModerate(v)),
     }));
   }
 
@@ -133,7 +134,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
           if (!parent) throw notFound('Comment not found');
           if (parent.deleted) throw badRequest("You can't reply to a deleted comment");
         }
-        const comment: Comment = { id: v.deps.newId(), ...(parentId ? { parentId } : {}), authorEmail: v.user.email, body, createdAt: v.deps.now().toISOString() };
+        const comment: Comment = { id: v.deps.newId(), ...(parentId ? { parentId } : {}), authorId: v.user.id, body, createdAt: v.deps.now().toISOString() };
         await v.deps.store.put({ ...commentKey(t, comment.id), ...comment });
         await recount(v.deps.store, t);
         const [out] = await view(v, [comment]);
@@ -147,7 +148,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       async (req, v) => {
         const t = await target(req.params, v.deps);
         const comment = await requireComment(v.deps, t, req.params.commentId!);
-        if (comment.authorEmail !== v.user.email) throw forbidden('You can only edit your own comments');
+        if (comment.authorId !== v.user.id) throw forbidden('You can only edit your own comments');
         const updated: Comment = { ...comment, body: requireBody(req.body), editedAt: v.deps.now().toISOString() };
         await v.deps.store.put({ ...commentKey(t, updated.id), ...updated });
         const [out] = await view(v, [updated]);
@@ -161,7 +162,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       async (req, v) => {
         const t = await target(req.params, v.deps);
         const comment = await requireComment(v.deps, t, req.params.commentId!);
-        if (comment.authorEmail !== v.user.email && !canModerate(v)) throw forbidden('You can only delete your own comments');
+        if (comment.authorId !== v.user.id && !canModerate(v)) throw forbidden('You can only delete your own comments');
         // A comment with replies is blanked, not removed, so the conversation under it stays put.
         const hasReplies = (await listComments(v.deps.store, t)).some((c) => c.parentId === comment.id);
         if (hasReplies) await v.deps.store.put({ ...commentKey(t, comment.id), ...comment, body: '', deleted: true });
@@ -170,8 +171,12 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
           await v.deps.store.delete(PK, SK);
         }
         await recount(v.deps.store, t);
-        return { body: { ok: true }, audit: { label: t.label, author: comment.authorEmail, text: comment.body, byModerator: comment.authorEmail !== v.user.email } };
+        return { body: { ok: true }, audit: { label: t.label, author: comment.authorId, text: comment.body, byModerator: comment.authorId !== v.user.id } };
       },
       { audit: 'comment.delete' },
     );
 }
+
+/** The user-id cut-over for comments: `authorEmail` becomes `authorId` (see `tools/migrate-user-ids`). */
+export const migrateComments: ItemMigration = (item, idFor) =>
+  item.PK.startsWith('THREAD#') && item.SK.startsWith('COMMENT#') && 'authorEmail' in item ? renameEmailField(item, 'authorEmail', 'authorId', idFor) : undefined;

@@ -21,6 +21,7 @@ const app = createPlatformApp({
     authOrigin: `https://auth.${rootDomain}`,
     googleClientId: env('GOOGLE_CLIENT_ID'),
     platformAdmins: env('PLATFORM_ADMINS').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+    maintenance: process.env.STACKS_MAINTENANCE === '1',
   },
   registry,
   appSessions: registry,

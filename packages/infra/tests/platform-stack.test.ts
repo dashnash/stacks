@@ -47,6 +47,12 @@ describe('PlatformStack', () => {
     expect(portalRouterCode('test.example.com')).toContain("'https://auth.test.example.com' + request.uri");
   });
 
+  it('puts the API into maintenance only when the environment says so', () => {
+    const vars = (t: Template) => JSON.stringify(Object.values(t.findResources('AWS::Lambda::Function')).map((f) => f.Properties?.Environment?.Variables ?? {}));
+    expect(vars(synth())).not.toContain('STACKS_MAINTENANCE');
+    expect(vars(synth({ ...env, maintenance: true }))).toContain('"STACKS_MAINTENANCE":"1"');
+  });
+
   it('configures the Lambda and limits it to the registry, app credentials and app session items', () => {
     const t = synth();
     t.hasResourceProperties('AWS::Lambda::Function', {

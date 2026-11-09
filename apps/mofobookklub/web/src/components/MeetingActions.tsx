@@ -67,12 +67,12 @@ export function MeetingActions({
   const [choosing, setChoosing] = useState(false);
   const members = useAsync(() => api.members().then((r) => r.users), []);
   const d = posterDate(meeting.dateTime);
-  const leading = user.email === meeting.leaderEmail;
+  const leading = user.id === meeting.leaderId;
   const Frame = variant === 'panel' ? ActionPanel : ActionStrip;
   const label = variant === 'panel' ? meeting.title : leading ? "You're leading" : 'Admin controls';
   const detail =
     variant === 'panel'
-      ? `${d.weekday} ${d.month} ${d.day} · led by ${meeting.leader?.name ?? meeting.leaderEmail}`
+      ? `${d.weekday} ${d.month} ${d.day} · led by ${meeting.leader?.name ?? meeting.leaderId}`
       : `${d.weekday} ${d.month} ${d.day}`;
 
   return (
@@ -104,8 +104,8 @@ export function MeetingActions({
           onCancel={() => setEditing(false)}
           onSubmit={async (input) => {
             // Leaving the picker on "Me" must not reassign an existing leader.
-            const { leaderEmail, ...rest } = input;
-            await api.updateMeeting(meeting.id, leaderEmail && leaderEmail !== meeting.leaderEmail ? input : rest);
+            const { leaderId, ...rest } = input;
+            await api.updateMeeting(meeting.id, leaderId && leaderId !== meeting.leaderId ? input : rest);
             setEditing(false);
             await onChanged();
           }}
@@ -129,8 +129,8 @@ export function MeetingActions({
       <Modal open={completing} onClose={() => setCompleting(false)} title="Who leads next?">
         <HandOffForm
           members={members.data ?? []}
-          onSubmit={async (email) => {
-            await api.completeMeeting(meeting.id, email);
+          onSubmit={async (userId) => {
+            await api.completeMeeting(meeting.id, userId);
             setCompleting(false);
             await onChanged();
           }}
@@ -151,8 +151,8 @@ export function ScheduleNextAction({ youAreNext }: { youAreNext: boolean }) {
   );
 }
 
-function HandOffForm({ members, onSubmit }: { members: Person[]; onSubmit: (email: string) => Promise<void> }) {
-  const [email, setEmail] = useState('');
+function HandOffForm({ members, onSubmit }: { members: Person[]; onSubmit: (userId: string) => Promise<void> }) {
+  const [userId, setUserId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   return (
@@ -163,7 +163,7 @@ function HandOffForm({ members, onSubmit }: { members: Person[]; onSubmit: (emai
         setSaving(true);
         setError(null);
         try {
-          await onSubmit(email);
+          await onSubmit(userId);
         } catch (err) {
           setError(err as Error);
         } finally {
@@ -178,12 +178,12 @@ function HandOffForm({ members, onSubmit }: { members: Person[]; onSubmit: (emai
         <label className="label" htmlFor="next-leader">
           Next leader
         </label>
-        <select id="next-leader" className="input" required value={email} onChange={(e) => setEmail(e.target.value)}>
+        <select id="next-leader" className="input" required value={userId} onChange={(e) => setUserId(e.target.value)}>
           <option value="" disabled>
             Choose a member…
           </option>
           {members.map((m) => (
-            <option key={m.email} value={m.email}>
+            <option key={m.id} value={m.id}>
               {m.name}
             </option>
           ))}
@@ -191,7 +191,7 @@ function HandOffForm({ members, onSubmit }: { members: Person[]; onSubmit: (emai
       </div>
       <ErrorNote error={error} />
       <div className="flex justify-end">
-        <button type="submit" className="btn-accent" disabled={!email || saving}>
+        <button type="submit" className="btn-accent" disabled={!userId || saving}>
           {saving ? 'Saving…' : 'Pass the torch →'}
         </button>
       </div>

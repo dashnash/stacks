@@ -11,7 +11,7 @@ export function MeetingForm({
   onSubmit,
   onCancel,
 }: {
-  initial?: Partial<MeetingInput> & { leaderEmail?: string };
+  initial?: Partial<MeetingInput> & { leaderId?: string };
   /** Only needed when `showLeaderPicker` is set (admins). */
   members?: Person[];
   showLeaderPicker?: boolean;
@@ -22,7 +22,7 @@ export function MeetingForm({
   const [title, setTitle] = useState(initial?.title ?? '');
   const [dateTime, setDateTime] = useState(initial?.dateTime ? toLocalInputValue(initial.dateTime) : '');
   const [videoUrl, setVideoUrl] = useState(initial?.videoUrl ?? '');
-  const [leaderEmail, setLeaderEmail] = useState(initial?.leaderEmail ?? '');
+  const [leaderId, setLeaderId] = useState(initial?.leaderId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -35,7 +35,7 @@ export function MeetingForm({
         title: title.trim() || undefined,
         dateTime: fromLocalInputValue(dateTime),
         videoUrl: videoUrl.trim() || undefined,
-        ...(showLeaderPicker && leaderEmail ? { leaderEmail } : {}),
+        ...(showLeaderPicker && leaderId ? { leaderId } : {}),
       });
     } catch (err) {
       setError(err as Error);
@@ -75,11 +75,11 @@ export function MeetingForm({
       {showLeaderPicker && (
         <div className="sm:col-span-2">
           <label className="label" htmlFor="mf-leader">Leader</label>
-          <select id="mf-leader" className="input" value={leaderEmail} onChange={(e) => setLeaderEmail(e.target.value)}>
+          <select id="mf-leader" className="input" value={leaderId} onChange={(e) => setLeaderId(e.target.value)}>
             <option value="">Me</option>
             {members?.map((m) => (
-              <option key={m.email} value={m.email}>
-                {m.name} ({m.email})
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>

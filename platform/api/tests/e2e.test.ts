@@ -18,8 +18,8 @@ import { createPlatformHarness, event, privateApp, publicApp, toRes, type Res } 
 function world() {
   const appDeps = new Map<string, AppDeps>();
   const platform = createPlatformHarness({
-    revoke: async (slug, email) => {
-      await endUserSessions(appDeps.get(slug)!, email);
+    revoke: async (slug, userId) => {
+      await endUserSessions(appDeps.get(slug)!, userId);
     },
   });
 
@@ -42,16 +42,16 @@ function world() {
       async access() {
         return toRes(await platform.app(event('GET', `/api/apps/${slug}/access`, { headers: { authorization: `Bearer cred-${slug}` } }))).body;
       },
-      async setAccess(actorEmail, email, role) {
-        const res = toRes(await platform.app(event('PUT', `/api/apps/${slug}/access/${encodeURIComponent(email)}`, { body: { actorEmail, role }, headers: { authorization: `Bearer cred-${slug}` } })));
+      async setAccess(actorId, userId, role) {
+        const res = toRes(await platform.app(event('PUT', `/api/apps/${slug}/access/${encodeURIComponent(userId)}`, { body: { actorId, role }, headers: { authorization: `Bearer cred-${slug}` } })));
         if (res.status !== 200) throw new PlatformError(res.status, res.body.error, res.body.code);
       },
-      async notify(email, text, link) {
-        const res = toRes(await platform.app(event('POST', `/api/apps/${slug}/notify`, { body: { email, text, link }, headers: { authorization: `Bearer cred-${slug}` } })));
+      async notify(userId, text, link) {
+        const res = toRes(await platform.app(event('POST', `/api/apps/${slug}/notify`, { body: { userId, text, link }, headers: { authorization: `Bearer cred-${slug}` } })));
         if (res.status !== 200) throw new PlatformError(res.status, res.body.error, res.body.code);
       },
-      async account(email) {
-        return toRes(await platform.app(event('GET', `/api/apps/${slug}/account`, { query: { email }, headers: { authorization: `Bearer cred-${slug}` } }))).body;
+      async account(userId) {
+        return toRes(await platform.app(event('GET', `/api/apps/${slug}/account`, { query: { user: userId }, headers: { authorization: `Bearer cred-${slug}` } }))).body;
       },
     };
     let n = 0;
@@ -144,7 +144,7 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     expect((await b.api('https://club.stacks.test/api/whoami')).status).toBe(401);
 
     // The owner approves from the grid; the user gets in, again without signing in.
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
     expect(await b.go('https://club.stacks.test/api/auth/login?return=%2F')).toBe('https://club.stacks.test/');
     expect((await b.api('https://club.stacks.test/api/whoami')).body.role).toBe('MEMBER');
 
@@ -166,24 +166,24 @@ describe('Phase 2 gate: one sign-in across apps', () => {
   it('revoking access ends the app session within one request; a role change takes effect on the next sign-in', async () => {
     const w = world();
     const b = new w.Browser();
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
     const page = await b.go('https://club.stacks.test/api/auth/login?return=%2F');
     await b.signInOnPortal(page, 'max@test.dev');
     expect((await b.api('https://club.stacks.test/api/whoami')).status).toBe(200);
 
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
     expect((await b.api('https://club.stacks.test/api/whoami')).status).toBe(401);
     await b.go('https://club.stacks.test/api/auth/login?return=%2F');
     expect((await b.api('https://club.stacks.test/api/whoami')).body.role).toBe('ADMIN');
 
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: null } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: null } });
     expect((await b.api('https://club.stacks.test/api/whoami')).status).toBe(401);
   });
 
   it('signing out of one app signs out of the platform and every app', async () => {
     const w = world();
     const b = new w.Browser();
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
     await b.signInOnPortal(await b.go('https://hello.stacks.test/api/auth/login?return=%2F'), 'max@test.dev');
     await b.go('https://club.stacks.test/api/auth/login?return=%2F');
 
@@ -208,7 +208,7 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     expect(access.body.pending.map((p: { email: string }) => p.email)).toEqual(['ann@test.dev']);
     expect(access.body.roles.map((r: { id: string }) => r.id)).toEqual(['OWNER', 'ADMIN', 'MEMBER']);
 
-    expect((await owner.request('PUT', 'https://club.stacks.test/api/stacks/access/ann%40test.dev', { role: 'MEMBER' })).status).toBe(200);
+    expect((await owner.request('PUT', `https://club.stacks.test/api/stacks/access/${await w.platform.idOf('ann@test.dev')}`, { role: 'MEMBER' })).status).toBe(200);
     expect(await ann.go('https://club.stacks.test/api/auth/login?return=%2F')).toBe('https://club.stacks.test/');
     expect((await ann.api('https://club.stacks.test/api/stacks/members')).body.members.map((m: { email: string; role: string }) => `${m.email}:${m.role}`)).toEqual([
       'ann@test.dev:MEMBER',
@@ -216,10 +216,10 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     ]);
     // Ann (a member) cannot use the access page; the owner cannot demote the last owner.
     expect((await ann.api('https://club.stacks.test/api/stacks/access')).status).toBe(403);
-    expect((await owner.request('PUT', 'https://club.stacks.test/api/stacks/access/owner%40test.dev', { role: 'MEMBER' })).status).toBe(409);
+    expect((await owner.request('PUT', `https://club.stacks.test/api/stacks/access/${await w.platform.idOf('owner@test.dev')}`, { role: 'MEMBER' })).status).toBe(409);
     // The change is in the central feed with the owner as actor.
     const feed = await w.platform.call('GET', '/admin/audit', { as: 'root@test.dev', query: { app: 'club', action: 'grant' } });
-    expect(feed.body.events.find((e: { action: string; label: string }) => e.action === 'grant.set' && e.label === 'ann@test.dev').actorEmail).toBe('owner@test.dev');
+    expect(feed.body.events.find((e: { action: string; label: string }) => e.action === 'grant.set' && e.label === 'ann').actorId).toBe(await w.platform.idOf('owner@test.dev'));
   });
 
   it('lets apps notify their own members only', async () => {
@@ -227,8 +227,9 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     const b = new w.Browser();
     await b.signInOnPortal(await b.go('https://hello.stacks.test/api/auth/login?return=%2F'), 'max@test.dev');
     const deps = w.appDeps.get('hello')!;
-    await deps.platform.notify('max@test.dev', 'Your greeting got a reply', 'https://hello.stacks.test/#/x');
-    await expect(deps.platform.notify('stranger@test.dev', 'spam')).rejects.toMatchObject({ status: 403 });
+    await deps.platform.notify(await w.platform.idOf('max@test.dev'), 'Your greeting got a reply', 'https://hello.stacks.test/#/x');
+    await w.platform.signIn('stranger@test.dev');
+    await expect(deps.platform.notify(await w.platform.idOf('stranger@test.dev'), 'spam')).rejects.toMatchObject({ status: 403 });
     const inbox = await w.platform.call('GET', '/notifications', { as: 'max@test.dev' });
     expect(inbox.body.notifications[0]).toMatchObject({ text: 'Your greeting got a reply', link: 'https://hello.stacks.test/#/x', app: 'hello' });
   });
@@ -236,7 +237,7 @@ describe('Phase 2 gate: one sign-in across apps', () => {
   it('signing in on the portal signs you in to every app, with no click or redirect', async () => {
     const w = world();
     const b = new w.Browser();
-    await w.platform.call('PUT', '/admin/access/club/max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await w.platform.setRole('club', 'max@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
     await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:max@test.dev' });
     b.visited = [];
     expect(await b.silentSignIn('https://hello.stacks.test')).toEqual({ signedIn: true });
@@ -251,7 +252,8 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:ann@test.dev' });
     expect(await b.silentSignIn('https://club.stacks.test')).toEqual({ error: 'access_required', signedIn: false });
     const grid = await w.platform.call('GET', '/admin/access', { as: 'owner@test.dev' });
-    expect(grid.body.grants.filter((g: { email: string }) => g.email === 'ann@test.dev')).toEqual([]);
+    const annId = await w.platform.idOf('ann@test.dev');
+    expect(grid.body.grants.filter((g: { userId: string }) => g.userId === annId)).toEqual([]);
     // Without a portal session, the answer is login_required.
     const stranger = new w.Browser();
     expect(await stranger.silentSignIn('https://club.stacks.test')).toEqual({ error: 'login_required', signedIn: false });
@@ -259,7 +261,7 @@ describe('Phase 2 gate: one sign-in across apps', () => {
 
   it('silent sign-in tells a blocked person access_denied and does not auto-grant a public app', async () => {
     const w = world();
-    await w.platform.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
+    await w.platform.setRole('hello', 'troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
     const b = new w.Browser();
     await b.request('POST', 'https://auth.stacks.test/api/auth/google', { credential: 'test:troll@test.dev' });
     expect(await b.silentSignIn('https://hello.stacks.test')).toEqual({ error: 'access_denied', signedIn: false });

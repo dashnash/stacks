@@ -1,3 +1,4 @@
+import { testUserId as idOf } from '@stacks/testing';
 import { describe, expect, it } from 'vitest';
 import { ensureMetadata, withinBudget } from '../../../api/books/repo.js';
 import { keys } from '../../../api/utils/model.js';
@@ -42,7 +43,7 @@ describe('book details', () => {
 
     // Once it is picked for a meeting it is off The Lineup and the meeting is listed.
     const meetingId = (
-      await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } })
+      await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } })
     ).body.meeting.id;
     await t.call('POST', `/meetings/${meetingId}/book`, { as: ALICE, body: { nominationId: nomination } });
     const picked = (await t.call('GET', `/books/${PHM}/details`, { as: ALICE })).body;
@@ -126,7 +127,7 @@ describe('admins editing a book', () => {
       publisher: 'Ballantine',
       pageCount: 496,
       subjects: ['Sci-fi', 'Space'],
-      editedBy: ADMIN,
+      editedBy: idOf(ADMIN),
     });
     expect(res.body.book.description).toBeUndefined();
     // Untouched fields stay.
@@ -162,7 +163,7 @@ describe('admins editing a book', () => {
     const t = await withBook();
     const nominationId = (await t.call('GET', '/nominations', { as: BOB })).body.nominations[0].id;
     const meetingId = (
-      await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } })
+      await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } })
     ).body.meeting.id;
     await t.call('POST', `/meetings/${meetingId}/book`, { as: ALICE, body: { nominationId } });
     expect((await t.call('PATCH', `/books/${PHM}`, { as: BOB, body: { pageCount: 500 } })).status).toBe(200);
@@ -248,7 +249,7 @@ describe('the public shelf', () => {
   async function withCompletedMeeting() {
     const t = await setup();
     const nomination = (await t.call('POST', '/nominations', { as: BOB, body: { isbn: PHM } })).body.nomination.id;
-    const meetingId = (await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } }))
+    const meetingId = (await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } }))
       .body.meeting.id;
     await t.call('POST', `/meetings/${meetingId}/book`, { as: ALICE, body: { nominationId: nomination } });
     return { t, meetingId };
@@ -268,7 +269,7 @@ describe('the public shelf', () => {
       books: [],
     });
 
-    await t.call('POST', `/meetings/${meetingId}/complete`, { as: ALICE, body: { nextLeaderEmail: BOB } });
+    await t.call('POST', `/meetings/${meetingId}/complete`, { as: ALICE, body: { nextLeaderId: idOf(BOB) } });
     await t.call('POST', `/threads/book/${PHM}`, { as: ALICE, body: { body: 'Secret members-only take' } });
     const after = (await t.call('GET', '/public/shelf')).body; // no sign-in
     expect(after.current).toBeNull();

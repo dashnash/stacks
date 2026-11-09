@@ -1,5 +1,5 @@
 import { forgetMembers } from '@stacks/api';
-import { createTestHarness, type CallOptions } from '@stacks/testing';
+import { createTestHarness, memberFor, testUserId, type CallOptions } from '@stacks/testing';
 import { manifest } from '../../api/manifest';
 import { routes } from '../../api/routes';
 import type { BookCandidate, BookSource, CoverCandidate, Deps, Edition, FacePhotos } from '../../api/utils/deps';
@@ -80,7 +80,7 @@ export function makeTestApp(opts: { bundledEasterEggs?: EasterEgg[]; faces?: str
   });
 
   async function seedUser(email: string, role: Role, name = email.split('@')[0]!) {
-    t.platform.members = [...t.platform.members.filter((m) => m.email !== email), { email, name, role }];
+    t.platform.members = [...t.platform.members.filter((m) => m.email !== email), memberFor(email, role, name)];
     forgetMembers(t.deps);
   }
 
@@ -90,5 +90,5 @@ export function makeTestApp(opts: { bundledEasterEggs?: EasterEgg[]; faces?: str
     return t.call(method, path, { ...o, as: o.as ? { email: o.as, name: m?.name ?? o.as.split('@')[0]! } : undefined, role: o.role ?? m?.role ?? 'MEMBER' });
   }
 
-  return { ...t, call, books, faces, seedUser };
+  return { ...t, call, books, faces, seedUser, idOf: testUserId };
 }

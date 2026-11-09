@@ -46,6 +46,7 @@ aws cloudformation describe-stacks --stack-name stacks-test-app-mofobookklub --q
 Copy production's data into staging (the old table is only read), dry run first:
 
 ```bash
+# Historical: tools/migrate-book-club was removed with the user-id cut-over (it wrote email-keyed users); see git history.
 npm run migrate -w tools/migrate-book-club -- --source-table <old TableName> --app-table <staging app TableName> --platform-table <staging platform TableName> --source-bucket <old EasterEggBucketName> --content-bucket <staging ContentBucketName> --dry-run
 ```
 

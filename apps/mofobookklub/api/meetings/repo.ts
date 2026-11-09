@@ -65,7 +65,7 @@ export async function deleteNomination(deps: Deps, id: string): Promise<void> {
 }
 
 function toNomination(n: Nomination): Nomination {
-  return { id: n.id, bookIsbn: n.bookIsbn, nominatedByEmail: n.nominatedByEmail, createdAt: n.createdAt };
+  return { id: n.id, bookIsbn: n.bookIsbn, nominatedById: n.nominatedById, createdAt: n.createdAt };
 }
 
 /**

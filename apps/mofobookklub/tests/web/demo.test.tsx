@@ -36,6 +36,14 @@ describe('the Book Club demo on Stacks', () => {
     expect(await screen.findByRole('heading', { name: 'The lineup' }, { timeout: 3000 })).toBeInTheDocument();
   });
 
+  it('credits seeded people by name (their seed ids match the personas)', async () => {
+    const demo = renderDemo();
+    await demo.signInAs(PERSONAS[0]!.email);
+    expect(await screen.findByRole('heading', { name: 'The lineup' }, { timeout: 3000 })).toBeInTheDocument();
+    expect((await screen.findAllByText(/Jane/, {}, { timeout: 3000 })).length).toBeGreaterThan(0); // this month's leader
+    expect(screen.queryByText(/Former member/)).not.toBeInTheDocument();
+  });
+
   it('shows admins the people waiting for approval, and approving moves them to members', async () => {
     const demo = renderDemo();
     await demo.signInAs(PERSONAS[0]!.email); // the owner

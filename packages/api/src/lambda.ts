@@ -22,7 +22,7 @@ export function defaultDeps(manifest: AppManifest): AppDeps {
   let credential: Promise<string> | undefined;
   return {
     store: new DynamoStore(env('TABLE_NAME')),
-    config: { appOrigin: env('STACKS_APP_ORIGIN'), authOrigin: env('STACKS_AUTH_ORIGIN') },
+    config: { appOrigin: env('STACKS_APP_ORIGIN'), authOrigin: env('STACKS_AUTH_ORIGIN'), maintenance: process.env.STACKS_MAINTENANCE === '1' },
     platform: new HttpPlatformClient({
       baseUrl: env('STACKS_PLATFORM_URL'),
       appSlug: manifest.slug,

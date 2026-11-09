@@ -142,6 +142,7 @@ export class AppStack extends cdk.Stack {
         STACKS_AUTH_ORIGIN: auth,
         STACKS_PLATFORM_URL: `${auth}/api`,
         STACKS_APP_SECRET_ARN: credential.secretArn,
+        ...(props.env.maintenance ? { STACKS_MAINTENANCE: '1' } : {}),
         NODE_OPTIONS: '--enable-source-maps',
         ...props.environment,
       },
