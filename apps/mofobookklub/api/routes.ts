@@ -3,6 +3,7 @@ import { commentRoutes } from '@stacks/comments';
 import { normalizeIsbn } from './books/isbn.js';
 import { getBook } from './books/repo.js';
 import * as bookRoutes from './books/routes.js';
+import { deleteFace, listFaces, uploadFaces } from './easter-egg/faces.js';
 import { randomEasterEgg } from './easter-egg/routes.js';
 import { getMeeting } from './meetings/repo.js';
 import * as meetings from './meetings/routes.js';
@@ -28,6 +29,9 @@ export const toUser = (v: Viewer<Deps>): User => ({
 export function routes(api: AppRoutes<Deps>) {
   const member = (method: HttpMethod, path: string, handler: Handler, audit?: string) =>
     api.member(method, path, (req, v) => handler(req, toUser(v), v.deps), audit ? ({ audit } satisfies RouteOptions) : undefined);
+  // Owners and admins (the roles that manage access).
+  const admin = (method: HttpMethod, path: string, handler: Handler, audit?: string) =>
+    api.approver(method, path, (req, v) => handler(req, toUser(v), v.deps), audit ? ({ audit } satisfies RouteOptions) : undefined);
 
   // Public: the signed-out home page and book pages (book details only, nothing about members).
   api.public('GET', '/public/shelf', async (_req, ctx) => bookRoutes.getPublicShelf(ctx.deps));
@@ -70,6 +74,10 @@ export function routes(api: AppRoutes<Deps>) {
   member('GET', '/books/:isbn/lookup', bookRoutes.lookUpBookAgain);
 
   member('GET', '/easter-egg/random', randomEasterEgg);
+  // The shared face photos on the critics' quotes. Uploads log themselves (one entry per batch).
+  admin('GET', '/admin/faces', listFaces);
+  admin('POST', '/admin/faces', uploadFaces);
+  admin('DELETE', '/admin/faces/:name', deleteFace, 'critic.photo_delete');
 
   // Members, for pickers such as "who leads next?".
   member('GET', '/users', async (_req, _user, deps) => ({

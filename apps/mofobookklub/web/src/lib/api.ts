@@ -13,6 +13,7 @@ import type {
   Lineup,
   ThreadKind,
   EasterEgg,
+  FacePhotoView,
   MeetingInput,
   MeetingView,
   NextMeetingResponse,
@@ -98,6 +99,13 @@ export function createApi(client: Client) {
 
     randomEasterEgg: (excludeId?: string) =>
       request<EasterEgg>('GET', `/easter-egg/random${excludeId ? `?exclude=${encodeURIComponent(excludeId)}` : ''}`),
+
+    /** Admins: the shared face photos on the critics' quotes. */
+    faces: () => request<{ faces: FacePhotoView[] }>('GET', '/admin/faces'),
+    /** Admins: add face photos (`data` base64, within the API's per-request limits). */
+    uploadFaces: (photos: { fileName: string; data: string }[]) =>
+      request<{ faces: FacePhotoView[] }>('POST', '/admin/faces', { photos }),
+    deleteFace: (name: string) => request<unknown>('DELETE', `/admin/faces/${encodeURIComponent(name)}`),
 
     members: () => request<{ users: (Person & { role: Role })[] }>('GET', '/users'),
     /** Admins: members and requests, from the platform. */

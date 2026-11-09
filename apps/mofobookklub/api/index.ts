@@ -15,7 +15,11 @@ export const handler = createLambdaHandler<Deps>({
     ...base,
     books: createExternalBookSource({ googleApiKey: async () => base.secret?.('GOOGLE_BOOKS_API_KEY') }),
     signImageUrl: (key) => content.signUrl(key),
-    listFacePhotos: () => content.list(FACES_PREFIX),
+    faces: {
+      list: () => content.list(FACES_PREFIX),
+      put: (key, body, type) => content.put(key, body, type),
+      delete: (key) => content.delete(key),
+    },
     random: Math.random,
     bundledEasterEggs: eggsFromQuotesFile(quotes as QuoteFileEntry[]),
   }),

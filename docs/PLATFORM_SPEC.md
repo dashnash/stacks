@@ -245,7 +245,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | --- | --- | --- |
 | `comments` | Threaded comments on any `kind/id`, edit, soft delete, counts, moderation by approvers | `comments/routes.ts` (generalize `ThreadTarget`) |
 | `votes` | Up-votes on any item, one per user, sorted lists | Lineup votes |
-| `contentPacks` | JSON + images in the repo deployed to a private bucket, served by presigned URL | Easter-egg critics, `seed-easter-eggs.ts` |
+| `contentPacks` | JSON + images in the repo deployed to a private bucket, served by presigned URL; the app's API can also `put`/`delete` there (small admin uploads through the API, e.g. Book Club's face photos) | Easter-egg critics, `seed-easter-eggs.ts` |
 | `uploads` | Presigned PUT to a private per-app bucket, size and type limits, presigned reads | new, on the presigned-read code |
 | `notifications` | `notify(user, message, link)` into the platform's notification center | new (Tier 1 backend) |
 | `scheduledJobs` | EventBridge schedules declared in the manifest invoke named handlers | new |

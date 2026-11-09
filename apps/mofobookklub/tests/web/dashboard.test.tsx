@@ -52,7 +52,7 @@ describe('DashboardView', () => {
 
   it('closes the page with a critic quote, and has no separate easter egg button', async () => {
     const api = fakeApi({
-      randomEasterEgg: vi.fn().mockResolvedValue({ id: 'e', quote: 'Hamlet, but he finally decides.', characterName: 'Bo', imageUrl: null }),
+      randomEasterEgg: vi.fn().mockResolvedValue({ id: 'e', quote: 'Hamlet, but he finally decides.', imageUrl: null }),
     });
     renderWithApi(<DashboardView user={member} />, api);
     expect(await screen.findByRole('region', { name: 'From our literary critics' })).toHaveTextContent(/Hamlet, but he finally decides\./);

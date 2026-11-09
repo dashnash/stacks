@@ -14,19 +14,20 @@ describe('QuoteBand', () => {
   it('shows a critic quote and swaps it for a different one', async () => {
     const randomEasterEgg = vi
       .fn()
-      .mockResolvedValueOnce({ id: 'e1', quote: 'A caterpillar critique.', characterName: 'Gary', imageUrl: 'https://img/gary.jpg' })
-      .mockResolvedValueOnce({ id: 'e2', quote: 'Moby Dick is about tax law.', characterName: 'Pam', imageUrl: null });
+      .mockResolvedValueOnce({ id: 'e1', quote: 'A caterpillar critique.', imageUrl: 'https://img/gary.jpg' })
+      .mockResolvedValueOnce({ id: 'e2', quote: 'Moby Dick is about tax law.', imageUrl: null });
     renderWithApi(<QuoteBand />, fakeApi({ randomEasterEgg }));
 
     expect(await screen.findByText(/A caterpillar critique\./)).toBeInTheDocument();
-    expect(screen.getByText('— Gary')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Gary' })).toHaveAttribute('src', 'https://img/gary.jpg');
+    // Quotes are unsigned: a face, but no critic's name.
+    expect(screen.queryByText(/^—/)).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'One of our critics' })).toHaveAttribute('src', 'https://img/gary.jpg');
 
     await userEvent.setup().click(screen.getByRole('button', { name: /Another one/ }));
     expect(await screen.findByText(/Moby Dick is about tax law\./)).toBeInTheDocument();
     expect(randomEasterEgg).toHaveBeenLastCalledWith('e1');
-    // Pam has no photo, so a decorative silhouette stands in.
-    expect(screen.queryByRole('img', { name: 'Pam' })).not.toBeInTheDocument();
+    // No photo for this one, so a decorative silhouette stands in.
+    expect(screen.queryByRole('img', { name: 'One of our critics' })).not.toBeInTheDocument();
   });
 
   it('renders nothing when no quotes have been seeded', async () => {

@@ -72,8 +72,13 @@ Content bucket (manifest module `contentPacks`; files in `apps/<slug>/content/` 
 import { contentStore } from '@stacks/api/lambda';
 const content = contentStore();
 await content.signUrl('eggs/gatsby.jpg');   // 15-minute private link
-await content.list('eggs/faces/');           // keys, cached 10 min
+await content.list('eggs/faces/');           // keys, cached 10 min (put/delete clear it)
+await content.put('eggs/faces/x.jpg', bytes, 'image/jpeg');   // e.g. a member's upload: check type + size first
+await content.delete('eggs/faces/x.jpg');
 ```
+
+Uploads go through your API as JSON (base64). Request bodies are capped at 256 KB, so keep each
+request under ~180 KB of file: shrink images in the browser first and send big sets in batches.
 
 Secrets (third-party API keys): declare them in the manifest, never put values in git, env vars or CI.
 

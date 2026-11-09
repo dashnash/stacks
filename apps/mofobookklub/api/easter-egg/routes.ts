@@ -28,8 +28,8 @@ export async function randomEasterEgg(req: RequestContext, _user: User, deps: De
 
   // A quote's own photo wins; otherwise any of the shared faces.
   let imageKey = egg.imageKey;
-  if (!imageKey && deps.listFacePhotos) {
-    const faces = await deps.listFacePhotos();
+  if (!imageKey && deps.faces) {
+    const faces = await deps.faces.list();
     if (faces.length > 0) imageKey = faces[Math.floor(deps.random() * faces.length)];
   }
 
@@ -37,7 +37,6 @@ export async function randomEasterEgg(req: RequestContext, _user: User, deps: De
     body: {
       id: egg.id,
       quote: egg.quote,
-      characterName: egg.characterName,
       imageUrl: imageKey ? await deps.signImageUrl(imageKey) : null,
     },
   };

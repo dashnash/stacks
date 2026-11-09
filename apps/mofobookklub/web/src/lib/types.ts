@@ -141,11 +141,17 @@ export interface CommentView {
   canDelete: boolean;
 }
 
+/** A critic's quote: unsigned, with one of the shared faces (or the quote's own photo). */
 export interface EasterEgg {
   id: string;
   quote: string;
-  characterName: string;
   imageUrl: string | null;
+}
+
+/** One of the shared face photos (admins). `url` is a short-lived link. */
+export interface FacePhotoView {
+  name: string;
+  url: string;
 }
 
 export interface MeetingInput {
