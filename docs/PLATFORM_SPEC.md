@@ -443,6 +443,7 @@ Phase 2 build notes:
 - **Registry**: each app stack writes `/stacks/<env>/apps/<slug>/manifest` and `/table` to SSM. The platform reads these (cached a minute) and registers an app the first time it sees it, giving the manifest's `owners` the top role.
 - **Portal bar** (later replaced by the account menu): it got its data from the app's own API, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed. The account menu works the same way (`/api/stacks/account`).
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
+- **Footer**: every portal page ends with a footer showing the deployed commit ("Build 1a2b3c4", linking to it on GitHub), injected at build time from `GITHUB_SHA` (`platform/web/build-info.ts`, the same helper as Book Club's).
 
 **Phase 3 — Book Club migration** (done; cut over on 2026-11-08, `docs/BOOK_CLUB_MIGRATION.md`)
 
