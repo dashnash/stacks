@@ -222,7 +222,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | Identity and sessions | `backend/src/auth/google.ts`, `auth/session.ts` | Google ID token verification, hashed master sessions, 90-day sliding expiry, the app handshake |
 | Global profile | `users/`, `shownName()`, `SettingsView` | Name, display name (30 chars), avatar; `GET /me` for apps |
 | Grants and requests | Book Club's PENDING flow, `admin/users/*` | Grant CRUD, request access, approve, revoke, auto-grant for public apps |
-| App registry and catalog | new | Registered from manifests on deploy; catalog page with search, categories, favorites, recently used |
+| App registry and catalog | new | Registered from manifests on deploy; catalog page with search, categories, favorites, recently used. Each card shows the app's preview (`https://<slug>.<domain>/preview.png`, written from the demo by `verify-app` into `web/public/`, demo data only; the initial on a tile when missing). Clicking a card opens the app (signed-out and no-access visitors get its landing page, which offers sign-in or Request access); **Details** opens the app's portal page |
 | Access grid | `AdminPanel.tsx` | Described under Access model |
 | Central audit feed | `audit/log.ts`, `run()` in `app.ts` | Every app event mirrored here; filter by app, actor, action |
 | Notifications and badges | new | In-app notifications per user (access requests, approvals, app-defined events); badge counts |
@@ -329,8 +329,8 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 1. **Interview** (Claude, few tokens). Ask, one screen at a time, in plain language for non-technical creators: purpose, who uses it, public or private, roles and who approves, the 3–5 things it tracks, what signed-out visitors see, the look and feel (3 adjectives or a reference site), which modules it needs. Write `app.manifest.json` plus `apps/<slug>/BRIEF.md` (the description, entities, user stories). Show both back for a yes.
 2. **Scaffold** (script, zero tokens). `npm run new-app -- <slug>` (`tools/new-app`) copies `templates/app/` into `apps/<slug>/`, keeping the interview's `app.manifest.json` and `BRIEF.md` (or, with no manifest yet, writing a starting one from `--name --tagline --description --visibility --owner`: roles Owner and Member). It fills the slug and title, generates one demo persona per role (top role first), and runs `npm install` so the new workspace is in the lockfile. The result has auth, roles, audit, the account menu, a landing page (tagline, description, sign in or request access), a footer, a starter feature (shared notes: a public route, member routes, an approver-only delete, audit events), API and UI tests and the demo. No extra stack file is needed: `infra/` finds every `apps/*/app.manifest.json`. A test in `tools/new-app` scaffolds an app in the repo and checks that it typechecks, passes its tests and the conformance test, builds and synthesizes, so this holds before Claude writes a line.
 3. **Build** (Claude). Reads only `BRIEF.md`, `packages/*/README.md` (each under ~300 lines, API cheat-sheet style) and, when useful, the matching folder in `apps/mofobookklub` as a worked example. Writes entities, routes, UI and tests. The UI is unconstrained: any layout, styling or component library the CSP allows.
-4. **Verify** (script + Claude). `npm run verify-app -- <slug>`: typecheck, the app's tests, the conformance test, the import rule, an "only `apps/<slug>/` changed" check, the app and demo builds, then a Playwright pass that opens the demo signed out and as every persona (`demo.html?as=<email>`) on desktop and phone, screenshots each page into `apps/<slug>/.stacks/screenshots/` (not committed) and reports page errors and sideways scrolling. Claude reviews the screenshots with the creator and iterates. Screenshots are skipped where Playwright isn't installed.
-5. **Stage** (CI). `gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>`; the session waits on the run and returns `https://<slug>.test.<domain>`.
+4. **Verify** (script + Claude). `npm run verify-app -- <slug>`: typecheck, the app's tests, the conformance test, the import rule, an "only `apps/<slug>/` changed" check, the app and demo builds, then a Playwright pass that opens the demo signed out and as every persona (`demo.html?as=<email>`), plus the inner pages the app lists in `web/src/demo/pages.ts`, on desktop and phone, screenshots each page into `apps/<slug>/.stacks/screenshots/` (not committed) and reports page errors and sideways scrolling. Claude reviews the screenshots with the creator and iterates. Screenshots are skipped where Playwright isn't installed.
+5. **Stage** (CI). Dispatch `deploy-test.yml` (app + branch) through the REST API (`gh api …/dispatches`; cloud sessions block the GraphQL API that `gh workflow run` uses); the session waits on the run and returns `https://<slug>.test.<domain>`.
 6. **Ship** (PR). Claude opens a PR; CI runs; merge deploys `app-<slug>` to production and registers it in the catalog with the creator as `topRole`.
 
 **Token discipline**
@@ -344,7 +344,8 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 **Guardrails for non-technical creators**
 
 - No AWS credentials in sessions; only CI deploys.
-- `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task; CI fails a PR from an app branch that touches `packages/`, `platform/`, `infra/` or another app.
+- `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task. CI's path check (`scripts/pr-paths.mjs`): a PR from an `app/<slug>/…` branch may change only `apps/<slug>/` (and the lockfile); any other PR that changes only `apps/` may change one app, never two; a PR that changes anything outside `apps/` is platform work for `CODEOWNERS` review. The check writes the PR's kind to the run summary.
+- Enforcement at merge needs branch protection (required checks and code-owner review), which GitHub offers for private repos only on paid plans. Until then these rules hold only if whoever merges follows them; keep merge rights to the platform owner.
 - The manifest schema caps CSP additions and module choices; anything else needs a platform PR.
 
 ## Environments and CI/CD
@@ -482,7 +483,7 @@ These are defaulted as written above; change any by editing this spec or comment
 - [x] Portal address: decided in phase 2. The portal (catalog and sign-in) lives at `auth.<domain>`; the bare `<domain>` redirects there. One host keeps the master session cookie in one place.
 - [x] Book Club uses its slug host `mofobookklub.<domain>`, which is also its old address.
 - [x] Session lifetime: 90-day sliding expiry for both master and app sessions (as built).
-- [x] Private apps are listed in the catalog for everyone, with Request access (as built).
+- [x] Private apps are listed in the catalog for everyone; their card opens the app's landing page, which offers Request access.
 - [x] SES: deferred until an app needs email. The `email` module waits until then.
 - [x] `PLATFORM_ADMINS` is just Dash for now.
 - [x] Public (and private) apps have a `BLOCKED` grant state: see access rule 8.

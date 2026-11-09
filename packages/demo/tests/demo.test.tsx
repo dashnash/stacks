@@ -119,6 +119,7 @@ describe('DemoApp', () => {
       </DemoApp>,
     );
     expect(await screen.findByText('who:Rex')).toBeInTheDocument();
+    expect((globalThis as { __stacksDemo?: { personas: { email: string }[] } }).__stacksDemo?.personas.map((p) => p.email)).toContain('rex@demo');
     window.history.replaceState(null, '', '/');
   });
 });

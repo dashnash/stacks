@@ -9,6 +9,10 @@ function DemoBridge({ demo, startAs, children }: { demo: Demo; startAs: string |
   useEffect(() => {
     if (startAs) void demo.signInAs(startAs);
   }, [demo, startAs]);
+  // For scripted checks (npm run verify-app): who can the demo sign in as?
+  useEffect(() => {
+    (globalThis as { __stacksDemo?: unknown }).__stacksDemo = { personas: demo.personas.filter((p) => p.role).map(({ email, name, role }) => ({ email, name, role })) };
+  }, [demo]);
   useEffect(
     () =>
       demo.subscribe(() => {

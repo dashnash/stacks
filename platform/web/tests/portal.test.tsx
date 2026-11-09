@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
@@ -46,12 +46,30 @@ describe('catalog', () => {
     expect(screen.getByRole('link', { name: /Access/ })).toBeInTheDocument();
   });
 
-  it('lets a new person request access', async () => {
+  it('shows a new person their pending requests', async () => {
     const api = renderPortal();
     await signInAs('Sam Ortiz');
-    await screen.findAllByText('Waiting for approval');
-    expect(screen.getAllByText('Requested').length).toBe(2);
+    await waitFor(() => expect(screen.getAllByText('Requested').length).toBe(2));
     expect((await api.catalog()).apps.find((a) => a.slug === 'hello')!.access).toBe(null);
+  });
+
+  it('opens the app from anywhere on the card, with a preview, Details and favorite on top', async () => {
+    renderPortal();
+    await signInAs('Priya Rao');
+    const card = (await screen.findByRole('heading', { name: 'Potluck' })).closest('li')!;
+    const open = within(card).getByRole('link', { name: 'Potluck' });
+    expect(open).toHaveAttribute('href', expect.stringMatching(/potluck\..*\/$/));
+    expect(open).toHaveClass('app-card-open'); // stretched over the card in CSS
+    expect(card.querySelector('.app-preview img')).toHaveAttribute('src', expect.stringMatching(/potluck\..*\/preview\.png$/));
+    expect(within(card).getByRole('link', { name: 'Details about Potluck' })).toHaveAttribute('href', '#/app/potluck');
+    expect(within(card).getByRole('button', { name: 'Add Potluck to favorites' })).toBeInTheDocument();
+  });
+
+  it('falls back to the initial when an app has no preview yet', async () => {
+    renderPortal();
+    const card = (await screen.findByRole('heading', { name: 'Potluck' })).closest('li')!;
+    fireEvent.error(card.querySelector('.app-preview img')!);
+    expect(within(card).getByText('P')).toBeInTheDocument();
   });
 });
 

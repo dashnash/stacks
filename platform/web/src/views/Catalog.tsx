@@ -10,63 +10,64 @@ export function accessBadge(app: CatalogApp): { text: string; tone: string } {
   return app.visibility === 'public' ? { text: 'Open to all', tone: 'info' } : { text: 'Private', tone: 'muted' };
 }
 
+/**
+ * The app's preview: `preview.png` on its own site (written by `npm run verify-app` from the demo),
+ * or its initial on a tile when there is none yet.
+ */
+export function AppPreview({ app, className }: { app: CatalogApp; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <div className={['app-preview', className].filter(Boolean).join(' ')} aria-hidden>
+      {broken ? <span className="app-preview-initial">{app.name.slice(0, 1)}</span> : <img src={`${app.url}preview.png`} alt="" loading="lazy" onError={() => setBroken(true)} />}
+    </div>
+  );
+}
+
+/** Clicking anywhere on the card opens the app; Details and the star sit on top of that link. */
 function AppCard({ app, onChange }: { app: CatalogApp; onChange: () => void }) {
   const { api, status } = usePortal();
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const badge = accessBadge(app);
-  const canOpen = app.access && app.access !== 'PENDING' && app.access !== 'BLOCKED';
 
-  const run = (fn: () => Promise<unknown>) => async () => {
-    setBusy(true);
+  const toggleFavorite = async () => {
     setError(null);
     try {
-      await fn();
+      await api.setFavorite(app.slug, !app.favorite);
       onChange();
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
   return (
     <li className="app-card">
-      <div className="app-card-top">
-        <span className="app-icon" aria-hidden>
-          {app.name.slice(0, 1)}
-        </span>
-        <div className="grow">
-          <h3>
-            <a href={`#/app/${app.slug}`}>{app.name}</a>
-          </h3>
-          <p className="muted">{app.tagline}</p>
-        </div>
-        {status === 'signedIn' && (
-          <button
-            type="button"
-            className={`star${app.favorite ? ' on' : ''}`}
-            aria-pressed={app.favorite}
-            aria-label={app.favorite ? `Remove ${app.name} from favorites` : `Add ${app.name} to favorites`}
-            onClick={run(() => api.setFavorite(app.slug, !app.favorite))}
-          >
-            {app.favorite ? '★' : '☆'}
-          </button>
-        )}
+      <AppPreview app={app} />
+      <div className="app-card-body">
+        <h3>
+          <a className="app-card-open" href={app.url}>
+            {app.name}
+          </a>
+        </h3>
+        <p className="muted">{app.tagline}</p>
       </div>
       <div className="app-card-bottom">
         <span className={`pill ${badge.tone}`}>{badge.text}</span>
-        {app.access === 'BLOCKED' ? null : canOpen || app.visibility === 'public' || status === 'signedOut' ? (
-          <a className="button small" href={app.url}>
-            Open
+        <span className="app-card-actions">
+          <a className="details" href={`#/app/${app.slug}`} aria-label={`Details about ${app.name}`}>
+            Details
           </a>
-        ) : app.access === 'PENDING' ? (
-          <span className="muted small">Waiting for approval</span>
-        ) : (
-          <button type="button" className="button small secondary" disabled={busy} onClick={run(() => api.requestAccess(app.slug))}>
-            Request access
-          </button>
-        )}
+          {status === 'signedIn' && (
+            <button
+              type="button"
+              className={`star${app.favorite ? ' on' : ''}`}
+              aria-pressed={app.favorite}
+              aria-label={app.favorite ? `Remove ${app.name} from favorites` : `Add ${app.name} to favorites`}
+              onClick={() => void toggleFavorite()}
+            >
+              {app.favorite ? '★' : '☆'}
+            </button>
+          )}
+        </span>
       </div>
       <ErrorNote error={error} className="error" />
     </li>
@@ -98,7 +99,7 @@ export function Catalog({ signedOutNotice }: { signedOutNotice?: boolean }) {
       <div className="catalog-head">
         <div>
           <h1>Apps</h1>
-          <p className="muted">{signedIn ? 'Everything on the platform. Open the ones you use, or ask for access.' : 'Sign in once with Google to use any app here.'}</p>
+          <p className="muted">{signedIn ? 'Everything on the platform. Tap an app to open it; Details tells you more.' : 'Sign in once with Google to use any app here.'}</p>
         </div>
         <input className="search" type="search" placeholder="Search apps" aria-label="Search apps" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>

@@ -98,7 +98,11 @@ async function screenshots(): Promise<void> {
     return console.log('• screenshots … skipped (no Playwright)');
   }
   process.stdout.write('• screenshots … ');
-  const { personas } = (await import(pathToFileURL(path.join(appDir, 'api/demo-data.ts')).href)) as { personas: { email: string; name: string; role: string }[] };
+  // Inner pages the app asks for (web/src/demo/pages.ts), shot signed in.
+  const pagesFile = path.join(appDir, 'web/src/demo/pages.ts');
+  const extraPages = existsSync(pagesFile)
+    ? ((await import(pathToFileURL(pagesFile).href)) as { screenshotPages?: { name: string; hash: string; as?: string[] }[] }).screenshotPages ?? []
+    : [];
   const outDir = path.join(appDir, '.stacks/screenshots');
   mkdirSync(outDir, { recursive: true });
   const { server, url } = await serve(path.join(appDir, 'web/dist-demo'));
@@ -106,13 +110,28 @@ async function screenshots(): Promise<void> {
   const problems: string[] = [];
   const shots: string[] = [];
   try {
-    const who = [{ id: 'signed-out', as: null as string | null }, ...personas.map((p) => ({ id: `${p.role.toLowerCase()}-${p.name.toLowerCase()}`, as: p.email }))];
+    // The demo says who it can sign in as (window.__stacksDemo, set by <DemoApp>).
+    type P = { email: string; name: string; role: string };
+    const probe = await browser.newPage({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 1 });
+    await probe.goto(`${url}/demo.html`);
+    await probe.waitForSelector('[data-stacks-account-menu]', { timeout: 15_000 }).catch(() => undefined);
+    const personas = await probe.evaluate(() => ((globalThis as { __stacksDemo?: { personas: P[] } }).__stacksDemo?.personas ?? []) as P[]);
+    await probe.close();
+    if (!personas.length) problems.push('the demo lists no personas (is the app wrapped in <DemoApp>?)');
+    const personaId = (p: { role: string; name: string }) => `${p.role}-${p.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const who: { id: string; as: string | null; hash: string }[] = [
+      { id: 'signed-out', as: null, hash: '' },
+      ...personas.map((p) => ({ id: personaId(p), as: p.email, hash: '' })),
+      ...extraPages.flatMap((page) =>
+        personas.filter((p) => !page.as || page.as.includes(p.email)).map((p) => ({ id: `${page.name}-${personaId(p)}`, as: p.email, hash: page.hash.startsWith('#') ? page.hash : `#${page.hash}` })),
+      ),
+    ];
     for (const viewport of [{ id: 'desktop', width: 1280, height: 800 }, { id: 'phone', width: 390, height: 844 }]) {
       for (const w of who) {
         const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
         page.on('pageerror', (e) => problems.push(`${w.id}/${viewport.id}: ${e.message}`));
         page.on('console', (m) => m.type() === 'error' && problems.push(`${w.id}/${viewport.id}: console: ${m.text()}`));
-        await page.goto(`${url}/demo.html${w.as ? `?as=${encodeURIComponent(w.as)}` : ''}`);
+        await page.goto(`${url}/demo.html${w.as ? `?as=${encodeURIComponent(w.as)}` : ''}${w.hash}`);
         await page.waitForSelector(w.as ? '[data-stacks-account-menu="signedIn"]' : '[data-stacks-account-menu="signedOut"]', { timeout: 15_000 }).catch(() => problems.push(`${w.id}/${viewport.id}: the account menu never showed the expected state`));
         await page.waitForTimeout(400);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -122,6 +141,18 @@ async function screenshots(): Promise<void> {
         shots.push(path.relative(repoRoot, file));
         await page.close();
       }
+    }
+    // The catalog card's preview: the first persona's home screen, served by the app at /preview.png.
+    if (personas[0]) {
+      const page = await browser.newPage({ viewport: { width: 1200, height: 750 }, deviceScaleFactor: 0.5 });
+      await page.goto(`${url}/demo.html?as=${encodeURIComponent(personas[0].email)}`);
+      await page.waitForSelector('[data-stacks-account-menu="signedIn"]', { timeout: 15_000 }).catch(() => undefined);
+      await page.waitForTimeout(400);
+      const preview = path.join(appDir, 'web/public/preview.png');
+      mkdirSync(path.dirname(preview), { recursive: true });
+      await page.screenshot({ path: preview, fullPage: false });
+      shots.push(`${path.relative(repoRoot, preview)} (catalog preview: commit it)`);
+      await page.close();
     }
   } finally {
     await browser.close();
