@@ -44,9 +44,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Test and build the app
+        env:
+          VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           npm test -w "apps/${{ inputs.app }}"
-          npm run build -w "apps/${{ inputs.app }}"
+          # The commit actually built (the branch's), for the app's footer.
+          VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build -w "apps/${{ inputs.app }}"
       - name: Synth (no AWS credentials in this job)
         working-directory: infra
         run: npx cdk synth -q -c env=staging -c "app=${{ inputs.app }}" -o ../cdk.out

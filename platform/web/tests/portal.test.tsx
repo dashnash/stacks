@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { App, BuildVersion } from '../src/App';
+import { App } from '../src/App';
 import { createDemoPortal, DEMO_PEOPLE } from '../src/demo/backend';
 import { parseHash, PortalProvider, safeNext } from '../src/portal';
 import { toCsv } from '../src/views/AccessGrid';
@@ -156,18 +156,10 @@ describe('access grid', () => {
 });
 
 describe('footer', () => {
-  it('shows the deployed build on every page, linking to its commit', async () => {
+  it('ends every page with the build (shared <BuildVersion />)', async () => {
     renderPortal();
-    expect(await screen.findByRole('contentinfo')).toHaveTextContent('Stacks');
-    render(<BuildVersion sha="0123456789abcdef" commitUrl="https://github.com/o/r/commit/0123456789abcdef" />);
-    expect(screen.getByRole('link', { name: 'Build 0123456' })).toHaveAttribute('href', 'https://github.com/o/r/commit/0123456789abcdef');
-  });
-
-  it('shows the build without a link when the repository is unknown, and nothing without a commit', () => {
-    const { container } = render(<BuildVersion sha="0123456789abcdef" commitUrl="" />);
-    expect(screen.getByText('Build 0123456')).toBeInTheDocument();
-    expect(container.querySelector('a')).toBeNull();
-    const empty = render(<BuildVersion sha="" commitUrl="" />);
-    expect(empty.container).toBeEmptyDOMElement();
+    const footer = await screen.findByRole('contentinfo');
+    expect(footer).toHaveTextContent('Stacks');
+    expect(footer.querySelector('[data-stacks-build]')).not.toBeNull();
   });
 });

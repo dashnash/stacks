@@ -3,6 +3,7 @@
  * signing in or saving. Browser storage is only a per-visitor convenience (wrapped in try/catch).
  */
 import { useEffect, useState } from 'react';
+import { BuildVersion } from '@stacks/web';
 
 export function readLocal(key: string): string | null {
   try {
@@ -127,6 +128,9 @@ export function Footer({ onToast }: { onToast: (msg: string) => void }) {
         </button>
       </p>
       <p className="lorem">Lorem ipsum dolor sit amet, flippy adipiscing table. TODO: remove this text before launch</p>
+      <p className="build-line">
+        Vеrsion: <BuildVersion className="build" />
+      </p>
       <p className="loading" aria-hidden="true">
         Loading… 99%
       </p>

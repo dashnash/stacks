@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { AccountMenu, Avatar, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
+import { AccountMenu, Avatar, BuildVersion, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
 import { manifest } from '../../api/manifest';
 import { MAX_NOTE, type Note } from '../../api/routes';
 
@@ -104,8 +104,9 @@ export function App() {
         <AccountMenu className="account" />
       </header>
       <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Home key={`${session.user.email}:${session.role}`} /> : <Landing />}</main>
+      {/* Platform rule: the build is shown on every screen (tools/app-conformance). */}
       <footer className="foot muted small">
-        {manifest.name} · built on Stacks
+        {manifest.name} · built on Stacks · <BuildVersion className="build" />
       </footer>
     </div>
   );
