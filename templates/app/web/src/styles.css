@@ -34,3 +34,4 @@ h1 { font-size: 1.75rem; margin: 0; }
 .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .meta { margin: 4px 0 0; font-size: 0.8rem; color: var(--muted); }
 .foot { margin-top: 48px; text-align: center; }
+.build { color: inherit; font-family: ui-monospace, Menlo, monospace; }

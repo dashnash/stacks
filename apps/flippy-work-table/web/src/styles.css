@@ -90,6 +90,8 @@ body {
 .foot { background: #222; color: #bbb; padding: 10px 16px; font-size: 0.75rem; text-align: center; }
 .foot .link { color: #9cf; }
 .lorem { color: #555; font-style: italic; }
+.build-line { font-size: 11px; color: #777; margin: 4px 0 0; }
+.build-line .build { color: inherit; font-family: "Courier New", monospace; }
 .loading { position: fixed; right: 4px; bottom: 2px; margin: 0; font-size: 0.65rem; color: #999; pointer-events: none; }
 
 .cookie { position: fixed; left: 8px; right: 8px; bottom: 8px; max-width: 520px; margin: 0 auto; background: #fff; border: 3px double #000; padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; box-shadow: 4px 4px 0 #000; font-size: 0.85rem; z-index: 5; }
