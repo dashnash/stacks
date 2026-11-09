@@ -1,4 +1,4 @@
-import { AccountMenu, matchRoute, Spinner, useHashRoute, useStacks } from '@stacks/web';
+import { AccountMenu, BuildVersion, matchRoute, Spinner, useHashRoute, useStacks } from '@stacks/web';
 import { manifest } from '../../api/manifest';
 import { Lists } from './views/Lists';
 import { ListView } from './views/ListView';
@@ -61,7 +61,9 @@ export function App() {
         <AccountMenu className="account" />
       </header>
       <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <SignedIn key={`${session.user.email}:${session.role}`} /> : <Landing />}</main>
-      <footer className="foot muted small">{manifest.name} · surprises intact</footer>
+      <footer className="foot muted small">
+        {manifest.name} · surprises intact · <BuildVersion className="build" />
+      </footer>
     </div>
   );
 }

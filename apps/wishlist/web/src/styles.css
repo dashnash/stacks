@@ -81,3 +81,4 @@ form.note { display: block; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 480px) { .two { grid-template-columns: 1fr; } }
 .foot { margin-top: 48px; text-align: center; }
+.build { color: inherit; font-family: ui-monospace, Menlo, monospace; }
