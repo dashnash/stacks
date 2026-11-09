@@ -237,7 +237,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | `@stacks/infra` | `PlatformApp` construct: S3 + OAC, CloudFront, SPA rewrite, CSP and security headers, HTTP API with throttling, arm64 Node 22 Lambda, single table with GSI1 + TTL, log retention, cache policy, `config.json` writer, module resources | `infra/lib/book-club-stack.ts` |
 | `@stacks/testing` | `MemoryStore` fakes, persona sign-in, integration helpers, Playwright smoke helper | `backend/tests/helpers.ts`, `frontend/tests/fakes.tsx` |
 | `@stacks/demo` | Runs the app's real API in the browser on `MemoryStore` with seeded personas; single-file demo build | `frontend/src/demo/*`, `scripts/inline-demo.mjs` |
-| App template | Build-hash footer, ToS and privacy templates, Open Graph tags, favicon set, `/public/*` convention, landing page | `build-info.ts`, `public/*.html` |
+| App template | Build-hash footer (`<BuildVersion />`, required), ToS and privacy templates, Open Graph tags, favicon set, `/public/*` convention, landing page | `build-info.ts`, `public/*.html` |
 
 **Tier 3 — Opt-in modules** (enabled per app in `manifest.modules`)
 
@@ -443,7 +443,7 @@ Phase 2 build notes:
 - **Registry**: each app stack writes `/stacks/<env>/apps/<slug>/manifest` and `/table` to SSM. The platform reads these (cached a minute) and registers an app the first time it sees it, giving the manifest's `owners` the top role.
 - **Portal bar** (later replaced by the account menu): it got its data from the app's own API, which asks the platform server-to-server, so the portal cookie never leaves `auth.<domain>` and no CORS is needed. The account menu works the same way (`/api/stacks/account`).
 - **Sign-out** from any app or the portal ends the master session and the user's sessions in every app.
-- **Footer**: every portal page ends with a footer showing the deployed commit ("Build 1a2b3c4", linking to it on GitHub), injected at build time from `GITHUB_SHA` (`platform/web/build-info.ts`, the same helper as Book Club's).
+- **Build info everywhere**: the portal and every app show which commit is live ("Build 1a2b3c4", linking to it on GitHub) with `<BuildVersion />` from `@stacks/web`, usually in the footer. CI sets `VITE_STACKS_BUILD_SHA` (the commit actually built) and `VITE_STACKS_REPO_URL` for the build, and Vite bakes them in; local builds say "Build dev". `tools/app-conformance` requires it in every app, signed in and out, and the template's footer has it.
 
 **Phase 3 — Book Club migration** (done; cut over on 2026-11-08, `docs/BOOK_CLUB_MIGRATION.md`)
 

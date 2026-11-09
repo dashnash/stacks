@@ -25,7 +25,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - name: Build (stamps the commit into every app's and the portal's footer)
+        env:
+          VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build
       - name: Synth
         working-directory: infra
         run: |

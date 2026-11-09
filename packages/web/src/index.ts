@@ -6,5 +6,6 @@ export { matchRoute, useAsync, useHashRoute } from './hooks';
 export type { AsyncState } from './hooks';
 export { Avatar, ErrorNote, initials, lockPageScroll, Modal, RequestAccess, Spinner } from './components';
 export { firstName, formatDateTime, formatShortDate, timeAgo } from './format';
+export { BuildVersion } from './BuildVersion';
 export { AccountMenu, AccountMenuView, DemoControlsContext, useAccountMenu } from './AccountMenu';
 export type { AccountData, AccountMenuViewProps, AccountState, DemoControls, MenuItem } from './AccountMenu';

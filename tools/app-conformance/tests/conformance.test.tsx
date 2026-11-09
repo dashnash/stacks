@@ -68,4 +68,13 @@ describe.each(appDirs)('%s', (slug) => {
     await userEvent.click(within(menu).getByRole('menuitem', { name: /^Sign out/ }));
     await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedOut"]')).not.toBeNull(), { timeout: 10_000 });
   });
+
+  it('shows the build (<BuildVersion />) signed out and signed in', async () => {
+    const demo = await load();
+    await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedOut"]')).not.toBeNull(), { timeout: 10_000 });
+    expect(document.querySelector('[data-stacks-build]'), 'signed out: no <BuildVersion /> on the screen').not.toBeNull();
+    await demo.signInAs(demo.personas.find((p) => p.role)!.email);
+    await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedIn"]')).not.toBeNull(), { timeout: 10_000 });
+    expect(document.querySelector('[data-stacks-build]'), 'signed in: no <BuildVersion /> on the screen').not.toBeNull();
+  });
 });
