@@ -1,0 +1,18 @@
+{
+  "slug": "wishlist",
+  "name": "Wishlist",
+  "tagline": "Everyone's gift list in one place. Claim quietly: no duplicates, no spoilers.",
+  "description": "Each person keeps a list of gifts they'd like. Everyone else can claim an item so nobody double-buys, and the person whose list it is never sees who claimed what.",
+  "category": "Family",
+  "visibility": "private",
+  "roles": [
+    { "id": "ORGANIZER", "label": "Organizer", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "MEMBER", "label": "Family member" }
+  ],
+  "topRole": "ORGANIZER",
+  "defaultRole": "MEMBER",
+  "publicRoutes": ["/"],
+  "modules": ["notifications"],
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}
