@@ -36,4 +36,7 @@ function App() {
   Theme with `--stacks-menu-bg|fg|muted|border|accent|accent-fg|muted-bg|hover|radius|font` on a
   wrapper class. For a fully custom control use `useAccountMenu()` and set `"accountMenu": "custom"`.
   `tools/app-conformance` fails CI if an app's header doesn't have one.
+- **Build info (required):** put `<BuildVersion />` somewhere on every screen, usually the footer: it
+  shows "Build 1a2b3c4" linking to the commit (CI sets `VITE_STACKS_BUILD_SHA`/`VITE_STACKS_REPO_URL`;
+  local builds say "Build dev"). Takes `className`/`style`. `tools/app-conformance` checks for it.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.email + session.role} />`.

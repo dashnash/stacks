@@ -46,6 +46,7 @@ its tests) rather than rewriting from scratch.
   `@dashnash` (`CODEOWNERS`). Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.
-- Every app has `<AccountMenu />` at the top right of its header and exports `App` + `demoOptions()`
-  from `web/src/demo/setup.ts`; `tools/app-conformance` enforces both.
+- Every app has `<AccountMenu />` at the top right of its header, shows `<BuildVersion />` (usually in
+  its footer) signed in and out, and exports `App` + `demoOptions()` from `web/src/demo/setup.ts`;
+  `tools/app-conformance` enforces all three.
 - If code and spec disagree, raise it; update `docs/PLATFORM_SPEC.md` in the same PR as the change.
