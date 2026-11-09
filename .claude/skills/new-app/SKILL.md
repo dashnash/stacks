@@ -115,7 +115,8 @@ npm run verify-app -- <slug>
 It runs the typecheck, the app's tests, the platform conformance test, the import rule and the
 "only apps/<slug>/ changed" check, builds the app and demo, and screenshots the demo signed out and
 as every persona on desktop and phone (`apps/<slug>/.stacks/screenshots/`, not committed). It also
-reports page errors and sideways scrolling. Fix everything it reports.
+reports page errors and sideways scrolling. It also writes `web/public/preview.png`, the picture on
+the app's card in the catalog (demo data only, never real people): commit it. Fix everything it reports.
 
 Look at the screenshots yourself (open the PNGs) and compare them with the brief. Then show the
 creator the two or three that matter most (send the files if you can) and ask what to change.
@@ -124,7 +125,7 @@ Iterate: change → `verify-app` → show. Then `npm run app-usage -- <slug> ver
 ## 5. Put it on the test site
 
 ```bash
-git add apps/<slug> package-lock.json && git commit -m "<Name>: first version"
+git add apps/<slug> package-lock.json && git commit -m "<Name>: first version"   # includes web/public/preview.png
 git push -u origin <branch>
 gh api -X POST repos/dashnash/stacks/actions/workflows/deploy-test.yml/dispatches \
   -f ref=main -f "inputs[app]=<slug>" -f "inputs[ref]=<branch>"

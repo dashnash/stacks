@@ -40,7 +40,9 @@ export function SignIn({ next }: { next?: string }) {
             .catch((err: Error) => setError(err.message));
         },
       });
-      window.google.accounts.id.renderButton(button.current, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with' });
+      // Match the page: Google's dark button on a dark page, its outlined one on a light page.
+      const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+      window.google.accounts.id.renderButton(button.current, { theme: dark ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
       window.google.accounts.id.prompt();
     })().catch((err: Error) => setError(err.message));
     return () => {

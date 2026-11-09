@@ -31,7 +31,7 @@ jobs:
           args: -color
       - name: Import rule
         run: node scripts/check-imports.mjs
-      - name: App branches touch only their app
+      - name: PR paths (app PRs change one app; anything else is platform work)
         if: github.event_name == 'pull_request'
         env:
           HEAD_REF: ${{ github.head_ref }}

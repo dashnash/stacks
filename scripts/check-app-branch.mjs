@@ -1,19 +1,15 @@
 #!/usr/bin/env node
 /**
- * Path guard for app pull requests (spec: Guardrails). A PR from a branch named `app/<slug>/...`
- * may change only apps/<slug>/ (and the lockfile). Usage: check-app-branch <branch> <changed files...>
- * Other branches are platform work and are gated by CODEOWNERS review instead.
+ * CI path guard (spec: Guardrails). Usage: check-app-branch <branch> <changed files...>
+ * The rules are in pr-paths.mjs (tested in tools/app-conformance).
  */
+import { classifyPr } from './pr-paths.mjs';
+
 const [branch, ...changed] = process.argv.slice(2);
-const m = /^app\/([a-z][a-z0-9-]+)\//.exec(branch ?? '');
-if (!m) {
-  console.log(`${branch}: not an app branch; CODEOWNERS review applies.`);
-  process.exit(0);
+const result = classifyPr(branch, changed);
+(result.ok ? console.log : console.error)(result.message);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  const { appendFileSync } = await import('node:fs');
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### PR paths\n\n${result.ok ? '✅' : '❌'} ${result.message.replace(/\n/g, '  \n')}\n`);
 }
-const slug = m[1];
-const outside = changed.filter((f) => !f.startsWith(`apps/${slug}/`) && f !== 'package-lock.json');
-if (outside.length) {
-  console.error(`App branch for "${slug}" changes files outside apps/${slug}/:\n  - ${outside.join('\n  - ')}`);
-  process.exit(1);
-}
-console.log(`App branch OK: only apps/${slug}/ changed.`);
+process.exit(result.ok ? 0 : 1);
