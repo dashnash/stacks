@@ -8,7 +8,7 @@ As of 2026-11-09 · Owner: Dashiell Nash (@dashnash) · Status: draft from the b
 
 ## Overview
 
-**dashyhq** is one universal iPhone/iPad app that wraps the whole Stacks platform: it opens the
+**DashyHQ** is one universal iPhone/iPad app that wraps the whole Stacks platform: it opens the
 portal at `auth.<domain>`, and every app on the platform runs inside it from the live website.
 The native code is a thin shell. It adds only what the web can't do on iOS: system sign-in with
 Google and Apple, APNs push and badges, universal links, the share sheet, and a capability bridge to
@@ -31,7 +31,7 @@ changes.
 6. **Learn the iOS publishing path** end to end (an explicit goal: the one-time setup steps are
    written as a runbook, not hidden in automation).
 
-**Non-goals for v1**: per-app branded iOS apps (one dashyhq app only; the shell stays able to
+**Non-goals for v1**: per-app branded iOS apps (one DashyHQ app only; the shell stays able to
 produce them later), Android (the bridge protocol stays platform-neutral so it can be added later),
 offline use of app content, native rewrites of any app screen, Live Activities, NFC, HealthKit,
 background location.
@@ -45,14 +45,16 @@ From the brainstorm on 2026-11-09.
 | Why native | Learn iOS publishing, App Store presence, native sign-in, reliable push. Web Push for Home Screen web apps was considered and is not the plan; it may come later for desktop browsers on the same device registry |
 | Distribution | TestFlight first; designed to the App Store bar so a public listing follows |
 | Scope | One universal app for the whole platform (iPhone + iPad) |
-| Name / bundle ID | `dashyhq` / `com.dashyhq.stacks`; staging `dashyhq Test` / `com.dashyhq.stacks.test` |
-| Apple account | Existing **individual** Developer Program account (seller shows as Dashiell Nash) |
+| Name / bundle ID | App name **DashyHQ** / `com.dashyhq.stacks`; staging **DashyHQ Test** / `com.dashyhq.stacks.test` |
+| Apple account | Individual Developer Program membership (seller shows as Dashiell Nash). TestFlight, CI uploads, push, Sign in with Apple and universal links all need the paid program ($99/yr); a free Apple ID only runs 7-day builds on your own devices from Xcode, enough for early shell and bridge work |
 | Minimum OS | iOS/iPadOS 26 |
 | Staging app | Yes: a second app on `*.test.<domain>`, own bundle ID, TestFlight internal testers only |
 | Shell model | A `WKWebView` (or SwiftUI `WebView`/`WebPage` where it exposes the hooks we need) loading the live site; no bundled web content except the offline screen |
 | Google sign-in | Native Google Sign-In for iOS (Google blocks OAuth in embedded web views); the ID token goes to the existing `POST /auth/google` from inside the web view |
 | Apple sign-in | **Added to the platform**, web and iOS. Lifts the platform's "non-Google identity providers" non-goal |
 | User identity | **Users move from email keys to internal user IDs** in one coordinated cut-over across the platform and every app table |
+| Account merge | Self-serve, from Settings; the merged-away ID becomes an alias, so app data needs no rewrite |
+| Email to apps | None by default; Book Club doesn't need member emails (its admin page and meeting form switch to display names) |
 | Push | Every inbox notification is pushed; badge = inbox count; per-app mute; Approve/Deny on access requests |
 | Push transport | APNs directly from the Platform API Lambda (HTTP/2, token auth with a `.p8` key in SSM); no SNS |
 | Native extras v1 | Universal links, native share sheet, offline/error screen with pull-to-refresh |
@@ -68,7 +70,7 @@ From the brainstorm on 2026-11-09.
 
 ```mermaid
 flowchart TB
-  subgraph D["iPhone / iPad: dashyhq"]
+  subgraph D["iPhone / iPad: DashyHQ"]
     SHELL["Native shell (Swift)<br/>navigation policy, offline screen,<br/>share, universal links"]
     WV["Web view (WebKit)<br/>auth.DOMAIN portal + every app<br/>cookies in the default data store"]
     BR["Bridge (window.stacksNative)<br/>origin + manifest checked"]
@@ -126,14 +128,14 @@ import only `@stacks/native`, never `native/`.
 | Start page | `https://auth.<domain>/`, or the page the person was on at last launch (restored within 24 h) |
 | In-app hosts | `auth.<domain>` and any `<slug>.<domain>` in the catalog (fetched from the Platform API at launch, cached). These open in the web view |
 | Other links | Open in `SFSafariViewController` (Google, GitHub, external sites); `mailto:`/`tel:`/`sms:` go to the system |
-| Identity | User agent gains `dashyhq/<version> StacksNative/<protocol>` so pages can tell they're in the shell; `window.stacksNative` is injected at document start |
+| Identity | User agent gains `DashyHQ/<version> StacksNative/<protocol>` so pages can tell they're in the shell; `window.stacksNative` is injected at document start |
 | Chrome | Full-bleed web view, safe-area aware, no native tab bar. The account menu stays the only navigation (the platform's rule), so iPad Split View, Stage Manager and rotation just work |
 | Back | Edge-swipe back on; apps can turn it off during a game (Game kit) |
 | Offline / errors | A native screen ("Can't reach Stacks", retry, last-tried URL) for network failures and 5xx on the main frame; pull-to-refresh on every page |
 | Downloads and files | `<input type=file>` uses the system picker and camera; downloads go to the share sheet |
 | Universal links | `applinks:auth.<domain>` and `applinks:*.<domain>`; opening any link to these hosts lands on that page in the app |
 | Share | `stacksNative.share({ url, text, title })` opens the share sheet; the web fallback is `navigator.share` |
-| Updates | Content is always live. The shell checks a `minShellVersion` in the Platform API's `/native/config` and shows "Update dashyhq" when the shell is too old for the current bridge |
+| Updates | Content is always live. The shell checks a `minShellVersion` in the Platform API's `/native/config` and shows "Update DashyHQ" when the shell is too old for the current bridge |
 
 **Universal links on the web side.** The platform stack and the `PlatformApp` construct serve
 `/.well-known/apple-app-site-association` (JSON, no redirect) on `auth.<domain>` and every app host,
@@ -207,12 +209,32 @@ an internal ID.
 
 **Matching at sign-in**: identity `sub` → user. Else a *verified, non-relay* email that matches a user → link
 the new identity to that user automatically. Else a new user. Signed-in people can add the other
-provider in **Settings › Sign-in methods** ("Link Apple ID" / "Link Google"). Merging two accounts
-that already exist is a super-admin action in the grid (later; until then, link before it happens).
+provider in **Settings › Sign-in methods** ("Link Apple ID" / "Link Google").
+
+**Self-serve merge.** If the identity being linked already belongs to another account, Settings
+offers **Merge accounts**: the person is signed in to account A and has just proved account B by
+signing in with it, so both are theirs. They confirm a summary (B's apps and roles, what A keeps),
+and then:
+
+- B's identities and emails move to A; `USER#B` becomes `{ mergedInto: A }` (an **alias**, kept
+  forever). A's profile wins; B's display name and avatar are dropped unless A has none.
+- **Grants**, per app: a role beats pending or none; between two roles the one listed earlier in the
+  manifest's `roles` wins (roles are listed strongest first, as every manifest does today); **`BLOCKED`
+  on either side wins**, so a merge can't escape a block. Pending requests are kept once.
+- **App data isn't rewritten.** Apps keep B's ID wherever they stored it; `getPeople`, `appMembers`
+  and session reads resolve aliases, so B's old posts show as A. Apps that want a clean table
+  can listen for `user.merged` (a webhook to the app's API, `{ from: B, into: A }`) and rewrite at
+  their own pace. The comments module does this.
+- B's sessions and devices end; inbox items move to A. Audit `user.merge` (both IDs) in the platform
+  feed and in each app where B had a grant.
+- Limits: you can't merge into or out of a platform admin from Settings (super-admin only), you
+  can't merge an alias, and there's no unmerge (the summary says so).
 
 **What apps see**: `user.id`, `displayName`, `pictureUrl` and their role. Email is no longer given to
 apps by default. An app that truly needs it declares `"needsEmail": true` in its manifest
 (reviewed like a sensitive capability), and a relay address is what it gets for hidden-email users.
+No app needs it today: Book Club's admin page (`AdminPanel.tsx`), meeting form and audit filter
+switch from emails to display names in N1.
 `deps.platform.notify(userId, …)`, `appMembers`, `getPeople` and the comments module all move to IDs.
 `stacks.config.json` keeps `platformAdmins` and manifest `owners` as emails, resolved through `EMAIL#`.
 
@@ -324,7 +346,7 @@ await native.gameCenter.submitScore('flips', 4200);
   app that declared it. **Main frame only**; iframes get nothing. `auth.*` is portal-only.
 - iOS still asks the user. The shell carries every purpose string up front (Info.plist can't change
   per app): camera, microphone, location when in use, motion, photo library add. They are worded for
-  a platform ("Apps you use in dashyhq can use the camera when you choose to take a photo or scan a
+  a platform ("Apps you use in DashyHQ can use the camera when you choose to take a photo or scan a
   code").
 
 **Protocol**: `window.stacksNative.call(name, args) → Promise` over a `WKScriptMessageHandlerWithReply`,
@@ -340,7 +362,7 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 | App | Bundle ID | Domain | TestFlight audience |
 | --- | --- | --- | --- |
 | dashyhq | `com.dashyhq.stacks` | `<domain>` | Internal (Dash), then an external group by invite link for members (Beta App Review on each new version) |
-| dashyhq Test | `com.dashyhq.stacks.test` | `test.<domain>` | Internal only |
+| DashyHQ Test | `com.dashyhq.stacks.test` | `test.<domain>` | Internal only |
 
 **`ios.yml`**
 
@@ -409,8 +431,10 @@ Each phase ends with a gate. N1 is pure platform work and can start before any i
 **N1 — Identity v2** (platform)
 - [ ] User IDs, identities, email index; SDK and modules on IDs; apps see no email by default
 - [ ] `tools/migrate-user-ids` + per-app migrations; maintenance flag; cut-over on staging, then production
+- [ ] Book Club's admin page, meeting form and audit filter show display names, not emails
+- [ ] Settings › Sign-in methods with self-serve merge (aliases, grant rules, `user.merged` webhook)
 
-Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching and linking.
+Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching, linking and merging (incl. block-wins and alias resolution).
 
 **N2 — Shell and native Google sign-in**
 - [ ] `native/ios` (XcodeGen), web view shell, URL policy, offline screen, pull-to-refresh, share, universal links (AASA on all hosts)
@@ -418,7 +442,7 @@ Gate: every existing user signs in with Google and sees the same data and roles;
 - [ ] `ios.yml`: PR builds, signed uploads of both apps to TestFlight internal
 - [ ] `docs/IOS_SETUP.md` written while doing the setup
 
-Gate: install dashyhq from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
+Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
 
 **N3 — Push**
 - [ ] Devices API, APNs sender, absolute links, badge sync, per-app mute in Settings
@@ -447,9 +471,10 @@ Gate: flick-to-flip on a real iPhone, keyboard/drag emulation in demo mode, and 
 
 Defaulted as written above; change any by editing this spec.
 
-- [ ] **Display name**: "dashyhq" as given; confirm the capitalization (e.g. "DashyHQ") before the App Store Connect record exists (it can change later, the bundle ID can't).
-- [ ] **Email to apps**: default no email unless `needsEmail`. Book Club shows member emails on its admin page today; does it need `needsEmail`, or is the grid enough?
-- [ ] **Account merge**: when someone already has two accounts (Google + hidden-email Apple), is super-admin merge enough, or self-serve?
+- [x] **App name**: DashyHQ; bundle IDs stay lower case (`com.dashyhq.stacks`).
+- [x] **Email to apps**: none by default; Book Club doesn't need member emails.
+- [x] **Account merge**: self-serve from Settings (aliases, see Identity v2).
+- [ ] **When to pay for the Developer Program**: free Apple ID is enough for shell and bridge work on your own devices; the paid program is needed from the N2 gate (TestFlight, CI uploads, push, Apple sign-in, universal links).
 - [ ] **SwiftUI `WebView`/`WebPage` vs `WKWebView`**: use the SwiftUI API only if it exposes reply message handlers, the UI delegate's permission hooks and the navigation policy; otherwise wrap `WKWebView`. Decide in N2.
 - [ ] **Individual → organization account**: if you ever move to an LLC, do it before the public App Store release to avoid the Sign in with Apple transfer.
 - [ ] **Web Push later**: reuse the device registry for desktop/Android browsers?
