@@ -90,3 +90,11 @@ that aren't set show as `missingSecrets` on `GET /api/health`. In tests:
 `createTestHarness({ manifest, routes, secrets: { MAPS_API_KEY: 'x' } })`.
 
 Other: `recordAudit(deps, user, { action, label, details })`, `listAudit`, `endUserSessions(deps, email)`.
+
+Small helpers apps use:
+
+- `await sha256Hex(text)`: hex SHA-256, e.g. a stable, email-free id for a person's record
+  (`(await sha256Hex('myapp:' + email)).slice(0, 16)`); `randomToken(prefix)`: unguessable ids.
+- Types for splitting routes across files: `AppRoutes<D>`, `AppDeps`, `Viewer<D>` (the `v` in signed-in
+  handlers), `PublicContext<D>` (`ctx`), `RequestContext` (`req`), `RouteResult`, `Item` (a stored row),
+  `StacksUser` (`{ email, name, pictureUrl? }`), `Person`.
