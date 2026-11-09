@@ -4,8 +4,8 @@ import type { EasterEgg } from '../lib/types';
 
 /**
  * The critic's quote that closes the page: a random parody review from the
- * easter egg collection with the critic's photo, and a button for another.
- * Hidden when none are seeded.
+ * easter egg collection with a critic's photo, and a button for another.
+ * Quotes are unsigned, so any face suits any quote. Hidden when none are seeded.
  */
 export function QuoteBand() {
   const api = useApi();
@@ -40,7 +40,6 @@ export function QuoteBand() {
       <div className="min-w-0">
         <blockquote className="voice max-w-[26ch] text-[clamp(2rem,4.6vw,3.75rem)] leading-[1.02]">“{quote.quote}”</blockquote>
         <div className="mt-6 flex flex-wrap items-center gap-4">
-          <span className="display text-2xl text-sun">— {quote.characterName}</span>
           <button type="button" className="btn-inverse" disabled={loading} onClick={() => void shuffle(quote.id)}>
             ✺ Another one
           </button>
@@ -53,15 +52,15 @@ export function QuoteBand() {
 const PLACEHOLDER_BACKGROUNDS = ['fill-lav', 'fill-sun', 'fill-coral'];
 
 /**
- * The critic's photo, cropped square in a poster frame. Critics without a
- * photo get a silhouette in one of the poster colors (stable per critic).
+ * The critic's photo, cropped square in a poster frame. Without one, a
+ * silhouette in one of the poster colors (stable per quote).
  */
 function CriticPortrait({ quote }: { quote: EasterEgg }) {
   const frame =
     'block aspect-square w-32 shrink-0 overflow-hidden border-2 border-paper shadow-[8px_8px_0_rgb(var(--c-coral))] sm:w-48 lg:w-56';
   if (quote.imageUrl) {
     return (
-      <img key={quote.id} src={quote.imageUrl} alt={quote.characterName} loading="lazy" className={`${frame} bg-paper object-cover`} />
+      <img key={quote.id} src={quote.imageUrl} alt="One of our critics" loading="lazy" className={`${frame} bg-paper object-cover`} />
     );
   }
   const hash = [...quote.id].reduce((n, ch) => n + ch.charCodeAt(0), 0);

@@ -139,7 +139,8 @@ export interface EasterEgg {
   /** S3 object key in the easter egg assets bucket. Served to clients as a presigned `imageUrl`. */
   imageKey?: string;
   quote: string;
-  characterName: string;
+  /** Older quotes carried a critic's name. It is never shown: quotes are unsigned, whoever's face is on them. */
+  characterName?: string;
 }
 
 // ---------------------------------------------------------------------------

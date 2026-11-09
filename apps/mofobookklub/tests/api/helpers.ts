@@ -2,7 +2,7 @@ import { forgetMembers } from '@stacks/api';
 import { createTestHarness, type CallOptions } from '@stacks/testing';
 import { manifest } from '../../api/manifest';
 import { routes } from '../../api/routes';
-import type { BookCandidate, BookSource, CoverCandidate, Deps, Edition } from '../../api/utils/deps';
+import type { BookCandidate, BookSource, CoverCandidate, Deps, Edition, FacePhotos } from '../../api/utils/deps';
 import type { Book, EasterEgg, Role } from '../../api/utils/model';
 
 export const BOOKS: Record<string, Book> = {
@@ -42,12 +42,30 @@ export class FakeBooks implements BookSource {
   }
 }
 
+/** The content bucket's face photos, in memory. */
+export class FakeFaces implements FacePhotos {
+  readonly files = new Map<string, { body: Uint8Array; contentType: string }>();
+  constructor(keys: string[] = []) {
+    for (const k of keys) this.files.set(k, { body: new Uint8Array(), contentType: 'image/jpeg' });
+  }
+  async list() {
+    return [...this.files.keys()];
+  }
+  async put(key: string, body: Uint8Array, contentType: string) {
+    this.files.set(key, { body, contentType });
+  }
+  async delete(key: string) {
+    this.files.delete(key);
+  }
+}
+
 /**
  * Book Club's API in memory, with the same helpers its tests used before the move: members are
  * seeded into the fake platform (which owns them now) instead of the app's table.
  */
 export function makeTestApp(opts: { bundledEasterEggs?: EasterEgg[]; faces?: string[]; random?: () => number } = {}) {
   const books = new FakeBooks();
+  const faces = opts.faces ? new FakeFaces(opts.faces) : undefined;
   const t = createTestHarness<Deps>({
     manifest,
     routes,
@@ -57,7 +75,7 @@ export function makeTestApp(opts: { bundledEasterEggs?: EasterEgg[]; faces?: str
       signImageUrl: async (key) => `https://signed.example/${key}`,
       random: opts.random ?? (() => 0),
       bundledEasterEggs: opts.bundledEasterEggs,
-      listFacePhotos: opts.faces ? async () => opts.faces! : undefined,
+      faces,
     }),
   });
 
@@ -72,5 +90,5 @@ export function makeTestApp(opts: { bundledEasterEggs?: EasterEgg[]; faces?: str
     return t.call(method, path, { ...o, as: o.as ? { email: o.as, name: m?.name ?? o.as.split('@')[0]! } : undefined, role: o.role ?? m?.role ?? 'MEMBER' });
   }
 
-  return { ...t, call, books, seedUser };
+  return { ...t, call, books, faces, seedUser };
 }

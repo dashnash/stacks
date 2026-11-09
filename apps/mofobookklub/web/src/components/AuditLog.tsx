@@ -13,6 +13,7 @@ export const ACTION_FILTERS: [string, string][] = [
   ['book', 'Book edits'],
   ['meeting', 'Meetings'],
   ['member', 'Member changes'],
+  ['critic', 'Critic photos'],
 ];
 
 const FIELD_NAMES: Record<string, string> = {
@@ -79,6 +80,10 @@ export function describeEvent(e: AuditEvent): string {
       return `dismissed ${what}'s sign-up`;
     case 'member.remove':
       return `removed ${what} from the site`;
+    case 'critic.photos_add':
+      return `added ${what} for the critics' quotes`;
+    case 'critic.photo_delete':
+      return 'deleted a face photo from the critics\' quotes';
     case 'member.rename':
       return `changed their display name to ${what}`;
     default:

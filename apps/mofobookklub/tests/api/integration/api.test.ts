@@ -359,11 +359,12 @@ describe('books & easter eggs', () => {
     await t.store.put({ ...keys.easterEgg('1'), id: '1', quote: 'Q1', characterName: 'Gary', imageKey: 'eggs/gary.jpg' });
     await t.store.put({ ...keys.easterEgg('2'), id: '2', quote: 'Q2', characterName: 'Pam' });
 
+    // Older rows still carry a critic's name; quotes are served unsigned.
     const first = await t.call('GET', '/easter-egg/random', { as: ALICE });
-    expect(first.body).toEqual({ id: '1', quote: 'Q1', characterName: 'Gary', imageUrl: 'https://signed.example/eggs/gary.jpg' });
+    expect(first.body).toEqual({ id: '1', quote: 'Q1', imageUrl: 'https://signed.example/eggs/gary.jpg' });
 
     const shuffled = await t.call('GET', '/easter-egg/random', { as: ALICE, query: { exclude: '1' } });
-    expect(shuffled.body).toEqual({ id: '2', quote: 'Q2', characterName: 'Pam', imageUrl: null });
+    expect(shuffled.body).toEqual({ id: '2', quote: 'Q2', imageUrl: null });
   });
 });
 
@@ -435,19 +436,18 @@ describe('bundled critic quotes', () => {
   it('serves quotes shipped with the deploy, with their photos, and lets table entries override them', async () => {
     const t = makeTestApp({
       bundledEasterEggs: [
-        { id: 'gatsby', quote: 'Bundled quote.', characterName: 'Lady P', imageKey: 'eggs/lady-p.jpg' },
-        { id: 'hobbit', quote: 'Old wording.', characterName: 'Barnaby' },
+        { id: 'gatsby', quote: 'Bundled quote.', imageKey: 'eggs/lady-p.jpg' },
+        { id: 'hobbit', quote: 'Old wording.' },
       ],
     });
     await t.seedUser(ALICE, 'MEMBER');
     expect((await t.call('GET', '/easter-egg/random', { as: ALICE })).body).toEqual({
       id: 'gatsby',
       quote: 'Bundled quote.',
-      characterName: 'Lady P',
       imageUrl: 'https://signed.example/eggs/lady-p.jpg',
     });
 
-    await t.store.put({ ...keys.easterEgg('hobbit'), id: 'hobbit', quote: 'New wording.', characterName: 'Barnaby' });
+    await t.store.put({ ...keys.easterEgg('hobbit'), id: 'hobbit', quote: 'New wording.' });
     const hobbit = await t.call('GET', '/easter-egg/random', { as: ALICE, query: { exclude: 'gatsby' } });
     expect(hobbit.body.quote).toBe('New wording.');
   });
@@ -461,8 +461,8 @@ describe('shared face photos', () => {
       faces,
       random: () => draws.shift() ?? 0,
       bundledEasterEggs: [
-        { id: 'a', quote: 'No photo of its own.', characterName: 'A' },
-        { id: 'b', quote: 'Has a photo.', characterName: 'B', imageKey: 'eggs/b.jpg' },
+        { id: 'a', quote: 'No photo of its own.' },
+        { id: 'b', quote: 'Has a photo.', imageKey: 'eggs/b.jpg' },
       ],
     });
     await t.seedUser(ALICE, 'MEMBER');
@@ -475,7 +475,7 @@ describe('shared face photos', () => {
   });
 
   it('falls back to no photo when there are no faces', async () => {
-    const t = makeTestApp({ faces: [], bundledEasterEggs: [{ id: 'a', quote: 'q', characterName: 'A' }] });
+    const t = makeTestApp({ faces: [], bundledEasterEggs: [{ id: 'a', quote: 'q' }] });
     await t.seedUser(ALICE, 'MEMBER');
     expect((await t.call('GET', '/easter-egg/random', { as: ALICE })).body.imageUrl).toBeNull();
   });

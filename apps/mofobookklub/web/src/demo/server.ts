@@ -3,7 +3,7 @@
  * taking nominations, discussions) and a fake book catalog. `main.tsx` runs the real API on it
  * in the browser through @stacks/demo.
  */
-import type { BookCandidate, BookSource, CoverCandidate, Edition } from '../../../api/utils/deps';
+import type { BookCandidate, BookSource, CoverCandidate, Edition, FacePhotos } from '../../../api/utils/deps';
 import { keys, meetingItem, type Meeting, type Role, type ThreadTarget } from '../../../api/utils/model';
 import type { Store } from '@stacks/api';
 import quotes from '../../../content/eggs/quotes.json';
@@ -289,8 +289,31 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
     });
   }
 
-  for (const q of quotes as { id: string; quote: string; characterName: string }[]) {
-    await store.put({ ...keys.easterEgg(q.id), id: q.id, quote: q.quote, characterName: q.characterName });
+  for (const q of quotes as { id: string; quote: string }[]) {
+    await store.put({ ...keys.easterEgg(q.id), id: q.id, quote: q.quote });
   }
 }
 
+/**
+ * The demo's face photos: the demo ships none (photos of people never go in git), and the ones an
+ * admin adds stay in this browser tab only, as blob links, until the page reloads.
+ */
+export class DemoFaces implements FacePhotos {
+  private readonly urls = new Map<string, string>();
+  async list() {
+    return [...this.urls.keys()];
+  }
+  async put(key: string, body: Uint8Array, contentType: string) {
+    const blob = new Blob([body as BlobPart], { type: contentType });
+    this.urls.set(key, typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : key);
+  }
+  async delete(key: string) {
+    const url = this.urls.get(key);
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    this.urls.delete(key);
+  }
+  /** Stands in for the content bucket's signed links. */
+  async signUrl(key: string) {
+    return this.urls.get(key) ?? key;
+  }
+}
