@@ -19,7 +19,8 @@ do everything predictable; you write only the app's own features. Spec: `docs/PL
   for Dash to review. Don't work around it.
 - **No AWS credentials, ever.** Only CI deploys. Never ask for keys or passwords.
 - **Every feature has tests and works in the demo.** Keep `<AccountMenu />` at the top right of the
-  header and `web/src/demo/setup.ts` exporting `App` and `demoOptions()`.
+  header, `<BuildVersion />` on every screen (the template's footer has it) and
+  `web/src/demo/setup.ts` exporting `App` and `demoOptions()`.
 - **Spend tokens carefully.** Read the package READMEs, not package source. Read `apps/hello` (small)
   before `apps/mofobookklub` (large), and only the folder you need. Don't print big files or full
   logs; `verify-app` already trims output.

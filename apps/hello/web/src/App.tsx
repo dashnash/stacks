@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { AccountMenu, Avatar, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
+import { AccountMenu, Avatar, BuildVersion, ErrorNote, Spinner, timeAgo, useApi, useAsync, useStacks } from '@stacks/web';
 import type { Greeting } from '../../api/routes';
 import { MAX_GREETING } from '../../api/routes';
 
@@ -106,6 +106,9 @@ export function App() {
         <AccountMenu className="account" />
       </header>
       {status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Board key={`${session.user.email}:${session.role}`} /> : <SignedOut />}
+      <footer className="foot">
+        Hello Board · <BuildVersion className="build" />
+      </footer>
     </main>
   );
 }

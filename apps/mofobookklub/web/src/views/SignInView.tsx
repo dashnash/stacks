@@ -1,38 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '../components/Header';
 import { PublicHeadliner, PublicShelf } from '../components/PublicShelf';
-import { AccountMenu, useStacks } from '@stacks/web';
+import { AccountMenu, BuildVersion, useStacks } from '@stacks/web';
 import { useApi } from '../lib/auth';
 import { useRoute } from '../lib/route';
 import type { PublicShelf as PublicShelfData } from '../lib/types';
 import { PublicBookView } from './PublicBookView';
-
-/** Which commit is deployed ("Build 1a2b3c4"), linking to it on GitHub when the repository is known. */
-export function BuildVersion({
-  sha = __BUILD_SHA__,
-  commitUrl = __BUILD_COMMIT_URL__,
-}: {
-  sha?: string;
-  commitUrl?: string;
-}) {
-  if (!sha) return null;
-  const label = `Build ${sha.slice(0, 7)}`;
-  return commitUrl ? (
-    <a
-      href={commitUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-mono text-xs hover:underline sm:ml-auto"
-      title={`Deployed from commit ${sha}`}
-    >
-      {label}
-    </a>
-  ) : (
-    <span className="font-mono text-xs sm:ml-auto" title={`Built from commit ${sha}`}>
-      {label}
-    </span>
-  );
-}
 
 /** Links to the privacy policy and terms (static pages in public/), shown on every screen. */
 export function LegalLinks() {
@@ -45,7 +18,7 @@ export function LegalLinks() {
       <a href="/tos.html" className="hover:underline">
         Terms of Service
       </a>
-      <BuildVersion />
+      <BuildVersion className="font-mono text-xs hover:underline sm:ml-auto" />
     </footer>
   );
 }

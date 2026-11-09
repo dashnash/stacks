@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
-import { buildDefines } from './build-info';
 
 /**
  * Link previews (iMessage, Slack, ...) need absolute URLs in og:image and og:url. The deploy
@@ -16,8 +15,6 @@ function siteUrl(): Plugin {
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react(), siteUrl()],
-  // The deployed commit, for the footer's build link.
-  define: buildDefines(),
   build: { outDir: 'dist', emptyOutDir: true },
   // For local dev against a deployed copy: STACKS_API_PROXY=https://mofobookklub.test.iamdashnash.com
   server: process.env.STACKS_API_PROXY ? { proxy: { '/api': { target: process.env.STACKS_API_PROXY, changeOrigin: true, secure: true } } } : {},
