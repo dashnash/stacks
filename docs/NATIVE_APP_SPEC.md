@@ -46,7 +46,7 @@ From the brainstorm on 2026-11-09.
 | Distribution | TestFlight first; designed to the App Store bar so a public listing follows |
 | Scope | One universal app for the whole platform (iPhone + iPad) |
 | Name / bundle ID | App name **DashyHQ** / `com.dashyhq.stacks`; staging **DashyHQ Test** / `com.dashyhq.stacks.test` |
-| Apple account | Individual Developer Program membership (seller shows as Dashiell Nash). TestFlight, CI uploads, push, Sign in with Apple and universal links all need the paid program ($99/yr); a free Apple ID only runs 7-day builds on your own devices from Xcode, enough for early shell and bridge work |
+| Apple account | Paid individual Developer Program membership, active (seller shows as Dashiell Nash). Covers TestFlight, CI uploads, push, Sign in with Apple and universal links |
 | Minimum OS | iOS/iPadOS 26 |
 | Staging app | Yes: a second app on `*.test.<domain>`, own bundle ID, TestFlight internal testers only |
 | Shell model | A `WKWebView` (or SwiftUI `WebView`/`WebPage` where it exposes the hooks we need) loading the live site; no bundled web content except the offline screen |
@@ -474,7 +474,7 @@ Defaulted as written above; change any by editing this spec.
 - [x] **App name**: DashyHQ; bundle IDs stay lower case (`com.dashyhq.stacks`).
 - [x] **Email to apps**: none by default; Book Club doesn't need member emails.
 - [x] **Account merge**: self-serve from Settings (aliases, see Identity v2).
-- [ ] **When to pay for the Developer Program**: free Apple ID is enough for shell and bridge work on your own devices; the paid program is needed from the N2 gate (TestFlight, CI uploads, push, Apple sign-in, universal links).
+- [x] **Developer Program**: paid individual membership already active; nothing blocks TestFlight.
 - [ ] **SwiftUI `WebView`/`WebPage` vs `WKWebView`**: use the SwiftUI API only if it exposes reply message handlers, the UI delegate's permission hooks and the navigation policy; otherwise wrap `WKWebView`. Decide in N2.
 - [ ] **Individual → organization account**: if you ever move to an LLC, do it before the public App Store release to avoid the Sign in with Apple transfer.
 - [ ] **Web Push later**: reuse the device registry for desktop/Android browsers?
