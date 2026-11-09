@@ -67,7 +67,7 @@ describe('PlatformStack', () => {
 });
 
 describe('AppStack contentPacks', () => {
-  it('adds a private content bucket, grants the Lambda read and never prunes uploads', () => {
+  it('adds a private content bucket, lets the Lambda read, write and delete there, and never prunes uploads', () => {
     const contentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-content-'));
     fs.writeFileSync(path.join(contentDir, 'quotes.json'), '[]');
     const manifest: AppManifest = {
@@ -81,6 +81,10 @@ describe('AppStack contentPacks', () => {
     );
     t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ CONTENT_BUCKET: Match.anyValue() }) } });
     t.hasResourceProperties('Custom::CDKBucketDeployment', { Prune: false });
+    const actions = Object.values(t.findResources('AWS::IAM::Policy'))
+      .flatMap((p) => (p as { Properties: { PolicyDocument: { Statement: { Action: string | string[] }[] } } }).Properties.PolicyDocument.Statement)
+      .flatMap((st) => [st.Action].flat());
+    expect(actions).toEqual(expect.arrayContaining(['s3:GetObject*', 's3:PutObject', 's3:DeleteObject*']));
     t.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain', Properties: Match.objectLike({ PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true }) }) });
   });
 });

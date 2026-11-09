@@ -172,7 +172,8 @@ export class AppStack extends cdk.Stack {
 
     // contentPacks: a private bucket for media the app serves through short-lived links. Files in
     // apps/<slug>/content/ are uploaded on deploy; nothing is ever pruned, so media added
-    // outside git (e.g. photos of people) stays.
+    // outside git (e.g. photos of people, uploaded through the app) stays. The Lambda can write
+    // and delete there too (`contentStore().put/delete`).
     if (hasModule(manifest, 'contentPacks')) {
       const content = new s3.Bucket(this, 'ContentBucket', {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -180,7 +181,7 @@ export class AppStack extends cdk.Stack {
         removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
         autoDeleteObjects: !isProd,
       });
-      content.grantRead(this.handler);
+      content.grantReadWrite(this.handler);
       this.handler.addEnvironment('CONTENT_BUCKET', content.bucketName);
       const contentDir = props.contentDir ?? path.join(props.appDir, 'content');
       if (existsSync(contentDir)) {
