@@ -1,6 +1,7 @@
 import { isAdmin } from '../lib/types';
 import { AdminPanel } from '../components/AdminPanel';
 import { AuditLog } from '../components/AuditLog';
+import { CriticPhotos } from '../components/CriticPhotos';
 import { MeetingActions } from '../components/MeetingActions';
 import { PanelHeading } from '../components/ui';
 import { useApi } from '../lib/auth';
@@ -12,12 +13,14 @@ import { useAsync } from '../lib/useAsync';
 const TABS: [AdminTab, string][] = [
   ['members', 'Members'],
   ['meeting', 'Meeting'],
+  ['critics', 'Critic photos'],
   ['activity', 'Activity log'],
 ];
 
 /**
  * The admin page (#/admin): member controls (approvals, roles, removal), the upcoming
- * meeting's controls (so admins can step in), and the activity log of everything people do.
+ * meeting's controls (so admins can step in), the face photos on the critics' quotes, and the
+ * activity log of everything people do.
  */
 export function AdminView({
   user,
@@ -79,7 +82,7 @@ export function AdminView({
         <div role="tabpanel" className="max-w-4xl">
           {tab === 'members' ? (
             <AdminPanel
-              me={user.email}
+              me={user.id}
               myRole={user.role}
               onChanged={async () => {
                 await Promise.all([onChanged(), members.reload()]);
@@ -107,6 +110,8 @@ export function AdminView({
                 </a>
               </div>
             )
+          ) : tab === 'critics' ? (
+            <CriticPhotos />
           ) : (
             <AuditLog people={people} />
           )}

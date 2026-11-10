@@ -28,7 +28,7 @@ export function routes(api: AppRoutes<AppDeps>) {
     .role(['OWNER', 'EDITOR'], 'POST', '/notes', async (req, v) => {
       const text = requireString(req.body, 'text', 200);
       const id = v.deps.newId();
-      await v.deps.store.put({ PK: 'NOTES', SK: id, text, by: v.user.email });
+      await v.deps.store.put({ PK: 'NOTES', SK: id, text, by: v.user.id });
       return { status: 201, body: { id }, audit: { label: text.slice(0, 20) } };
     }, { audit: 'note.post' })
     .approver('DELETE', '/notes/:id', async (req, v) => {

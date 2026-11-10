@@ -22,7 +22,8 @@ export function routes(api: AppRoutes<AppDeps>) {
 ```
 
 - Paths are relative to `/api`. `req`: `params`, `query`, `body` (parsed JSON), `headers`, `cookies`.
-- `v` (signed-in routes): `user` `{ email, name, pictureUrl? }`, `role`, `canManageAccess`, `deps`, `manifest`.
+- `v` (signed-in routes): `user` `{ id, email, name, pictureUrl? }`, `role`, `canManageAccess`, `deps`, `manifest`.
+  **Store people by `v.user.id`** (a stable `u_…` id), never by email: emails change, and some hide the real one.
 - `ctx` (public routes): `deps`, `manifest`, `await ctx.viewer()` (the caller or `null`).
 - Return `{ status?, body?, headers?, cookies?, redirect?, audit? }`. Throw `badRequest`, `unauthorized`,
   `forbidden`, `notFound`, `conflict` (or `new HttpError(status, msg, code)`); clients get `{ error, code }`.
@@ -33,7 +34,7 @@ export function routes(api: AppRoutes<AppDeps>) {
 ## Data: `v.deps.store` (one DynamoDB single table per app)
 
 ```ts
-await store.put({ PK: 'ITEMS', SK: `${createdAt}#${id}`, GSI1PK: `BY#${email}`, GSI1SK: createdAt, ...item }, { ifNotExists: true });
+await store.put({ PK: 'ITEMS', SK: `${createdAt}#${id}`, GSI1PK: `BY#${v.user.id}`, GSI1SK: createdAt, ...item }, { ifNotExists: true });
 await store.get<T>(pk, sk);         await store.delete(pk, sk);
 await store.query<T>(pk, skPrefix?); // ascending by SK
 await store.queryGsi1<T>(gsi1pk, { descending: true });
@@ -46,16 +47,16 @@ Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#�
 
 ```ts
 import { appMembers, getPeople } from '@stacks/api';
-const members = await appMembers(deps);                  // [{ email, name, pictureUrl?, role }], cached 30 s
-const people = await getPeople(deps, emails);            // Map email -> { email, name, pictureUrl? } ("Former member" if gone)
-await deps.platform.notify(email, 'Your pick won', url);  // into their platform inbox (members only)
+const members = await appMembers(deps);                  // [{ id, email, name, pictureUrl?, role }], cached 30 s
+const people = await getPeople(deps, userIds);           // Map id -> { id, name, pictureUrl? } ("Former member" if gone)
+await deps.platform.notify(userId, 'Your pick won', url); // into their platform inbox (members only)
 ```
 
 ## Built-in routes
 
 `GET /health`, `GET /auth/login?return=/path`, `GET /auth/callback`, `GET /auth/session`,
 `POST /auth/logout`, `GET /stacks/account` (account menu data), `GET /stacks/members` (members),
-`GET /stacks/access` (`members`, `pending`, `blocked`) + `PUT /stacks/access/:email {role|null|"BLOCKED"}`
+`GET /stacks/access` (`members`, `pending`, `blocked`) + `PUT /stacks/access/:userId {role|null|"BLOCKED"}`
 (approvers: the app's own access page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`).
 
 ## Lambda entry (`apps/<slug>/api/index.ts`)
@@ -72,8 +73,13 @@ Content bucket (manifest module `contentPacks`; files in `apps/<slug>/content/` 
 import { contentStore } from '@stacks/api/lambda';
 const content = contentStore();
 await content.signUrl('eggs/gatsby.jpg');   // 15-minute private link
-await content.list('eggs/faces/');           // keys, cached 10 min
+await content.list('eggs/faces/');           // keys, cached 10 min (put/delete clear it)
+await content.put('eggs/faces/x.jpg', bytes, 'image/jpeg');   // e.g. a member's upload: check type + size first
+await content.delete('eggs/faces/x.jpg');
 ```
+
+Uploads go through your API as JSON (base64). Request bodies are capped at 256 KB, so keep each
+request under ~180 KB of file: shrink images in the browser first and send big sets in batches.
 
 Secrets (third-party API keys): declare them in the manifest, never put values in git, env vars or CI.
 
@@ -89,12 +95,19 @@ An admin stores each value once per environment (see `docs/SETUP.md`, "App secre
 that aren't set show as `missingSecrets` on `GET /api/health`. In tests:
 `createTestHarness({ manifest, routes, secrets: { MAPS_API_KEY: 'x' } })`.
 
-Other: `recordAudit(deps, user, { action, label, details })`, `listAudit`, `endUserSessions(deps, email)`.
+Other: `recordAudit(deps, user, { action, label, details })` (events carry `actorId`), `listAudit`, `endUserSessions(deps, userId)`.
+
+**Maintenance**: while `maintenance` is on in `stacks.config.json`, every route but `/health` answers
+503 `MAINTENANCE` and `<StacksProvider>` shows "Back in a few minutes" instead of the app.
+
+**User-id cut-over** (`tools/migrate-user-ids`): an app that stored emails exports
+`migrate: ItemMigration` from `api/migrations/user-ids.ts`, built with `composeMigrations(migrateSdkItems,
+…yours)` and `renameEmailField(item, 'byEmail', 'byId', idFor)`. New apps need none.
 
 Small helpers apps use:
 
-- `await sha256Hex(text)`: hex SHA-256, e.g. a stable, email-free id for a person's record
-  (`(await sha256Hex('myapp:' + email)).slice(0, 16)`); `randomToken(prefix)`: unguessable ids.
+- `await sha256Hex(text)`: hex SHA-256; `randomToken(prefix)`: unguessable ids.
+- `fixtureUserId(email)`: the id demo personas and test users get (`ann@demo.dev` → `u_ann_demo_dev`), for seed data.
 - Types for splitting routes across files: `AppRoutes<D>`, `AppDeps`, `Viewer<D>` (the `v` in signed-in
   handlers), `PublicContext<D>` (`ctx`), `RequestContext` (`req`), `RouteResult`, `Item` (a stored row),
-  `StacksUser` (`{ email, name, pictureUrl? }`), `Person`.
+  `StacksUser` (`{ id, email, name, pictureUrl? }`), `Person` (`{ id, name, pictureUrl? }`).

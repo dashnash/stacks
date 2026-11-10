@@ -77,7 +77,7 @@ export function createDemoPortal() {
     verifyGoogle: async (credential) => {
       const person = DEMO_PEOPLE.find((p) => `demo:${p.email}` === credential);
       if (!person) throw unauthorized('Unknown demo person');
-      return { email: person.email, name: person.name };
+      return { sub: `demo-${person.email}`, email: person.email, name: person.name };
     },
     now: () => new Date(),
     newId: () => `d${++id}`,
@@ -86,20 +86,21 @@ export function createDemoPortal() {
   let portalCookie: string | null = null;
 
   const seeded = (async () => {
-    const [dash, priya, sam] = await Promise.all(DEMO_PEOPLE.map((p) => userForIdentity(deps, p)));
+    const person = (p: { email: string; name: string }) => userForIdentity(deps, { sub: `demo-${p.email}`, ...p });
+    const [dash, priya, sam] = await Promise.all(DEMO_PEOPLE.map(person));
     const byApp = Object.fromEntries(DEMO_APPS.map((m) => [m.slug, m]));
-    await setGrant(deps, dash!, byApp['mofobookklub']!, 'priya@demo.stacks', 'ADMIN');
+    await setGrant(deps, dash!, byApp['mofobookklub']!, priya!.id, 'ADMIN');
     for (const [email, name] of [['kyle@demo.stacks', 'Kyle'], ['joe@demo.stacks', 'Joe'], ['mei@demo.stacks', 'Mei Chen']] as const) {
-      const u = await userForIdentity(deps, { email, name });
-      await setGrant(deps, dash!, byApp['mofobookklub']!, u.email, 'MEMBER');
+      const u = await person({ email, name });
+      await setGrant(deps, dash!, byApp['mofobookklub']!, u.id, 'MEMBER');
       await requestAccess(deps, u, byApp.hello!);
     }
     await requestAccess(deps, sam!, byApp['mofobookklub']!);
     await requestAccess(deps, sam!, byApp.potluck!);
     await requestAccess(deps, priya!, byApp.pickup!);
     // A blocked person on a public app: signing in no longer gives them the default role.
-    const troll = await userForIdentity(deps, { email: 'troll@demo.stacks', name: 'Rex Troll' });
-    await setGrant(deps, dash!, byApp.hello!, troll.email, 'BLOCKED');
+    const troll = await person({ email: 'troll@demo.stacks', name: 'Rex Troll' });
+    await setGrant(deps, dash!, byApp.hello!, troll.id, 'BLOCKED');
   })();
 
   const fetchShim = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {

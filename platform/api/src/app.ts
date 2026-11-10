@@ -6,6 +6,8 @@ import {
   clearCookie,
   cookie,
   forbidden,
+  maintenance,
+  MAINTENANCE_OPEN_PATHS,
   notFound,
   optionalString,
   randomToken,
@@ -41,6 +43,7 @@ import {
   signOutEverywhere,
   storeAudit,
   userForIdentity,
+  userIdForEmail,
 } from './core';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
@@ -51,7 +54,9 @@ type AppEntry = RegisteredApp & { status: 'live' | 'archived' };
 
 /** The Platform API: portal sign-in, the app handshake (`/authorize`, `/token`), catalog, access grid, audit. */
 export function createPlatformApp(deps: PlatformDeps) {
-  const router = new Router();
+  const router = new Router().before((_method, path) => {
+    if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
+  });
   const portalUrl = (hash = '/') => `${deps.config.authOrigin}/#${hash}`;
 
   const csrf = (req: RequestContext) => {
@@ -74,14 +79,15 @@ export function createPlatformApp(deps: PlatformDeps) {
     return app;
   }
 
-  async function accountFor(app: AppEntry, rawEmail: string): Promise<RouteResult> {
-    const email = rawEmail.toLowerCase();
+  async function accountFor(app: AppEntry, userId: string): Promise<RouteResult> {
+    const user = await getUser(deps, userId);
+    if (!user) throw notFound('No such user');
     const slug = app.manifest.slug;
-    const grants = (await grantsForUser(deps, email)).filter((g) => holdsRole(g.role));
+    const grants = (await grantsForUser(deps, user.id)).filter((g) => holdsRole(g.role));
     const apps = (await listApps(deps)).filter((a) => grants.some((g) => g.app === a.manifest.slug));
-    const unread = (await listNotifications(deps, email)).filter((n) => !n.read).length;
+    const unread = (await listNotifications(deps, user.id)).filter((n) => !n.read).length;
     const role = grants.find((g) => g.app === slug)?.role;
-    const { manages } = await managesApp(deps, email, app.manifest);
+    const { manages } = await managesApp(deps, user, app.manifest);
     const pending = manages ? (await grantsForApp(deps, slug)).filter((g) => g.role === PENDING).length : 0;
     return {
       body: {
@@ -104,7 +110,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       PK: `CODE#${await sha256Hex(code)}`,
       SK: 'CODE',
       app: slug,
-      email: user.email,
+      userId: user.id,
       redirectUri,
       challenge,
       notAfter: now.getTime() + CODE_TTL_MS,
@@ -163,7 +169,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       const user = await readPortalSession(deps, req.cookies[PORTAL_COOKIE]);
       await endPortalSession(deps, req.cookies[PORTAL_COOKIE]);
       if (user) {
-        await signOutEverywhere(deps, user.email);
+        await signOutEverywhere(deps, user.id);
         await audit(deps, user, 'platform', { action: 'auth.logout' });
       }
       return { body: { ok: true }, cookies: [clearCookie(PORTAL_COOKIE)] };
@@ -173,7 +179,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       const user = await readPortalSession(deps, req.cookies[PORTAL_COOKIE]);
       await endPortalSession(deps, req.cookies[PORTAL_COOKIE]);
       if (user) {
-        await signOutEverywhere(deps, user.email);
+        await signOutEverywhere(deps, user.id);
         await audit(deps, user, 'platform', { action: 'auth.logout' });
       }
       // Back to where they signed out: an app page (it then shows its signed-out view), else the portal.
@@ -196,7 +202,7 @@ export function createPlatformApp(deps: PlatformDeps) {
         const next = `/authorize?${new URLSearchParams(req.query)}`;
         return { redirect: portalUrl(`/signin?next=${encodeURIComponent(next)}`) };
       }
-      let grant = await getGrant(deps, slug, user.email);
+      let grant = await getGrant(deps, slug, user.id);
       if (!grant) grant = await requestAccess(deps, user, app.manifest); // public: default role; private: pending request
       if (grant.role === BLOCKED) return back({ error: 'access_denied' });
       if (grant.role === PENDING) return back({ error: 'access_pending' });
@@ -217,7 +223,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       if (!state || !challenge || method !== 'S256' || redirectUri !== `${origin}/api/auth/callback`) return answer({ error: 'invalid_request' }, 400);
       const user = await readPortalSession(deps, req.cookies[PORTAL_COOKIE]);
       if (!user) return answer({ error: 'login_required' });
-      let grant = await getGrant(deps, app.manifest.slug, user.email);
+      let grant = await getGrant(deps, app.manifest.slug, user.id);
       if (!grant && app.manifest.visibility === 'public') grant = await requestAccess(deps, user, app.manifest);
       if (!grant) return answer({ error: 'access_required' });
       if (grant.role === BLOCKED) return answer({ error: 'access_denied' });
@@ -230,26 +236,26 @@ export function createPlatformApp(deps: PlatformDeps) {
       const code = String(req.body.code ?? '');
       const verifier = String(req.body.codeVerifier ?? '');
       const key = { PK: `CODE#${await sha256Hex(code)}`, SK: 'CODE' };
-      const stored = await deps.store.get<Item & { app: string; email: string; redirectUri: string; challenge: string; notAfter: number }>(key.PK, key.SK);
+      const stored = await deps.store.get<Item & { app: string; userId: string; redirectUri: string; challenge: string; notAfter: number }>(key.PK, key.SK);
       if (stored) await deps.store.delete(key.PK, key.SK); // single use, even when the checks below fail
       const invalid = () => badRequest('Invalid or expired sign-in code');
       if (!stored || stored.app !== app.manifest.slug || stored.notAfter < deps.now().getTime() || stored.redirectUri !== req.body.redirectUri) throw invalid();
       if (base64url(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))) !== stored.challenge) throw invalid();
-      const user = await getUser(deps, stored.email);
-      const grant = user && (await getGrant(deps, app.manifest.slug, user.email));
+      const user = await getUser(deps, stored.userId);
+      const grant = user && (await getGrant(deps, app.manifest.slug, user.id));
       if (!user || !grant || !holdsRole(grant.role)) throw forbidden('No access to this app');
       return { body: { user: appView(user), role: grant.role } };
     })
     .add('POST', '/apps/:slug/audit', async (req) => {
       const app = await requireAppCaller(req);
       const e = req.body as Partial<PlatformAuditEvent>;
-      if (typeof e.action !== 'string' || typeof e.actorEmail !== 'string') throw badRequest('Not an audit event');
+      if (typeof e.action !== 'string' || typeof e.actorId !== 'string') throw badRequest('Not an audit event');
       await storeAudit(deps, {
         id: String(e.id ?? deps.newId()),
         at: typeof e.at === 'string' ? e.at : deps.now().toISOString(),
         app: app.manifest.slug,
-        actorEmail: e.actorEmail,
-        actorName: String(e.actorName ?? e.actorEmail),
+        actorId: e.actorId.slice(0, 64),
+        actorName: String(e.actorName ?? e.actorId).slice(0, 80),
         action: e.action.slice(0, 80),
         ...(typeof e.label === 'string' ? { label: e.label.slice(0, 300) } : {}),
         ...(e.params && typeof e.params === 'object' ? { params: e.params } : {}),
@@ -258,41 +264,38 @@ export function createPlatformApp(deps: PlatformDeps) {
       return { body: { ok: true } };
     })
     // For the account menu inside apps: who you are here, your other apps, inbox, approvals.
-    .add('GET', '/apps/:slug/account', async (req) => accountFor(await requireAppCaller(req), String(req.query.email ?? '')))
-    // Older apps (before the account menu) ask here; same data.
-    .add('GET', '/apps/:slug/bar', async (req) => accountFor(await requireAppCaller(req), String(req.query.email ?? '')))
+    .add('GET', '/apps/:slug/account', async (req) => accountFor(await requireAppCaller(req), String(req.query.user ?? '')))
 
     // Who has a role in this app (for pickers and names), and who is waiting.
     .add('GET', '/apps/:slug/access', async (req) => {
       const app = await requireAppCaller(req);
       const grants = await grantsForApp(deps, app.manifest.slug);
-      const people = await Promise.all(grants.map(async (g) => ({ g, u: await getUser(deps, g.email) })));
+      const people = await Promise.all(grants.map(async (g) => ({ g, u: await getUser(deps, g.userId) })));
       const view = people
         .filter((p) => p.u)
-        .map(({ g, u }) => ({ email: g.email, name: shownName(u!), ...(u!.pictureUrl ? { pictureUrl: u!.pictureUrl } : {}), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
+        .map(({ g, u }) => ({ id: u!.id, email: u!.email, name: shownName(u!), ...(u!.pictureUrl ? { pictureUrl: u!.pictureUrl } : {}), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
         .sort((a, b) => a.name.localeCompare(b.name));
       return { body: { members: view.filter((p) => holdsRole(p.role)), pending: view.filter((p) => p.role === PENDING), blocked: view.filter((p) => p.role === BLOCKED) } };
     })
     // An app's own admin page changing a grant. The app vouches for the actor (from its session);
     // the platform still checks that the actor manages this app, with the same rules as the grid.
-    .add('PUT', '/apps/:slug/access/:email', async (req) => {
+    .add('PUT', '/apps/:slug/access/:userId', async (req) => {
       const app = await requireAppCaller(req);
-      const actorEmail = String(req.body.actorEmail ?? '').toLowerCase();
-      const actor = actorEmail ? await getUser(deps, actorEmail) : null;
+      const actor = await getUser(deps, String(req.body.actorId ?? ''));
       if (!actor) throw forbidden('Unknown actor');
       const role = req.body.role;
       if (role !== null && typeof role !== 'string') throw badRequest('"role" must be a role id or null');
-      return { body: { grant: await setGrant(deps, actor, app.manifest, req.params.email!, role) } };
+      return { body: { grant: await setGrant(deps, actor, app.manifest, req.params.userId!, role) } };
     })
     .add('POST', '/apps/:slug/notify', async (req) => {
       const app = await requireAppCaller(req);
-      const email = String(req.body.email ?? '').toLowerCase();
+      const userId = String(req.body.userId ?? '');
       const text = String(req.body.text ?? '').slice(0, 300);
-      if (!email || !text) throw badRequest('"email" and "text" are required');
-      const grant = await getGrant(deps, app.manifest.slug, email);
+      if (!userId || !text) throw badRequest('"userId" and "text" are required');
+      const grant = await getGrant(deps, app.manifest.slug, userId);
       if (!grant || !holdsRole(grant.role)) throw forbidden('Apps can only notify their own members');
       const link = typeof req.body.link === 'string' && req.body.link.startsWith(appOrigin(deps.config, app.manifest.slug)) ? req.body.link : `${appOrigin(deps.config, app.manifest.slug)}/`;
-      await notify(deps, email, { text, link, app: app.manifest.slug });
+      await notify(deps, userId, { text, link, app: app.manifest.slug });
       return { body: { ok: true } };
     })
 
@@ -313,7 +316,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       'GET',
       '/catalog',
       signedIn(async (_req, user) => {
-        const grants = await grantsForUser(deps, user.email);
+        const grants = await grantsForUser(deps, user.id);
         const apps = await listApps(deps);
         return {
           body: {
@@ -352,12 +355,12 @@ export function createPlatformApp(deps: PlatformDeps) {
         return { body: { favorites } };
       }),
     )
-    .add('GET', '/notifications', signedIn(async (_req, user) => ({ body: { notifications: await listNotifications(deps, user.email) } })))
+    .add('GET', '/notifications', signedIn(async (_req, user) => ({ body: { notifications: await listNotifications(deps, user.id) } })))
     .add(
       'POST',
       '/notifications/read',
       signedIn(async (_req, user) => {
-        await markNotificationsRead(deps, user.email);
+        await markNotificationsRead(deps, user.id);
         return { body: { ok: true } };
       }),
     )
@@ -367,14 +370,14 @@ export function createPlatformApp(deps: PlatformDeps) {
       'GET',
       '/admin/access',
       signedIn(async (_req, user) => {
-        const admin = isPlatformAdmin(deps, user.email);
+        const admin = isPlatformAdmin(deps, user);
         const apps: AppEntry[] = [];
-        for (const a of await listApps(deps, { includeArchived: admin })) if ((await managesApp(deps, user.email, a.manifest)).manages) apps.push(a);
+        for (const a of await listApps(deps, { includeArchived: admin })) if ((await managesApp(deps, user, a.manifest)).manages) apps.push(a);
         if (!apps.length) throw forbidden('You do not manage access to any app');
         const grants = (await Promise.all(apps.map((a) => grantsForApp(deps, a.manifest.slug)))).flat();
         // Super-admins see every user; approvers see the people who have (or asked for) their apps.
-        const emails = admin ? (await deps.store.queryGsi1<Item & { email: string }>('USERS')).map((u) => u.email) : [...new Set(grants.map((g) => g.email))];
-        const users = (await Promise.all(emails.map((e) => getUser(deps, e)))).filter((u): u is PlatformUser => !!u);
+        const ids = admin ? (await deps.store.queryGsi1<Item & { id: string }>('USERS')).map((u) => u.id) : [...new Set(grants.map((g) => g.userId))];
+        const users = (await Promise.all(ids.map((id) => getUser(deps, id)))).filter((u): u is PlatformUser => !!u);
         return {
           body: {
             isPlatformAdmin: admin,
@@ -386,23 +389,23 @@ export function createPlatformApp(deps: PlatformDeps) {
                 topRole: a.manifest.topRole,
                 defaultRole: a.manifest.defaultRole ?? null,
                 roles: a.manifest.roles.map((r) => ({ id: r.id, label: r.label, canManageAccess: !!r.canManageAccess })),
-                canManageApprovers: (await managesApp(deps, user.email, a.manifest)).managesApprovers,
+                canManageApprovers: (await managesApp(deps, user, a.manifest)).managesApprovers,
               })),
             ),
-            users: users.map((u) => ({ email: u.email, name: shownName(u), pictureUrl: u.pictureUrl ?? null })).sort((a, b) => a.name.localeCompare(b.name)),
-            grants: grants.map((g) => ({ app: g.app, email: g.email, role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null })),
+            users: users.map((u) => ({ id: u.id, email: u.email, name: shownName(u), pictureUrl: u.pictureUrl ?? null })).sort((a, b) => a.name.localeCompare(b.name)),
+            grants: grants.map((g) => ({ app: g.app, userId: g.userId, role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null })),
           },
         };
       }),
     )
     .add(
       'PUT',
-      '/admin/access/:slug/:email',
+      '/admin/access/:slug/:userId',
       signedIn(async (req, user) => {
         const app = await getApp(deps, req.params.slug!, { includeArchived: true });
         const role = req.body.role;
         if (role !== null && typeof role !== 'string') throw badRequest('"role" must be a role id or null');
-        const grant = await setGrant(deps, user, app.manifest, req.params.email!, role);
+        const grant = await setGrant(deps, user, app.manifest, req.params.userId!, role);
         return { body: { grant } };
       }),
     )
@@ -410,7 +413,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       'PUT',
       '/admin/apps/:slug/status',
       signedIn(async (req, user) => {
-        if (!isPlatformAdmin(deps, user.email)) throw forbidden('Platform admins only');
+        if (!isPlatformAdmin(deps, user)) throw forbidden('Platform admins only');
         const status = req.body.status;
         if (status !== 'live' && status !== 'archived') throw badRequest('"status" must be "live" or "archived"');
         const app = await getApp(deps, req.params.slug!, { includeArchived: true });
@@ -423,15 +426,23 @@ export function createPlatformApp(deps: PlatformDeps) {
       'GET',
       '/admin/audit',
       signedIn(async (req, user) => {
-        const admin = isPlatformAdmin(deps, user.email);
+        const admin = isPlatformAdmin(deps, user);
         let apps: Set<string> | 'all' = 'all';
         if (!admin) {
           apps = new Set();
-          for (const a of await listApps(deps)) if ((await managesApp(deps, user.email, a.manifest)).manages) apps.add(a.manifest.slug);
+          for (const a of await listApps(deps)) if ((await managesApp(deps, user, a.manifest)).manages) apps.add(a.manifest.slug);
           if (!apps.size) throw forbidden('You do not manage any app');
         }
         const limit = req.query.limit ? Number(req.query.limit) : undefined;
-        return { body: await listAudit(deps, { apps, app: req.query.app, actor: req.query.actor, action: req.query.action, before: req.query.before, limit }) };
+        // The grid's filter takes an email or an id; events name actors by id, so show their current email too.
+        const actor = req.query.actor?.includes('@') ? ((await userIdForEmail(deps, req.query.actor)) ?? 'nobody') : req.query.actor;
+        const page = await listAudit(deps, { apps, app: req.query.app, actor, action: req.query.action, before: req.query.before, limit });
+        const emails = new Map<string, string>();
+        for (const id of new Set(page.events.map((e) => e.actorId))) {
+          const u = await getUser(deps, id);
+          if (u) emails.set(id, u.email);
+        }
+        return { body: { ...page, events: page.events.map((e) => (emails.has(e.actorId) ? { ...e, actorEmail: emails.get(e.actorId) } : e)) } };
       }),
     );
 
@@ -440,22 +451,23 @@ export function createPlatformApp(deps: PlatformDeps) {
 
 function meView(deps: PlatformDeps, u: PlatformUser) {
   return {
+    id: u.id,
     email: u.email,
     name: shownName(u),
     displayName: u.displayName ?? null,
     googleName: u.name,
     pictureUrl: u.pictureUrl ?? null,
-    isPlatformAdmin: isPlatformAdmin(deps, u.email),
+    isPlatformAdmin: isPlatformAdmin(deps, u),
   };
 }
 
 /** Unread notifications, and requests waiting on this person. */
 async function badges(deps: PlatformDeps, user: PlatformUser): Promise<{ unread: number; pendingRequests: number; managesApps: number }> {
-  const unread = (await listNotifications(deps, user.email)).filter((n) => !n.read).length;
+  const unread = (await listNotifications(deps, user.id)).filter((n) => !n.read).length;
   let pendingRequests = 0;
   let managesApps = 0;
   for (const a of await listApps(deps)) {
-    if (!(await managesApp(deps, user.email, a.manifest)).manages) continue;
+    if (!(await managesApp(deps, user, a.manifest)).manages) continue;
     managesApps++;
     pendingRequests += (await grantsForApp(deps, a.manifest.slug)).filter((g) => g.role === PENDING).length;
   }

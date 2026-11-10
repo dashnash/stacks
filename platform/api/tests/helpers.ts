@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { codeChallenge, MemoryStore, randomToken, unauthorized } from '@stacks/api';
+import { codeChallenge, MemoryStore, randomToken, unauthorized, type Item } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
 import { createPlatformApp } from '../src/app';
 import type { PlatformDeps, RegisteredApp } from '../src/model';
@@ -76,15 +76,18 @@ export function createPlatformHarness(opts: { apps?: AppManifest[]; admins?: str
     config: { rootDomain: 'stacks.test', authOrigin: 'https://auth.stacks.test', googleClientId: 'gid', platformAdmins: opts.admins ?? ['root@test.dev'] },
     registry: { list: async () => apps },
     appSessions: {
-      endUserSessions: async (slug, email) => {
-        revoked.push(`${slug}:${email}`);
-        await opts.revoke?.(slug, email);
+      // Recorded by email so tests read naturally; apps are told the user id.
+      endUserSessions: async (slug, userId) => {
+        const user = await store.get<Item & { email: string }>(`USER#${userId}`, 'PROFILE');
+        revoked.push(`${slug}:${user?.email ?? userId}`);
+        await opts.revoke?.(slug, userId);
       },
     },
+    // `test:<email>[:<Full Name>[:<google sub>]]`; the sub defaults to one per email.
     verifyGoogle: async (credential) => {
-      const [scheme, email, name] = credential.split(':');
+      const [scheme, email, name, sub] = credential.split(':');
       if (scheme !== 'test' || !email) throw unauthorized('bad credential');
-      return { email, name: name ?? email.split('@')[0]! };
+      return { sub: sub || `g-${email}`, email, name: name || email.split('@')[0]! };
     },
     now: () => new Date((clock += 1000)),
     newId: () => `id${++id}`,
@@ -92,8 +95,8 @@ export function createPlatformHarness(opts: { apps?: AppManifest[]; admins?: str
   const app = createPlatformApp(deps);
   const portalTokens = new Map<string, string>();
 
-  async function signIn(email: string, name?: string): Promise<string> {
-    const res = toRes(await app(event('POST', '/api/auth/google', { body: { credential: `test:${email}${name ? `:${name}` : ''}` } })));
+  async function signIn(email: string, name?: string, sub?: string): Promise<string> {
+    const res = toRes(await app(event('POST', '/api/auth/google', { body: { credential: `test:${email}:${name ?? ''}:${sub ?? ''}` } })));
     if (res.status !== 200) throw new Error(`sign-in failed: ${JSON.stringify(res.body)}`);
     const token = cookieFrom(res.cookies, '__Host-stacks-portal')!;
     portalTokens.set(email, token);
@@ -126,5 +129,18 @@ export function createPlatformHarness(opts: { apps?: AppManifest[]; admins?: str
     clock += ms;
   };
 
-  return { app, deps, store, revoked, signIn, call, authorize, advance };
+  /** The user id for an email (they must have signed in, or be a manifest owner of a registered app). */
+  async function idOf(email: string): Promise<string> {
+    const found = await store.get<Item & { userId: string }>(`EMAIL#${email.toLowerCase()}`, 'EMAIL');
+    if (!found) throw new Error(`No user with email ${email}`);
+    return found.userId;
+  }
+
+  /** `PUT /admin/access/<slug>/<their id>` as someone; the person gets an account first if they have none. */
+  async function setRole(slug: string, email: string, o: { as: string; body: { role: string | null } }): Promise<Res> {
+    if (!(await store.get(`EMAIL#${email.toLowerCase()}`, 'EMAIL'))) await signIn(email);
+    return call('PUT', `/admin/access/${slug}/${await idOf(email)}`, o);
+  }
+
+  return { app, deps, store, revoked, signIn, call, authorize, advance, idOf, setRole };
 }

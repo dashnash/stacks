@@ -34,7 +34,7 @@ export function AuditLog({ initialApp }: { initialApp?: string }) {
           <input
             key={f}
             aria-label={`Filter by ${f}`}
-            placeholder={f === 'app' ? 'App (slug)' : f === 'actor' ? 'Person (email)' : 'Action, e.g. grant'}
+            placeholder={f === 'app' ? 'App (slug)' : f === 'actor' ? 'Person (email or id)' : 'Action, e.g. grant'}
             defaultValue={filters[f]}
             onKeyDown={(e) => e.key === 'Enter' && setFilters({ ...filters, [f]: (e.target as HTMLInputElement).value.trim() })}
             onBlur={(e) => setFilters({ ...filters, [f]: e.target.value.trim() })}

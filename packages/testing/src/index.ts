@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import {
   createSession,
   createStacksApp,
+  fixtureUserId,
   MemoryStore,
   SESSION_COOKIE,
   type AppDeps,
@@ -43,18 +44,19 @@ export class FakePlatform implements PlatformClient {
   members: AppMember[] = [];
   pending: AppMember[] = [];
   blocked: AppMember[] = [];
-  notifications: { email: string; text: string; link?: string }[] = [];
+  notifications: { userId: string; text: string; link?: string }[] = [];
   async access(): Promise<AppAccess> {
     return { members: [...this.members], pending: [...this.pending], blocked: [...this.blocked] };
   }
-  async setAccess(_actor: string, email: string, role: string | null): Promise<void> {
-    const current = [...this.members, ...this.pending].find((m) => m.email === email);
-    this.members = this.members.filter((m) => m.email !== email);
-    this.pending = this.pending.filter((m) => m.email !== email);
-    if (role) this.members.push({ email, name: current?.name ?? email.split('@')[0]!, role });
+  async setAccess(_actor: string, userId: string, role: string | null): Promise<void> {
+    const current = [...this.members, ...this.pending, ...this.blocked].find((m) => m.id === userId);
+    this.members = this.members.filter((m) => m.id !== userId);
+    this.pending = this.pending.filter((m) => m.id !== userId);
+    this.blocked = this.blocked.filter((m) => m.id !== userId);
+    if (role) this.members.push({ id: userId, email: current?.email ?? `${userId}@test`, name: current?.name ?? userId, role });
   }
-  async notify(email: string, text: string, link?: string): Promise<void> {
-    this.notifications.push({ email, text, link });
+  async notify(userId: string, text: string, link?: string): Promise<void> {
+    this.notifications.push({ userId, text, link });
   }
 
   /** Set what account() returns. */
@@ -74,7 +76,7 @@ export class FakePlatform implements PlatformClient {
 
 export interface CallOptions {
   /** Call as this signed-in user (a session is created on the fly). */
-  as?: string | StacksUser;
+  as?: string | PersonLike;
   /** Their role in the app; defaults to the manifest's defaultRole, else its last role. */
   role?: string;
   body?: unknown;
@@ -93,8 +95,18 @@ export interface CallResult {
   cookies: string[];
 }
 
-/** A user for tests: the name is the part of the email before "@". */
-export const userFor = (email: string): StacksUser => ({ email, name: email.split('@')[0]! });
+/** The user id tests give an email: deterministic, so tests can name people by email (`alice@test` → `u_alice_test`). */
+export const testUserId = (email: string): string => fixtureUserId(email);
+
+/** A user for tests: the id comes from {@link testUserId}, the name is the part of the email before "@". */
+export const userFor = (email: string): StacksUser => ({ id: testUserId(email), email, name: email.split('@')[0]! });
+
+/** Someone to act as: an email, or a user whose id defaults to {@link testUserId} of their email. */
+export type PersonLike = Omit<StacksUser, 'id'> & { id?: string };
+const asUser = (who: string | PersonLike): StacksUser => (typeof who === 'string' ? userFor(who) : { ...who, id: who.id ?? testUserId(who.email) });
+
+/** An app member for tests (for `FakePlatform.members`). */
+export const memberFor = (email: string, role: string, name = email.split('@')[0]!): AppMember => ({ id: testUserId(email), email, name, role });
 
 /**
  * Run an app's real API in memory: a {@link MemoryStore}, a {@link FakePlatform}, a clock that
@@ -132,8 +144,8 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
   const defaultRole = opts.manifest.defaultRole ?? opts.manifest.roles.at(-1)!.id;
 
   /** A session token for a user, as if they had just come through the handshake. */
-  async function sessionFor(who: string | StacksUser, role = defaultRole): Promise<string> {
-    return createSession(deps, typeof who === 'string' ? userFor(who) : who, role);
+  async function sessionFor(who: string | PersonLike, role = defaultRole): Promise<string> {
+    return createSession(deps, asUser(who), role);
   }
 
   async function call(method: string, path: string, callOpts: CallOptions = {}): Promise<CallResult> {

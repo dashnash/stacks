@@ -3,7 +3,8 @@ import type { AppMember } from './platform';
 
 /** A person as apps show them in lists and credits. */
 export interface Person {
-  email: string;
+  /** Platform user id. */
+  id: string;
   name: string;
   pictureUrl?: string;
 }
@@ -27,16 +28,16 @@ export function forgetMembers(deps: AppDeps): void {
 }
 
 /**
- * Names for a set of emails. People who no longer have access show as "Former member", so their
- * old posts never reveal an email address.
+ * Names for a set of user ids. People who no longer have access show as "Former member", so their
+ * old posts never reveal who they were.
  */
-export async function getPeople(deps: AppDeps, emails: string[]): Promise<Map<string, Person>> {
+export async function getPeople(deps: AppDeps, ids: string[]): Promise<Map<string, Person>> {
   const members = await appMembers(deps);
-  const byEmail = new Map(members.map((m) => [m.email, m]));
+  const byId = new Map(members.map((m) => [m.id, m]));
   return new Map(
-    [...new Set(emails)].map((email) => {
-      const m = byEmail.get(email);
-      return [email, m ? { email, name: m.name, ...(m.pictureUrl ? { pictureUrl: m.pictureUrl } : {}) } : { email, name: 'Former member' }];
+    [...new Set(ids)].map((id) => {
+      const m = byId.get(id);
+      return [id, m ? { id, name: m.name, ...(m.pictureUrl ? { pictureUrl: m.pictureUrl } : {}) } : { id, name: 'Former member' }];
     }),
   );
 }

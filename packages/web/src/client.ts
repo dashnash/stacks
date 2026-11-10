@@ -23,7 +23,7 @@ export interface ClientOptions {
 export type Request = <T = unknown>(method: string, path: string, body?: unknown) => Promise<T>;
 
 export interface Session {
-  user: { email: string; name: string; pictureUrl?: string };
+  user: { id: string; email: string; name: string; pictureUrl?: string };
   role: string;
   canManageAccess: boolean;
 }

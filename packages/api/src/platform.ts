@@ -11,16 +11,18 @@ export interface PlatformClient {
   /** Mirror an activity-log event into the platform's central feed. */
   recordAudit(event: AuditEvent): Promise<void>;
   /** What the account menu shows a user: their apps, inbox, role here, and approvals waiting. */
-  account(email: string): Promise<AccountData>;
+  account(userId: string): Promise<AccountData>;
   /** Everyone with a role in this app, pending requests, and blocked people. Names are display names. */
   access(): Promise<AppAccess>;
-  /** Change a grant on behalf of `actorEmail` (the platform checks they manage this app). `role: null` removes; `"BLOCKED"` blocks. */
-  setAccess(actorEmail: string, email: string, role: string | null): Promise<void>;
+  /** Change a grant on behalf of `actorId` (the platform checks they manage this app). `role: null` removes; `"BLOCKED"` blocks. */
+  setAccess(actorId: string, userId: string, role: string | null): Promise<void>;
   /** Put a message in a member's platform inbox (badge in the portal bar). */
-  notify(email: string, text: string, link?: string): Promise<void>;
+  notify(userId: string, text: string, link?: string): Promise<void>;
 }
 
 export interface AppMember {
+  /** Platform user id: what to store and look people up by. */
+  id: string;
   email: string;
   name: string;
   pictureUrl?: string;
@@ -104,19 +106,19 @@ export class HttpPlatformClient implements PlatformClient {
     await this.post('/audit', event);
   }
 
-  account(email: string): Promise<AccountData> {
-    return this.post<AccountData>(`/account?email=${encodeURIComponent(email)}`);
+  account(userId: string): Promise<AccountData> {
+    return this.post<AccountData>(`/account?user=${encodeURIComponent(userId)}`);
   }
 
   access(): Promise<AppAccess> {
     return this.post<AppAccess>('/access');
   }
 
-  async setAccess(actorEmail: string, email: string, role: string | null): Promise<void> {
-    await this.request('PUT', `/access/${encodeURIComponent(email)}`, { actorEmail, role });
+  async setAccess(actorId: string, userId: string, role: string | null): Promise<void> {
+    await this.request('PUT', `/access/${encodeURIComponent(userId)}`, { actorId, role });
   }
 
-  async notify(email: string, text: string, link?: string): Promise<void> {
-    await this.post('/notify', { email, text, link });
+  async notify(userId: string, text: string, link?: string): Promise<void> {
+    await this.post('/notify', { userId, text, link });
   }
 }

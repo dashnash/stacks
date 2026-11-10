@@ -52,7 +52,7 @@ export function BookHistory({ meetings, onChanged }: { meetings: PastMeeting[]; 
               book={m.book}
               title={m.title}
               kicker={monthStamp(m.dateTime)}
-              footnote={`led by ${m.leader?.name ?? m.leaderEmail}`}
+              footnote={`led by ${m.leader?.name ?? m.leaderId}`}
               tooltip={formatShortDate(m.dateTime)}
               href={m.book ? bookHref(m.book.isbn) : undefined}
               action={

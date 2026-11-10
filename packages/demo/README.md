@@ -9,9 +9,10 @@ const demo = createDemo({ manifest, routes, personas, seed });
 createRoot(el).render(<DemoApp demo={demo}><App /></DemoApp>);
 ```
 
-- `personas`: `{ email, name, role, blurb? }`, usually one per role. "Sign in" uses the first.
+- `personas`: `{ email, name, role, blurb?, id? }`, usually one per role. "Sign in" uses the first. A persona's
+  id defaults to `fixtureUserId(email)` (from `@stacks/api`): use that for them in seed data.
 - `seed(deps)`: write sample data with `deps.store`. Runs on first load and on Reset.
-- Changes persist in localStorage (`storageKey: false` to disable).
+- Changes persist in localStorage (default key `stacks-demo:<slug>:v2`; `storageKey: false` to disable).
 - `demo.signInAs(email | null)`, `demo.reset()` for scripted checks; `demo.html?as=<email>` opens the
   demo signed in as that persona (`<DemoApp startAs>` overrides); `window.__stacksDemo.personas` lists them.
 - The persona switcher and Reset live in the account menu ("Demo: try the app as").

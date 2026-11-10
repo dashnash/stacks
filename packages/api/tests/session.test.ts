@@ -22,7 +22,7 @@ describe('app sessions', () => {
     const a = await t.sessionFor(userFor('r@test.dev'), 'READER');
     const b = await t.sessionFor(userFor('R@test.dev'), 'READER');
     const other = await t.sessionFor('x@test.dev', 'READER');
-    expect(await endUserSessions(t.deps, 'r@test.dev')).toBe(2);
+    expect(await endUserSessions(t.deps, userFor('r@test.dev').id)).toBe(2);
     expect((await t.call('GET', '/notes', { cookies: { [SESSION_COOKIE]: a } })).status).toBe(401);
     expect((await t.call('GET', '/notes', { cookies: { [SESSION_COOKIE]: b } })).status).toBe(401);
     expect((await t.call('GET', '/notes', { cookies: { [SESSION_COOKIE]: other } })).status).toBe(200);

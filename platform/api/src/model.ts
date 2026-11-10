@@ -3,6 +3,9 @@ import type { Item, Store } from '@stacks/api';
 
 /** A person with a portal account. Anyone with a verified Google account can have one. */
 export interface PlatformUser {
+  /** Stable internal id (`u_…`): what grants, sessions, notifications and app data key on. */
+  id: string;
+  /** Primary contact email (from Google). Can change; never a key outside the `EMAIL#` index. */
   email: string;
   /** Full Google name: stored, never sent to apps. */
   name: string;
@@ -33,7 +36,7 @@ export function holdsRole(role: string | null | undefined): role is string {
 /** One user's access to one app: a manifest role, a pending request, or a block. */
 export interface Grant {
   app: string;
-  email: string;
+  userId: string;
   role: string;
   grantedBy?: string;
   grantedAt?: string;
@@ -62,7 +65,8 @@ export interface PlatformAuditEvent {
   at: string;
   /** App slug, or "platform" for the portal itself. */
   app: string;
-  actorEmail: string;
+  /** A user id, or "platform" for the platform itself. */
+  actorId: string;
   actorName: string;
   action: string;
   label?: string;
@@ -83,10 +87,12 @@ export interface AppRegistry {
 
 /** Ends a user's sessions inside an app (in that app's own table). */
 export interface AppSessionRevoker {
-  endUserSessions(slug: string, email: string): Promise<void>;
+  endUserSessions(slug: string, userId: string): Promise<void>;
 }
 
 export interface GoogleIdentity {
+  /** Google's stable account id (the ID token's `sub`). */
+  sub: string;
   email: string;
   name: string;
   picture?: string;
@@ -100,6 +106,8 @@ export interface PlatformConfig {
   googleClientId: string;
   /** Lower-case emails of platform super-admins. */
   platformAdmins: string[];
+  /** While true, every route but /health and /config answers 503 (the user-id cut-over). */
+  maintenance?: boolean;
 }
 
 export interface PlatformDeps {
@@ -113,14 +121,30 @@ export interface PlatformDeps {
 }
 
 export const appOrigin = (config: PlatformConfig, slug: string) => `https://${slug}.${config.rootDomain}`;
-export const isPlatformAdmin = (deps: PlatformDeps, email: string) => deps.config.platformAdmins.includes(email.toLowerCase());
+/** Platform admins are configured by email (`stacks.config.json`), matched against the user's current email. */
+export const isPlatformAdmin = (deps: PlatformDeps, user: Pick<PlatformUser, 'email'> | null | undefined) =>
+  !!user && deps.config.platformAdmins.includes(user.email.toLowerCase());
+
+/** User ids look like `u_` + 24 lower-case hex characters (96 random bits). */
+export const USER_ID = /^u_[a-z0-9_]{6,40}$/;
+export function newUserId(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  return `u_${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
 
 export const keys = {
-  user: (email: string) => ({ PK: `USER#${email}`, SK: 'PROFILE', GSI1PK: 'USERS', GSI1SK: email }),
+  user: (id: string) => ({ PK: `USER#${id}`, SK: 'PROFILE', GSI1PK: 'USERS', GSI1SK: id }),
+  /** Unique lookup from an email (lower case) to the user who has it. */
+  email: (email: string) => ({ PK: `EMAIL#${email.toLowerCase()}`, SK: 'EMAIL' }),
+  /** Unique lookup from a sign-in identity (`google`, later `apple`) to its user. */
+  identity: (provider: string, sub: string) => ({ PK: `IDENTITY#${provider}#${sub}`, SK: 'IDENTITY' }),
   app: (slug: string) => ({ PK: `APP#${slug}`, SK: 'APP' }),
-  grant: (slug: string, email: string) => ({ PK: `APP#${slug}`, SK: `GRANT#${email}`, GSI1PK: `USERGRANTS#${email}`, GSI1SK: slug }),
-  notification: (email: string, at: string, id: string) => ({ PK: `NOTIF#${email}`, SK: `${at}#${id}` }),
+  grant: (slug: string, userId: string) => ({ PK: `APP#${slug}`, SK: `GRANT#${userId}`, GSI1PK: `USERGRANTS#${userId}`, GSI1SK: slug }),
+  notification: (userId: string, at: string, id: string) => ({ PK: `NOTIF#${userId}`, SK: `${at}#${id}` }),
 };
+
+export type EmailItem = Item & { userId: string };
+export type IdentityItem = Item & { userId: string; provider: string; sub: string; email: string; linkedAt: string };
 
 export type UserItem = Item & PlatformUser;
 export type GrantItem = Item & Grant;

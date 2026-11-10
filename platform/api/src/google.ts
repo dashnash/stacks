@@ -20,7 +20,9 @@ export function createGoogleVerifier(clientId: string, keySet?: JWTVerifyGetKey)
       throw unauthorized('Invalid or expired Google credential');
     }
     if (typeof payload.email !== 'string' || payload.email_verified !== true) throw unauthorized('Google account email is not verified');
+    if (typeof payload.sub !== 'string' || !payload.sub) throw unauthorized('Google credential has no account id');
     return {
+      sub: payload.sub,
       email: payload.email.toLowerCase(),
       name: typeof payload.name === 'string' ? payload.name : payload.email,
       picture: typeof payload.picture === 'string' ? payload.picture : undefined,

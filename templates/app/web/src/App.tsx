@@ -103,7 +103,7 @@ export function App() {
         <h1>{manifest.name}</h1>
         <AccountMenu className="account" />
       </header>
-      <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Home key={`${session.user.email}:${session.role}`} /> : <Landing />}</main>
+      <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Home key={`${session.user.id}:${session.role}`} /> : <Landing />}</main>
       {/* Platform rule: the build is shown on every screen (tools/app-conformance). */}
       <footer className="foot muted small">
         {manifest.name} · built on Stacks · <BuildVersion className="build" />

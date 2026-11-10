@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -22,7 +22,7 @@ export function defaultDeps(manifest: AppManifest): AppDeps {
   let credential: Promise<string> | undefined;
   return {
     store: new DynamoStore(env('TABLE_NAME')),
-    config: { appOrigin: env('STACKS_APP_ORIGIN'), authOrigin: env('STACKS_AUTH_ORIGIN') },
+    config: { appOrigin: env('STACKS_APP_ORIGIN'), authOrigin: env('STACKS_AUTH_ORIGIN'), maintenance: process.env.STACKS_MAINTENANCE === '1' },
     platform: new HttpPlatformClient({
       baseUrl: env('STACKS_PLATFORM_URL'),
       appSlug: manifest.slug,
@@ -93,20 +93,28 @@ export { DynamoStore } from './dynamo-store';
 export interface ContentStore {
   /** A short-lived link to a private object (default 15 minutes). */
   signUrl(key: string, expiresInSeconds?: number): Promise<string>;
-  /** Object keys under a prefix (cached for 10 minutes per container). */
+  /** Object keys under a prefix (cached for 10 minutes per container; `put` and `delete` clear it). */
   list(prefix: string): Promise<string[]>;
+  /** Store an object, e.g. a file a member uploaded. Validate type and size before calling. */
+  put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  /** Delete an object. Deleting a key that doesn't exist is not an error. */
+  delete(key: string): Promise<void>;
 }
 
-/** Content stored in `CONTENT_BUCKET`, set by the PlatformApp construct when the app enables `contentPacks`. */
-export function contentStore(): ContentStore {
-  const bucket = env('CONTENT_BUCKET');
-  const s3 = new S3Client({});
+/**
+ * Content stored in `CONTENT_BUCKET`, set by the PlatformApp construct when the app enables
+ * `contentPacks`. `opts` are for tests.
+ */
+export function contentStore(opts: { bucket?: string; client?: Pick<S3Client, 'send'>; now?: () => number } = {}): ContentStore {
+  const bucket = opts.bucket ?? env('CONTENT_BUCKET');
+  const s3 = opts.client ?? new S3Client({});
+  const now = opts.now ?? Date.now;
   const lists = new Map<string, { at: number; keys: string[] }>();
   return {
-    signUrl: (key, expiresIn = 900) => getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn }),
+    signUrl: (key, expiresIn = 900) => getSignedUrl(s3 as S3Client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn }),
     async list(prefix) {
       const hit = lists.get(prefix);
-      if (hit && Date.now() - hit.at < 600_000) return hit.keys;
+      if (hit && now() - hit.at < 600_000) return hit.keys;
       const keys: string[] = [];
       let token: string | undefined;
       do {
@@ -114,8 +122,16 @@ export function contentStore(): ContentStore {
         for (const o of page.Contents ?? []) if (o.Key && !o.Key.endsWith('/')) keys.push(o.Key);
         token = page.NextContinuationToken;
       } while (token);
-      lists.set(prefix, { at: Date.now(), keys });
+      lists.set(prefix, { at: now(), keys });
       return keys;
+    },
+    async put(key, body, contentType) {
+      await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+      lists.clear();
+    },
+    async delete(key) {
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      lists.clear();
     },
   };
 }

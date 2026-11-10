@@ -9,6 +9,8 @@ import type { Person } from '../../../api/users/repo';
  * platform profile), `role` their Book Club role.
  */
 export interface User {
+  /** Platform user id. */
+  id: string;
   email: string;
   name: string;
   role: Role;
@@ -87,11 +89,11 @@ export interface Meeting {
   title: string;
   dateTime: string;
   videoUrl?: string;
-  leaderEmail: string;
+  leaderId: string;
   bookIsbn?: string;
   status: 'UPCOMING' | 'PAST';
   phase: MeetingPhase;
-  nextLeaderEmail?: string;
+  nextLeaderId?: string;
   createdAt: string;
 }
 
@@ -141,18 +143,24 @@ export interface CommentView {
   canDelete: boolean;
 }
 
+/** A critic's quote: unsigned, with one of the shared faces (or the quote's own photo). */
 export interface EasterEgg {
   id: string;
   quote: string;
-  characterName: string;
   imageUrl: string | null;
+}
+
+/** One of the shared face photos (admins). `url` is a short-lived link. */
+export interface FacePhotoView {
+  name: string;
+  url: string;
 }
 
 export interface MeetingInput {
   title?: string;
   dateTime: string;
   videoUrl?: string;
-  leaderEmail?: string;
+  leaderId?: string;
 }
 
 /** Book details for signed-out visitors: nothing about members. */

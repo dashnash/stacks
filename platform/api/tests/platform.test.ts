@@ -43,7 +43,7 @@ describe('the handshake', () => {
 
     const b = await h.authorize('hello', 'max@test.dev');
     const ok = await token(h, 'hello', { code: b.code, codeVerifier: b.verifier, redirectUri: b.redirectUri });
-    expect(ok.body).toEqual({ user: { email: 'max@test.dev', name: 'max' }, role: 'MEMBER' });
+    expect(ok.body).toEqual({ user: { id: await h.idOf('max@test.dev'), email: 'max@test.dev', name: 'max' }, role: 'MEMBER' });
     expect((await token(h, 'hello', { code: b.code, codeVerifier: b.verifier, redirectUri: b.redirectUri })).status).toBe(400);
   });
 
@@ -73,7 +73,7 @@ describe('the handshake', () => {
     const notes = await h.call('GET', '/notifications', { as: 'owner@test.dev' });
     expect(notes.body.notifications[0].text).toContain('ann@test.dev');
 
-    expect((await h.call('PUT', '/admin/access/club/ann@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
+    expect((await h.setRole('club', 'ann@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
     expect((await h.call('GET', '/me', { as: 'ann@test.dev' })).body.unread).toBe(1);
     const again = await h.authorize('club', 'ann@test.dev');
     expect((await token(h, 'club', { code: again.code, codeVerifier: again.verifier, redirectUri: again.redirectUri })).body.role).toBe('MEMBER');
@@ -85,37 +85,37 @@ describe('access grid', () => {
     const h = createPlatformHarness();
     const grid = await h.call('GET', '/admin/access', { as: 'owner@test.dev' });
     expect(grid.body.apps.map((a: { slug: string }) => a.slug)).toEqual(['club', 'hello']);
-    expect(grid.body.grants).toEqual(expect.arrayContaining([expect.objectContaining({ app: 'club', email: 'owner@test.dev', role: 'OWNER' })]));
+    expect(grid.body.grants).toEqual(expect.arrayContaining([expect.objectContaining({ app: 'club', userId: await h.idOf('owner@test.dev'), role: 'OWNER' })]));
   });
 
   it('lets admins approve members but only approver-managers change approvers', async () => {
     const h = createPlatformHarness();
-    await h.call('PUT', '/admin/access/club/adam@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
-    expect((await h.call('PUT', '/admin/access/club/m@test.dev', { as: 'adam@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
-    expect((await h.call('PUT', '/admin/access/club/m@test.dev', { as: 'adam@test.dev', body: { role: 'ADMIN' } })).status).toBe(403);
-    expect((await h.call('PUT', '/admin/access/club/m@test.dev', { as: 'm@test.dev', body: { role: 'OWNER' } })).status).toBe(403);
+    await h.setRole('club', 'adam@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    expect((await h.setRole('club', 'm@test.dev', { as: 'adam@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
+    expect((await h.setRole('club', 'm@test.dev', { as: 'adam@test.dev', body: { role: 'ADMIN' } })).status).toBe(403);
+    expect((await h.setRole('club', 'm@test.dev', { as: 'm@test.dev', body: { role: 'OWNER' } })).status).toBe(403);
     expect((await h.call('GET', '/admin/access', { as: 'm@test.dev' })).status).toBe(403);
   });
 
   it('keeps at least one holder of the top role', async () => {
     const h = createPlatformHarness();
-    expect((await h.call('PUT', '/admin/access/club/owner@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(409);
-    await h.call('PUT', '/admin/access/club/two@test.dev', { as: 'owner@test.dev', body: { role: 'OWNER' } });
-    expect((await h.call('PUT', '/admin/access/club/owner@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
+    expect((await h.setRole('club', 'owner@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(409);
+    await h.setRole('club', 'two@test.dev', { as: 'owner@test.dev', body: { role: 'OWNER' } });
+    expect((await h.setRole('club', 'owner@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } })).status).toBe(200);
   });
 
   it('ends the user\'s app sessions when their role changes or is removed', async () => {
     const h = createPlatformHarness();
-    await h.call('PUT', '/admin/access/club/m@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    await h.setRole('club', 'm@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
     expect(h.revoked).toEqual([]);
-    await h.call('PUT', '/admin/access/club/m@test.dev', { as: 'owner@test.dev', body: { role: null } });
+    await h.setRole('club', 'm@test.dev', { as: 'owner@test.dev', body: { role: null } });
     expect(h.revoked).toEqual(['club:m@test.dev']);
   });
 
   it('lets the platform super-admin edit any cell and see every user', async () => {
     const h = createPlatformHarness();
     await h.signIn('stranger@test.dev');
-    expect((await h.call('PUT', '/admin/access/club/x@test.dev', { as: 'root@test.dev', body: { role: 'OWNER' } })).status).toBe(200);
+    expect((await h.setRole('club', 'x@test.dev', { as: 'root@test.dev', body: { role: 'OWNER' } })).status).toBe(200);
     const grid = await h.call('GET', '/admin/access', { as: 'root@test.dev' });
     expect(grid.body.users.map((u: { email: string }) => u.email)).toContain('stranger@test.dev');
     expect(grid.body.isPlatformAdmin).toBe(true);
@@ -124,7 +124,7 @@ describe('access grid', () => {
   it('blocks people from a public app: no default role on their next sign-in, until unblocked', async () => {
     const h = createPlatformHarness();
     await h.authorize('hello', 'troll@test.dev'); // auto-granted MEMBER
-    expect((await h.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(200);
+    expect((await h.setRole('hello', 'troll@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(200);
     expect(h.revoked).toEqual(['hello:troll@test.dev']);
 
     const again = await h.authorize('hello', 'troll@test.dev');
@@ -139,7 +139,7 @@ describe('access grid', () => {
     expect(access.body.blocked.map((m: { email: string }) => m.email)).toEqual(['troll@test.dev']);
 
     // Unblocking (null) puts them back to "no grant": the next sign-in auto-grants again.
-    await h.call('PUT', '/admin/access/hello/troll@test.dev', { as: 'owner@test.dev', body: { role: null } });
+    await h.setRole('hello', 'troll@test.dev', { as: 'owner@test.dev', body: { role: null } });
     expect((await h.authorize('hello', 'troll@test.dev')).code).toMatch(/^stc_/);
     const audit = await h.call('GET', '/admin/audit', { as: 'root@test.dev', query: { app: 'hello' } });
     const actions = audit.body.events.map((e: { action: string }) => e.action);
@@ -149,7 +149,7 @@ describe('access grid', () => {
   it('blocks private-app requesters: the request is turned away, no new one is filed, nobody is notified', async () => {
     const h = createPlatformHarness();
     await h.authorize('club', 'pest@test.dev'); // files a request
-    await h.call('PUT', '/admin/access/club/pest@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
+    await h.setRole('club', 'pest@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } });
     expect((await h.call('GET', '/me', { as: 'pest@test.dev' })).body.unread).toBe(0);
     await h.call('POST', '/notifications/read', { as: 'owner@test.dev' });
 
@@ -160,16 +160,16 @@ describe('access grid', () => {
 
   it('keeps blocks within the same rules as roles: approver-managers only for approvers, never platform admins or the last owner', async () => {
     const h = createPlatformHarness();
-    await h.call('PUT', '/admin/access/club/adm@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
-    await h.call('PUT', '/admin/access/club/adm2@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
-    expect((await h.call('PUT', '/admin/access/club/adm2@test.dev', { as: 'adm@test.dev', body: { role: 'BLOCKED' } })).status).toBe(403);
-    expect((await h.call('PUT', '/admin/access/club/owner@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
-    expect((await h.call('PUT', '/admin/access/club/root@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
+    await h.setRole('club', 'adm@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    await h.setRole('club', 'adm2@test.dev', { as: 'owner@test.dev', body: { role: 'ADMIN' } });
+    expect((await h.setRole('club', 'adm2@test.dev', { as: 'adm@test.dev', body: { role: 'BLOCKED' } })).status).toBe(403);
+    expect((await h.setRole('club', 'owner@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
+    expect((await h.setRole('club', 'root@test.dev', { as: 'owner@test.dev', body: { role: 'BLOCKED' } })).status).toBe(409);
   });
 
   it('rejects roles the app does not declare', async () => {
     const h = createPlatformHarness();
-    expect((await h.call('PUT', '/admin/access/club/x@test.dev', { as: 'owner@test.dev', body: { role: 'GOD' } })).status).toBe(400);
+    expect((await h.setRole('club', 'x@test.dev', { as: 'owner@test.dev', body: { role: 'GOD' } })).status).toBe(400);
   });
 });
 
@@ -177,14 +177,15 @@ describe('account data for apps', () => {
   it('tells an approver how many requests wait, and nobody else', async () => {
     const h = createPlatformHarness();
     await h.authorize('club', 'ann@test.dev'); // files a request
-    const get = (email: string) => h.call('GET', '/apps/club/account', { query: { email }, headers: { authorization: 'Bearer cred-club' } });
+    const get = async (email: string) => h.call('GET', '/apps/club/account', { query: { user: await h.idOf(email) }, headers: { authorization: 'Bearer cred-club' } });
     expect((await get('owner@test.dev')).body).toMatchObject({
       app: { roleLabel: 'Owner' },
       manage: { pending: 1, href: 'https://auth.stacks.test/#/admin/access?app=club' },
       unread: 1,
     });
     expect((await get('ann@test.dev')).body).toMatchObject({ app: { roleLabel: null }, manage: null, apps: [] });
-    expect((await h.call('GET', '/apps/club/account', { query: { email: 'x' }, headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
+    expect((await h.call('GET', '/apps/club/account', { query: { user: 'x' }, headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
+    expect((await h.call('GET', '/apps/club/account', { query: { user: 'u_nobody' }, headers: { authorization: 'Bearer cred-club' } })).status).toBe(404);
   });
 });
 
@@ -227,13 +228,64 @@ describe('sign-out and audit', () => {
     const h = createPlatformHarness();
     await h.call('POST', '/apps/club/audit', {
       headers: { authorization: 'Bearer cred-club' },
-      body: { id: 'e1', at: '2026-02-28T23:00:00.000Z', actorEmail: 'm@test.dev', actorName: 'M', action: 'book.nominate', label: 'Dune' },
+      body: { id: 'e1', at: '2026-02-28T23:00:00.000Z', actorId: 'u_m', actorName: 'M', action: 'book.nominate', label: 'Dune' },
     });
-    expect((await h.call('POST', '/apps/club/audit', { headers: { authorization: 'Bearer nope' }, body: { action: 'x', actorEmail: 'a' } })).status).toBe(401);
-    await h.call('PUT', '/admin/access/hello/bo@test.dev', { as: 'root@test.dev', body: { role: 'OWNER' } });
+    expect((await h.call('POST', '/apps/club/audit', { headers: { authorization: 'Bearer nope' }, body: { action: 'x', actorId: 'a' } })).status).toBe(401);
+    await h.setRole('hello', 'bo@test.dev', { as: 'root@test.dev', body: { role: 'OWNER' } });
     const forBo = await h.call('GET', '/admin/audit', { as: 'bo@test.dev' });
     expect(forBo.body.events.every((e: { app: string }) => e.app === 'hello')).toBe(true);
     const all = await h.call('GET', '/admin/audit', { as: 'root@test.dev', query: { app: privateApp.slug } });
     expect(all.body.events.map((e: { action: string }) => e.action)).toContain('book.nominate');
+  });
+});
+
+describe('user ids and identities', () => {
+  it('gives each person a stable id, keyed on their Google account, that survives an email change', async () => {
+    const h = createPlatformHarness();
+    await h.signIn('ann@test.dev', 'Ann Lee', 'g-ann');
+    const id = await h.idOf('ann@test.dev');
+    expect(id).toMatch(/^u_[a-z0-9]+$/);
+    await h.authorize('hello', 'ann@test.dev'); // public: auto-granted
+
+    // Same Google account, new address: same user, grants kept, email index moved.
+    const token = await h.signIn('ann.lee@test.dev', 'Ann Lee', 'g-ann');
+    const me = await h.call('GET', '/me', { cookies: { '__Host-stacks-portal': token } });
+    expect(me.body.user).toMatchObject({ id, email: 'ann.lee@test.dev' });
+    expect(await h.idOf('ann.lee@test.dev')).toBe(id);
+    await expect(h.idOf('ann@test.dev')).rejects.toThrow();
+    const catalog = await h.call('GET', '/catalog', { cookies: { '__Host-stacks-portal': token } });
+    expect(catalog.body.apps.find((a: { slug: string }) => a.slug === 'hello').access).toBe('MEMBER');
+  });
+
+  it('links a first Google sign-in to the account made for a manifest owner', async () => {
+    const h = createPlatformHarness();
+    await h.call('GET', '/public/catalog'); // registers the apps: owner@test.dev gets an account and the top role
+    const ownerId = await h.idOf('owner@test.dev');
+    const me = await h.call('GET', '/me', { as: 'owner@test.dev' });
+    expect(me.body.user).toMatchObject({ id: ownerId, name: 'owner' });
+    expect(me.body.managesApps).toBe(2);
+  });
+
+  it('keeps an address with its owner when another Google account claims it', async () => {
+    const h = createPlatformHarness();
+    await h.signIn('a@test.dev', 'A', 'g-a');
+    await h.signIn('b@test.dev', 'B', 'g-b');
+    const token = await h.signIn('a@test.dev', 'B', 'g-b'); // B's Google account now says a@: a@ stays A's
+    const me = await h.call('GET', '/me', { cookies: { '__Host-stacks-portal': token } });
+    expect(me.body.user).toMatchObject({ id: await h.idOf('b@test.dev'), email: 'b@test.dev' });
+    expect(await h.idOf('a@test.dev')).not.toBe(await h.idOf('b@test.dev'));
+  });
+});
+
+describe('maintenance', () => {
+  it('answers 503 everywhere but health and config', async () => {
+    const h = createPlatformHarness();
+    h.deps.config.maintenance = true;
+    expect((await h.call('GET', '/health')).status).toBe(200);
+    expect((await h.call('GET', '/config')).status).toBe(200);
+    const res = await h.call('GET', '/public/catalog');
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('MAINTENANCE');
+    expect((await h.call('POST', '/auth/google', { body: { credential: 'test:a@test.dev' } })).status).toBe(503);
   });
 });

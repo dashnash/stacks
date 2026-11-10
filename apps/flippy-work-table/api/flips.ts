@@ -1,7 +1,7 @@
 import { badRequest, forbidden, notFound, optionalInt, optionalString, strip, type AppDeps, type AppRoutes, type Item } from '@stacks/api';
 import { scoreOf, toolById, unlockedTools } from './tools';
 
-/** One finished flip by a signed-in player. PK `FLIPS#<email>`, SK `<iso>#<id>`. */
+/** One finished flip by a signed-in player. PK `FLIPS#<userId>`, SK `<iso>#<id>`. */
 export interface Flip {
   id: string;
   score: number;
@@ -11,10 +11,11 @@ export interface Flip {
   createdAt: string;
 }
 
-/** Per-player totals. PK `PLAYER`, SK `<email>`: the leaderboard reads the whole partition. */
+/** Per-player totals. PK `PLAYER`, SK `<userId>`: the leaderboard reads the whole partition. */
 export interface PlayerStats {
   playerId: string;
-  email: string;
+  /** Platform user id. */
+  userId: string;
   name: string;
   best: number;
   total: number;
@@ -37,8 +38,8 @@ const PLAYER = 'PLAYER';
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || 'Anonymous';
 
-async function getStats(deps: AppDeps, email: string): Promise<PlayerStats | undefined> {
-  const found = await deps.store.get<Item & PlayerStats>(PLAYER, email);
+async function getStats(deps: AppDeps, userId: string): Promise<PlayerStats | undefined> {
+  const found = await deps.store.get<Item & PlayerStats>(PLAYER, userId);
   return found ? strip(found) : undefined;
 }
 
@@ -55,8 +56,8 @@ export function flipRoutes(api: AppRoutes<AppDeps>) {
   api
     .public('GET', '/public/leaderboard', async (_req, ctx) => ({ body: { entries: await leaderboard(ctx.deps) } }))
     .member('GET', '/me', async (_req, v) => {
-      const stats = await getStats(v.deps, v.user.email);
-      const recent = (await v.deps.store.query<Item & Flip>(`FLIPS#${v.user.email}`)).reverse().slice(0, 5).map((f) => strip(f));
+      const stats = await getStats(v.deps, v.user.id);
+      const recent = (await v.deps.store.query<Item & Flip>(`FLIPS#${v.user.id}`)).reverse().slice(0, 5).map((f) => strip(f));
       const board = await leaderboard(v.deps);
       const rank = stats ? board.findIndex((e) => e.playerId === stats.playerId) + 1 || null : null;
       return {
@@ -80,22 +81,22 @@ export function flipRoutes(api: AppRoutes<AppDeps>) {
         const toolId = optionalString(req.body, 'tool', 20) ?? 'hand';
         const tool = toolById(toolId);
         if (!tool) throw badRequest('Unknown tool');
-        const before = await getStats(v.deps, v.user.email);
+        const before = await getStats(v.deps, v.user.id);
         if (!unlockedTools(before?.total ?? 0).includes(tool)) throw forbidden(`${tool.name} is not unlocked yet`);
 
         const now = v.deps.now().toISOString();
         const flip: Flip = { id: v.deps.newId(), score: scoreOf(damage, hangMs), damage, hangMs, tool: tool.id, createdAt: now };
-        await v.deps.store.put({ PK: `FLIPS#${v.user.email}`, SK: `${now}#${flip.id}`, ...flip });
+        await v.deps.store.put({ PK: `FLIPS#${v.user.id}`, SK: `${now}#${flip.id}`, ...flip });
         const stats: PlayerStats = {
           playerId: before?.playerId ?? v.deps.newId(),
-          email: v.user.email,
+          userId: v.user.id,
           name: v.user.name,
           best: Math.max(before?.best ?? 0, flip.score),
           total: (before?.total ?? 0) + flip.score,
           flips: (before?.flips ?? 0) + 1,
           updatedAt: now,
         };
-        await v.deps.store.put({ PK: PLAYER, SK: v.user.email, ...stats });
+        await v.deps.store.put({ PK: PLAYER, SK: v.user.id, ...stats });
         const newTools = unlockedTools(stats.total).filter((t) => !unlockedTools(before?.total ?? 0).includes(t));
         return {
           status: 201,
@@ -113,7 +114,7 @@ export function flipRoutes(api: AppRoutes<AppDeps>) {
         const found = (await v.deps.store.query<Item & PlayerStats>(PLAYER)).find((p) => p.playerId === req.params.playerId);
         if (!found) throw notFound('That player is not on the board');
         await v.deps.store.put({ ...found, best: 0, updatedAt: v.deps.now().toISOString() });
-        return { body: { ok: true }, audit: { label: `${firstName(found.name)} (was ${found.best})`, player: found.email } };
+        return { body: { ok: true }, audit: { label: `${firstName(found.name)} (was ${found.best})`, player: found.userId } };
       },
       { audit: 'leaderboard.remove' },
     );

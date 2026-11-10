@@ -2,8 +2,13 @@ import type { AppManifest } from '@stacks/manifest';
 import type { PlatformClient } from './platform';
 import type { Store } from './store';
 
-/** A signed-in person as apps see them: email, the name they chose to show, and their avatar. */
+/** A signed-in person as apps see them: their id, email, the name they chose to show, and their avatar. */
 export interface StacksUser {
+  /**
+   * Stable platform user id (`u_…`). Key everything you store about a person on this, never on
+   * their email: emails change, and some people sign in with addresses that hide their real one.
+   */
+  id: string;
   email: string;
   /** The display name from their global profile (never their full Google name). */
   name: string;
@@ -15,6 +20,8 @@ export interface AppConfig {
   appOrigin: string;
   /** The platform's sign-in origin, e.g. `https://auth.example.com`. */
   authOrigin: string;
+  /** While true, every route but /health answers 503 (set from `stacks.config.json` during a cut-over). */
+  maintenance?: boolean;
 }
 
 /** What every app handler can use. Apps extend it with their own dependencies. */

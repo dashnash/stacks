@@ -10,7 +10,7 @@ every book and meeting. Ported from `dashnash/MofoBookKlubPortal` onto Stacks; t
 | `api/routes.ts` | Route table. Handlers in `books/`, `meetings/`, `easter-egg/` are Book Club's, unchanged in shape |
 | `api/users/repo.ts` | Members and names now come from the platform (`@stacks/api` `appMembers`/`getPeople`) |
 | `api/index.ts` | Lambda entry: book sources, the content bucket for critic photos |
-| `content/eggs/` | `quotes.json` (in git). Face photos live only in the content bucket |
+| `content/eggs/` | `quotes.json` (in git, unsigned quotes). Face photos live only in the content bucket; admins upload a zip of them, view and delete them on the admin page (`#/admin/critics`, `api/easter-egg/faces.ts`) |
 | `web/` | The UI (React + Tailwind). `src/lib/api.ts` is the typed client over the Stacks session |
 | `web/src/demo/` | Demo data and fake catalog; `npm run demo -w apps/mofobookklub` |
 | `tests/api`, `tests/web` | Book Club's original tests, running on the Stacks test harness |

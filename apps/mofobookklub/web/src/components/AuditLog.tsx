@@ -13,6 +13,7 @@ export const ACTION_FILTERS: [string, string][] = [
   ['book', 'Book edits'],
   ['meeting', 'Meetings'],
   ['member', 'Member changes'],
+  ['critic', 'Critic photos'],
 ];
 
 const FIELD_NAMES: Record<string, string> = {
@@ -79,6 +80,10 @@ export function describeEvent(e: AuditEvent): string {
       return `dismissed ${what}'s sign-up`;
     case 'member.remove':
       return `removed ${what} from the site`;
+    case 'critic.photos_add':
+      return `added ${what} for the critics' quotes`;
+    case 'critic.photo_delete':
+      return 'deleted a face photo from the critics\' quotes';
     case 'member.rename':
       return `changed their display name to ${what}`;
     default:
@@ -98,7 +103,7 @@ function EventDetails({ e }: { e: AuditEvent }) {
   const changes = d.changes as Record<string, { from: unknown; to: unknown } | string> | undefined;
   delete d.changes;
   const rows: [string, string][] = [
-    ['Who', `${e.actorName} (${e.actorEmail})`],
+    ['Who', e.actorName],
     ['When', new Date(e.at).toLocaleString()],
     ['Action', e.action],
     ...Object.entries(e.params ?? {}).map(([k, v]): [string, string] => [k, v]),
@@ -193,7 +198,7 @@ export function AuditLog({ people }: { people: Person[] }) {
           <select className="input mt-1 !w-auto !py-2" value={actor} onChange={(e) => setActor(e.target.value)}>
             <option value="">Everyone</option>
             {people.map((p) => (
-              <option key={p.email} value={p.email}>
+              <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}

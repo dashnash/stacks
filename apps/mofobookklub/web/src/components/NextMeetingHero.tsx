@@ -59,7 +59,7 @@ export function NextMeetingHero({ meeting, onChanged }: { meeting: MeetingView; 
   ];
   const count = (n: number) => `${n} ${n === 1 ? 'comment' : 'comments'}`;
   const d = posterDate(meeting.dateTime);
-  const leaderName = meeting.leader?.name ?? meeting.leaderEmail;
+  const leaderName = meeting.leader?.name ?? meeting.leaderId;
 
   return (
     <section

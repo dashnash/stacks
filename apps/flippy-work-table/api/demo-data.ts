@@ -1,4 +1,4 @@
-import type { AppDeps } from '@stacks/api';
+import { fixtureUserId, type AppDeps } from '@stacks/api';
 import type { Persona } from '@stacks/demo';
 import { scoreOf } from './tools';
 
@@ -32,8 +32,8 @@ export async function seed(deps: AppDeps): Promise<void> {
       best = Math.max(best, score);
       total += score;
       const id = `${playerId}-${n}`;
-      await deps.store.put({ PK: `FLIPS#${email}`, SK: `${createdAt}#${id}`, id, score, damage, hangMs, tool, createdAt });
+      await deps.store.put({ PK: `FLIPS#${fixtureUserId(email)}`, SK: `${createdAt}#${id}`, id, score, damage, hangMs, tool, createdAt });
     }
-    await deps.store.put({ PK: 'PLAYER', SK: email, playerId, email, name, best, total, flips: flips.length, updatedAt: createdAt });
+    await deps.store.put({ PK: 'PLAYER', SK: fixtureUserId(email), playerId, userId: fixtureUserId(email), name, best, total, flips: flips.length, updatedAt: createdAt });
   }
 }

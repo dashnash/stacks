@@ -348,7 +348,7 @@ export function App() {
         </a>
         <AccountMenu className="account" />
       </header>
-      {status === 'loading' ? <Spinner /> : <Site key={session ? `${session.user.email}:${session.role}` : 'out'} />}
+      {status === 'loading' ? <Spinner /> : <Site key={session ? `${session.user.id}:${session.role}` : 'out'} />}
     </div>
   );
 }

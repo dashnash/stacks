@@ -53,6 +53,13 @@ export interface Deps extends AppDeps {
   random(): number;
   /** Critic quotes shipped with the code (content/eggs/quotes.json). Table entries with the same id win. */
   bundledEasterEggs?: readonly EasterEgg[];
-  /** Keys of the shared "faces" photos (eggs/faces/ in the content bucket; never in git). */
-  listFacePhotos?: () => Promise<string[]>;
+  /** The shared "faces" photos (eggs/faces/ in the content bucket; never in git). Admins manage them. */
+  faces?: FacePhotos;
+}
+
+/** The shared face photos, by full key (`eggs/faces/<name>`). */
+export interface FacePhotos {
+  list(): Promise<string[]>;
+  put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  delete(key: string): Promise<void>;
 }

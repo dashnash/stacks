@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { canManageAccess, type AppManifest } from '@stacks/manifest';
 import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
-import { badRequest, forbidden, HttpError, unauthorized, type RouteResult } from './http';
+import { badRequest, forbidden, HttpError, maintenance, MAINTENANCE_OPEN_PATHS, unauthorized, type RouteResult } from './http';
 import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
 import type { AppDeps, Viewer } from './model';
@@ -72,7 +72,9 @@ export function safeReturnPath(value: unknown): string {
 export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   const { manifest, deps } = opts;
   const knownRoles = new Set(manifest.roles.map((r) => r.id));
-  const router = new Router();
+  const router = new Router().before((_method, path) => {
+    if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
+  });
 
   async function viewerFor(req: RequestContext): Promise<Viewer<D> | null> {
     const session = await readSession(deps, req.cookies[SESSION_COOKIE]);
@@ -82,8 +84,8 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     // Names and photos follow the platform profile (cached ~30 s), so a rename shows without signing in again.
     let user = session.user;
     try {
-      const member = (await appMembers(deps)).find((m) => m.email === user.email);
-      if (member) user = { email: user.email, name: member.name, ...(member.pictureUrl ? { pictureUrl: member.pictureUrl } : {}) };
+      const member = (await appMembers(deps)).find((m) => m.id === user.id);
+      if (member) user = { id: user.id, email: member.email, name: member.name, ...(member.pictureUrl ? { pictureUrl: member.pictureUrl } : {}) };
     } catch {
       // Platform unreachable: keep the name from sign-in.
     }
@@ -250,7 +252,7 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   // The account menu: who you are here, your other apps, inbox and approvals (from the platform).
   api.member('GET', '/stacks/account', async (_req, v) => {
     try {
-      return { body: await v.deps.platform.account(v.user.email) };
+      return { body: await v.deps.platform.account(v.user.id) };
     } catch (err) {
       console.error('Account details unavailable', err);
       const portal = new URL('/', v.deps.config.authOrigin).toString();
@@ -277,18 +279,22 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   }));
   api.approver(
     'PUT',
-    '/stacks/access/:email',
+    '/stacks/access/:userId',
     async (req, v) => {
       const role = req.body.role;
       if (role !== null && typeof role !== 'string') throw badRequest('"role" must be a role id or null');
+      const userId = req.params.userId!;
+      let label = userId;
       try {
-        await v.deps.platform.setAccess(v.user.email, req.params.email!, role);
+        const { members, pending, blocked } = await v.deps.platform.access();
+        label = [...members, ...pending, ...blocked].find((m) => m.id === userId)?.name ?? userId;
+        await v.deps.platform.setAccess(v.user.id, userId, role);
         forgetMembers(v.deps);
       } catch (err) {
         if (err instanceof PlatformError) throw new HttpError(err.status, err.message, err.code);
         throw err;
       }
-      return { body: { ok: true }, audit: { label: req.params.email, to: role } };
+      return { body: { ok: true }, audit: { label, userId, to: role } };
     },
     { audit: 'access.set' },
   );
