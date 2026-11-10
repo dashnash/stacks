@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, GROUP_NAME, missingApps, provision } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, createApi, GROUP_NAME, hasDevice, missingApps, provision } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -145,5 +145,16 @@ describe('App Store Connect provisioning', () => {
     expect(await provision({ api: refusing, apps: [apps[0]!], testerEmail: 'friend@example.com', log: (l: string) => log.push(l) })).toEqual({ appsMissing: 0 });
     expect(log.at(-1)).toMatch(/^! couldn't add friend@example.com to DashyHQ's TestFlight group .*add yourself in App Store Connect/);
     expect(asc.of('betaGroups')).toHaveLength(1);
+  });
+
+  it('tells the release job whether a device is registered (archiving needs one)', async () => {
+    const asked: string[] = [];
+    const api = (devices: unknown[]) => async (_m: string, path: string) => {
+      asked.push(path);
+      return { data: devices };
+    };
+    expect(await hasDevice(api([]))).toBe(false);
+    expect(await hasDevice(api([{ id: 'd1' }]))).toBe(true);
+    expect(asked[0]).toBe('/v1/devices?filter[platform]=IOS&filter[status]=ENABLED&limit=1');
   });
 });

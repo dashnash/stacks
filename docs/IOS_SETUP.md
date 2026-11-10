@@ -71,6 +71,18 @@ is taken, pick another name here. The name on the home screen comes from the bui
 Then run **iOS provision** again, this time with **your Apple ID email**: it gives each app an
 internal TestFlight group, "Internal (automatic)", that receives every build, with you in it.
 
+## 5b. Register your iPhone (once)
+
+Xcode's automatic signing archives with a development profile before re-signing for the App Store,
+and a development profile needs at least one registered device. (It also lets you run builds from
+Xcode on the phone.)
+
+1. Find the iPhone's UDID: connect it to your Mac, then **Xcode → Window → Devices and Simulators**
+   → select it → **Identifier** (copy). Or in **Finder**, select the iPhone and click the line under
+   its name until it shows the UDID.
+2. [Certificates, Identifiers & Profiles → Devices](https://developer.apple.com/account/resources/devices/list)
+   → **+** → Platform iOS, a name (e.g. "Dash's iPhone"), the UDID → **Continue** → **Register**.
+
 ## 6. Two iOS OAuth clients for native Google sign-in (not secret)
 
 [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials),

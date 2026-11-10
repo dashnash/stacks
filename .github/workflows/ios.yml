@@ -125,6 +125,11 @@ jobs:
             echo "go=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          if [ "$apps" = 4 ]; then
+            echo "::notice title=TestFlight upload skipped::Register an iPhone in your developer account first (docs/IOS_SETUP.md step 5b)."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           [ "$apps" = 0 ] || exit "$apps"
           key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
           printf '%s\n' "$ASC_KEY_P8" > "$key"
@@ -177,8 +182,9 @@ jobs:
           </plist>
           PLIST
           # Cloud-managed signing: Xcode makes or reuses the certificates and profiles with the API key.
-          # The archive signs for distribution straight away: automatic signing would otherwise archive
-          # with a development profile, which needs registered devices (App Store builds need none).
+          # Automatic signing archives with a development profile (so the team needs at least one
+          # registered device: docs/IOS_SETUP.md step 5b), then the export re-signs for the App Store.
+          # Forcing "Apple Distribution" instead conflicts with automatic signing in every target.
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
             scheme="${pair%%:*}"
@@ -193,7 +199,6 @@ jobs:
               -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
               "${auth[@]}" \
               DEVELOPMENT_TEAM="$TEAM" \
-              CODE_SIGN_IDENTITY="Apple Distribution" \
               CURRENT_PROJECT_VERSION="$build"
             echo "::endgroup::"
             echo "::group::$scheme ($config): upload to App Store Connect"

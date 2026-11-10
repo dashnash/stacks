@@ -11,7 +11,8 @@
  *      internal TestFlight group that gets every build automatically, and adds TESTER_EMAIL to it.
  *
  * Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8 contents), optional TESTER_EMAIL.
- * `--check-apps` only checks that both app records exist (exit 3 if not): the release job's guard.
+ * `--check-apps` only checks that both app records exist (exit 3 if not) and that a device is
+ * registered (exit 4 if not): the release job's guard.
  */
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -144,6 +145,11 @@ export async function missingApps(api, apps) {
   return missing;
 }
 
+/** Does the team have a registered, enabled iOS device? (Automatic signing's archive needs one.) */
+export async function hasDevice(api) {
+  return ((await api('GET', '/v1/devices?filter[platform]=IOS&filter[status]=ENABLED&limit=1')).data ?? []).length > 0;
+}
+
 /** Set up every app; returns whether any app record still needs creating by hand. */
 export async function provision({ api, apps, testerEmail, log = console.log }) {
   let appsMissing = 0;
@@ -160,11 +166,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(root, 'stacks.config.json'), 'utf8'));
   const api = createApi({ keyId: need('ASC_KEY_ID'), issuerId: need('ASC_ISSUER_ID'), privateKeyPem: need('ASC_KEY_P8') });
-  // `--check-apps` (the release job, before uploading): exit 3 if an app record is missing.
+  // `--check-apps` (the release job, before uploading): exit 3 if an app record is missing,
+  // 4 if no device is registered.
   if (process.argv.includes('--check-apps')) {
     const missing = await missingApps(api, appsFromConfig(config));
     for (const app of missing) console.log(`${app.name} (${app.bundleId}) has no App Store Connect app yet (docs/IOS_SETUP.md steps 4-5)`);
-    process.exit(missing.length ? 3 : 0);
+    if (missing.length) process.exit(3);
+    if (!(await hasDevice(api))) {
+      console.log('The team has no registered iOS device yet (docs/IOS_SETUP.md step 5b)');
+      process.exit(4);
+    }
+    process.exit(0);
   }
   const testerEmail = (process.env.TESTER_EMAIL ?? '').trim() || undefined;
   const { appsMissing } = await provision({ api, apps: appsFromConfig(config), testerEmail });
