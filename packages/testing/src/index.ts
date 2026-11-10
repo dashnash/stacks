@@ -45,8 +45,11 @@ export class FakePlatform implements PlatformClient {
   pending: AppMember[] = [];
   blocked: AppMember[] = [];
   notifications: { userId: string; text: string; link?: string }[] = [];
+  /** Like the platform: members come without emails unless the manifest has `needsEmail` (the harness sets this). */
+  needsEmail = false;
   async access(): Promise<AppAccess> {
-    return { members: [...this.members], pending: [...this.pending], blocked: [...this.blocked] };
+    const view = (list: AppMember[]) => list.map(({ email, ...m }) => (this.needsEmail && email ? { ...m, email } : m));
+    return { members: view(this.members), pending: view(this.pending), blocked: view(this.blocked) };
   }
   async setAccess(_actor: string, userId: string, role: string | null): Promise<void> {
     const current = [...this.members, ...this.pending, ...this.blocked].find((m) => m.id === userId);
@@ -102,8 +105,9 @@ export const testUserId = (email: string): string => fixtureUserId(email);
 export const userFor = (email: string): StacksUser => ({ id: testUserId(email), email, name: email.split('@')[0]! });
 
 /** Someone to act as: an email, or a user whose id defaults to {@link testUserId} of their email. */
-export type PersonLike = Omit<StacksUser, 'id'> & { id?: string };
-const asUser = (who: string | PersonLike): StacksUser => (typeof who === 'string' ? userFor(who) : { ...who, id: who.id ?? testUserId(who.email) });
+export type PersonLike = StacksUser | (Omit<StacksUser, 'id' | 'email'> & { email: string; id?: string });
+const asUser = (who: string | PersonLike): StacksUser =>
+  typeof who === 'string' ? userFor(who) : { ...who, id: who.id ?? testUserId(who.email ?? '') };
 
 /** An app member for tests (for `FakePlatform.members`). */
 export const memberFor = (email: string, role: string, name = email.split('@')[0]!): AppMember => ({ id: testUserId(email), email, name, role });
@@ -143,9 +147,12 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
   const app = createStacksApp({ manifest: opts.manifest, deps, routes: opts.routes });
   const defaultRole = opts.manifest.defaultRole ?? opts.manifest.roles.at(-1)!.id;
 
-  /** A session token for a user, as if they had just come through the handshake. */
+  platform.needsEmail = !!opts.manifest.needsEmail;
+
+  /** A session token for a user, as if they had just come through the handshake (no email unless `needsEmail`). */
   async function sessionFor(who: string | PersonLike, role = defaultRole): Promise<string> {
-    return createSession(deps, asUser(who), role);
+    const { email, ...user } = asUser(who);
+    return createSession(deps, opts.manifest.needsEmail ? { ...user, email } : user, role);
   }
 
   async function call(method: string, path: string, callOpts: CallOptions = {}): Promise<CallResult> {

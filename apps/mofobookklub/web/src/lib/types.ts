@@ -11,7 +11,6 @@ import type { Person } from '../../../api/users/repo';
 export interface User {
   /** Platform user id. */
   id: string;
-  email: string;
   name: string;
   role: Role;
   pictureUrl?: string;

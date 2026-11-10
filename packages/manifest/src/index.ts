@@ -53,6 +53,12 @@ export interface AppManifest {
    * them with `appSecret(name)` from `@stacks/api/lambda`.
    */
   secrets?: AppSecret[];
+  /**
+   * The app is given people's email addresses (on `v.user`, members and the access page). Off by
+   * default: apps get ids, display names and avatars only. Turning it on is a platform decision
+   * (CI marks a PR that adds it for code-owner review). Hidden-email accounts give a relay address.
+   */
+  needsEmail?: boolean;
   /** @deprecated Replaced by the account menu; accepted and ignored. */
   portalBar?: 'shown' | 'minimized' | 'off';
   /** Google emails of the people who own the app (the creator first). */
@@ -99,7 +105,7 @@ export function validateManifest(input: unknown): ValidationResult {
 
   const known = new Set([
     '$schema', 'slug', 'name', 'tagline', 'description', 'icon', 'category', 'visibility', 'roles', 'topRole',
-    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets',
+    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets', 'needsEmail',
   ]);
   for (const key of Object.keys(m)) if (!known.has(key)) errors.push(`unknown field "${key}"`);
 
@@ -193,6 +199,7 @@ export function validateManifest(input: unknown): ValidationResult {
   if (m.accountMenu !== undefined && !['standard', 'custom'].includes(m.accountMenu as string)) {
     errors.push('"accountMenu" must be "standard" or "custom"');
   }
+  if (m.needsEmail !== undefined && typeof m.needsEmail !== 'boolean') errors.push('"needsEmail" must be true or false');
   if (!Array.isArray(m.owners) || m.owners.length === 0 || !m.owners.every((e) => isString(e) && EMAIL.test(e))) {
     errors.push('"owners" must list at least one email address');
   }

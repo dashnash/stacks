@@ -10,7 +10,8 @@ createRoot(el).render(<DemoApp demo={demo}><App /></DemoApp>);
 ```
 
 - `personas`: `{ email, name, role, blurb?, id? }`, usually one per role. "Sign in" uses the first. A persona's
-  id defaults to `fixtureUserId(email)` (from `@stacks/api`): use that for them in seed data.
+  id defaults to `fixtureUserId(email)` (from `@stacks/api`): use that for them in seed data. The email
+  only names the persona; the app never sees it unless its manifest has `needsEmail`.
 - `seed(deps)`: write sample data with `deps.store`. Runs on first load and on Reset.
 - Changes persist in localStorage (default key `stacks-demo:<slug>:v2`; `storageKey: false` to disable).
 - `demo.signInAs(email | null)`, `demo.reset()` for scripted checks; `demo.html?as=<email>` opens the

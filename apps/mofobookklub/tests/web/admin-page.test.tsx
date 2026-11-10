@@ -75,8 +75,8 @@ describe('AdminPanel roles', () => {
   it('lets the owner make a member an admin (and never offers it for yourself)', async () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({ members: [
-          { id: 'admin@club.test', email: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
-          { id: 'bob@club.test', email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
+          { id: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
+          { id: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
         ], pending: [] }),
     });
     renderWithApi(<AdminPanel me="admin@club.test" myRole="OWNER" onChanged={() => {}} />, api);
@@ -91,10 +91,10 @@ describe('AdminPanel roles', () => {
   it('gives plain admins no admin controls: no making admins, no removing admins or the owner', async () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({ members: [
-          { id: 'owner@club.test', email: 'owner@club.test', name: 'Olive', role: 'OWNER' },
-          { id: 'admin@club.test', email: 'admin@club.test', name: 'Me', role: 'ADMIN' },
-          { id: 'ada@club.test', email: 'ada@club.test', name: 'Ada', role: 'ADMIN' },
-          { id: 'bob@club.test', email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
+          { id: 'owner@club.test', name: 'Olive', role: 'OWNER' },
+          { id: 'admin@club.test', name: 'Me', role: 'ADMIN' },
+          { id: 'ada@club.test', name: 'Ada', role: 'ADMIN' },
+          { id: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
         ], pending: [] }),
     });
     renderWithApi(<AdminPanel me="admin@club.test" myRole="ADMIN" onChanged={() => {}} />, api);

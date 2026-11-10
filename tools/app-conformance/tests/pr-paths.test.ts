@@ -22,4 +22,17 @@ describe('PR path guard', () => {
     expect(r.message).toMatch(/CODEOWNERS/);
     expect(classifyPr('main', ['package-lock.json'])).toMatchObject({ ok: true, kind: 'none' });
   });
+
+  it('makes turning on needsEmail platform work, and refuses it on an app branch', () => {
+    const on = { mofobookklub: { before: { slug: 'mofobookklub' }, after: { slug: 'mofobookklub', needsEmail: true } } };
+    const files = ['apps/mofobookklub/app.manifest.json'];
+    const r = classifyPr('claude/emails', files, on);
+    expect(r).toMatchObject({ ok: true, kind: 'platform', apps: ['mofobookklub'] });
+    expect(r.message).toMatch(/needsEmail[\s\S]*CODEOWNERS|CODEOWNERS[\s\S]*needsEmail/);
+    expect(classifyPr('app/mofobookklub/x', files, on)).toMatchObject({ ok: false, kind: 'app' });
+    // A new app that asks for it, too; already on, or turned off, is not news.
+    expect(classifyPr('claude/new', ['apps/mailer/app.manifest.json'], { mailer: { before: null, after: { needsEmail: true } } }).kind).toBe('platform');
+    expect(classifyPr('claude/edit', files, { mofobookklub: { before: { needsEmail: true }, after: { needsEmail: true } } }).kind).toBe('app');
+    expect(classifyPr('claude/off', files, { mofobookklub: { before: { needsEmail: true }, after: {} } }).kind).toBe('app');
+  });
 });

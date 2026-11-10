@@ -19,7 +19,7 @@ const account: AccountData = {
 
 function renderMenu(opts: { signedIn: boolean; props?: Parameters<typeof AccountMenu>[0] }) {
   const fetch = vi.fn(async (url: string) => {
-    if (url === '/api/auth/session') return opts.signedIn ? json(200, { user: { email: 'ann@x.dev', name: 'Ann' }, role: 'ADMIN', canManageAccess: true }) : json(401, {});
+    if (url === '/api/auth/session') return opts.signedIn ? json(200, { user: { id: 'u_ann', name: 'Ann' }, role: 'ADMIN', canManageAccess: true }) : json(401, {});
     if (url === '/api/stacks/account') return json(200, account);
     if (url === '/api/auth/logout') return json(200, { ok: true, platformLogoutUrl: 'https://auth.x/logout' });
     return json(404, {});
@@ -49,6 +49,7 @@ describe('AccountMenu', () => {
     await userEvent.click(chip);
     const menu = screen.getByRole('menu', { name: 'Account' });
     expect(menu).toHaveTextContent('Admin · Book Club');
+    expect(menu).not.toHaveTextContent('@'); // apps without needsEmail have no email to show
     const items = screen.getAllByRole('menuitem').map((i) => i.textContent);
     expect(items).toEqual(['Hello Board', 'All apps', 'Inbox3', 'Settings', 'Manage access2', 'Reading reminders', 'Sign outall apps']);
     expect(screen.getByRole('menuitem', { name: /Settings/ })).toHaveAttribute('href', 'https://auth.x/#/profile?from=club');

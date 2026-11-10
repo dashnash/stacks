@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPlatformHarness, privateApp } from './helpers';
+import { createPlatformHarness, privateApp, publicApp } from './helpers';
 
 const token = (h: ReturnType<typeof createPlatformHarness>, slug: string, body: Record<string, unknown>, cred = `cred-${slug}`) =>
   h.call('POST', `/apps/${slug}/token`, { body, headers: { authorization: `Bearer ${cred}` } });
@@ -43,7 +43,8 @@ describe('the handshake', () => {
 
     const b = await h.authorize('hello', 'max@test.dev');
     const ok = await token(h, 'hello', { code: b.code, codeVerifier: b.verifier, redirectUri: b.redirectUri });
-    expect(ok.body).toEqual({ user: { id: await h.idOf('max@test.dev'), email: 'max@test.dev', name: 'max' }, role: 'MEMBER' });
+    // No email: apps get one only with `needsEmail` in their manifest.
+    expect(ok.body).toEqual({ user: { id: await h.idOf('max@test.dev'), name: 'max' }, role: 'MEMBER' });
     expect((await token(h, 'hello', { code: b.code, codeVerifier: b.verifier, redirectUri: b.redirectUri })).status).toBe(400);
   });
 
@@ -135,8 +136,9 @@ describe('access grid', () => {
     const catalog = await h.call('GET', '/catalog', { as: 'troll@test.dev' });
     expect(catalog.body.apps.find((a: { slug: string }) => a.slug === 'hello')).toMatchObject({ access: 'BLOCKED', accessLabel: null });
     const access = await h.call('GET', '/apps/hello/access', { headers: { authorization: 'Bearer cred-hello' } });
-    expect(access.body.members.map((m: { email: string }) => m.email)).not.toContain('troll@test.dev');
-    expect(access.body.blocked.map((m: { email: string }) => m.email)).toEqual(['troll@test.dev']);
+    const trollId = await h.idOf('troll@test.dev');
+    expect(access.body.members.map((m: { id: string }) => m.id)).not.toContain(trollId);
+    expect(access.body.blocked.map((m: { id: string }) => m.id)).toEqual([trollId]);
 
     // Unblocking (null) puts them back to "no grant": the next sign-in auto-grants again.
     await h.setRole('hello', 'troll@test.dev', { as: 'owner@test.dev', body: { role: null } });
@@ -287,5 +289,20 @@ describe('maintenance', () => {
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('MAINTENANCE');
     expect((await h.call('POST', '/auth/google', { body: { credential: 'test:a@test.dev' } })).status).toBe(503);
+  });
+});
+
+describe('emails for apps', () => {
+  it('gives an app email addresses only when its manifest says needsEmail', async () => {
+    const mailer = { ...publicApp, slug: 'mailer', name: 'Mailer', needsEmail: true };
+    const h = createPlatformHarness({ apps: [publicApp, mailer] });
+    for (const slug of ['hello', 'mailer']) await h.authorize(slug, 'max@test.dev'); // auto-granted
+    const access = async (slug: string) => (await h.call('GET', `/apps/${slug}/access`, { headers: { authorization: `Bearer cred-${slug}` } })).body;
+    expect((await access('mailer')).members.find((m: { name: string }) => m.name === 'max').email).toBe('max@test.dev');
+    expect(JSON.stringify(await access('hello'))).not.toContain('@test.dev');
+
+    const a = await h.authorize('mailer', 'max@test.dev');
+    const ok = await token(h, 'mailer', { code: a.code, codeVerifier: a.verifier, redirectUri: a.redirectUri });
+    expect(ok.body.user).toMatchObject({ email: 'max@test.dev' });
   });
 });

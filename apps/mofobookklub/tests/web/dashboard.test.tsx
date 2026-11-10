@@ -37,7 +37,7 @@ describe('DashboardView', () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({
         members: [],
-        pending: [{ id: 'new@x.test', email: 'new@x.test', name: 'Newbie', role: 'PENDING', requestedAt: '2026-01-01T00:00:00Z' }],
+        pending: [{ id: 'new@x.test', name: 'Newbie', role: 'PENDING', requestedAt: '2026-01-01T00:00:00Z' }],
       }),
     });
     renderWithApi(<DashboardView user={admin} />, api);

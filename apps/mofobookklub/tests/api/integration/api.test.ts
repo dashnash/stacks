@@ -38,7 +38,8 @@ describe('sign-in and access (now from the platform)', () => {
     t.platform.pending = [{ id: idOf('newbie@club.test'), email: 'newbie@club.test', name: 'Newbie', role: 'PENDING' }];
     expect((await t.call('GET', '/stacks/access', { as: ALICE })).status).toBe(403);
     const access = await t.call('GET', '/stacks/access', { as: ADMIN });
-    expect(access.body.pending.map((p: { email: string }) => p.email)).toEqual(['newbie@club.test']);
+    expect(access.body.pending.map((p: { name: string }) => p.name)).toEqual(['Newbie']);
+    expect(JSON.stringify(access.body)).not.toContain('@club.test'); // Book Club gets no emails
     expect((await t.call('PUT', `/stacks/access/${idOf('newbie@club.test')}`, { as: ADMIN, body: { role: 'MEMBER' } })).status).toBe(200);
     expect(t.platform.members.find((m) => m.email === 'newbie@club.test')?.role).toBe('MEMBER');
   });

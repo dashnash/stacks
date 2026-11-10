@@ -23,7 +23,8 @@ export interface PlatformClient {
 export interface AppMember {
   /** Platform user id: what to store and look people up by. */
   id: string;
-  email: string;
+  /** Only for apps whose manifest has `needsEmail`. */
+  email?: string;
   name: string;
   pictureUrl?: string;
   /** A manifest role id; "PENDING" in `pending`; "BLOCKED" in `blocked`. */
