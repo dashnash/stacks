@@ -136,7 +136,7 @@ Access is one **grant** per (user, app): a role from that app's manifest, or a p
 
 | Entity | Key | Fields |
 | --- | --- | --- |
-| User | `USER#<id>` (`u_…`; `EMAIL#<email>` and `IDENTITY#google#<sub>` point to it) | `email`, `name`, `displayName`, `pictureUrl`, `createdAt` (admins come from `platformAdmins`, by email) |
+| User | `USER#<id>` (`u_…`; `EMAIL#<email>` and `IDENTITY#google#<sub>` point to it; identities list by GSI `USERIDENTITIES#<id>`) | `email`, `name`, `displayName`, `pictureUrl`, `createdAt`, `primaryIdentity`, `emails` (linked), `mergedFrom`; a merged-away account keeps only `mergedInto` (an alias). Admins come from `platformAdmins`, by email |
 | App | `APP#<slug>` | manifest snapshot, `visibility` (`public`/`private`), `status` (`live`/`archived`), `createdBy` |
 | Grant | `APP#<slug>` / `GRANT#<userId>` (GSI by user) | `role`, `PENDING` or `BLOCKED`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
 | Master session | `SESSION#<sha256>` | `userId`, `expiresAt` (TTL), `lastUsedAt` |

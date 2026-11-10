@@ -30,6 +30,7 @@ import {
   grantsForUser,
   listApps,
   listAudit,
+  listIdentities,
   listNotifications,
   managesApp,
   markNotificationsRead,
@@ -45,6 +46,7 @@ import {
   userForIdentity,
   userIdForEmail,
 } from './core';
+import { linkGoogle, mergeWithTicket, unlinkIdentity } from './merge';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
 const CSRF_HEADER = 'x-stacks-request';
@@ -309,6 +311,48 @@ export function createPlatformApp(deps: PlatformDeps) {
         const updated = { ...user, displayName };
         await saveUser(deps, updated);
         return { body: { user: meView(deps, updated) } };
+      }),
+    )
+    /* ---------- Settings › Sign-in methods (link another account, self-serve merge) ---------- */
+    .add(
+      'GET',
+      '/me/identities',
+      signedIn(async (_req, user) => ({
+        body: {
+          identities: (await listIdentities(deps, user.id)).map((i) => ({
+            provider: i.provider,
+            sub: i.sub,
+            email: i.email,
+            linkedAt: i.linkedAt,
+            primary: user.primaryIdentity === `${i.provider}#${i.sub}`,
+          })),
+          emails: [user.email, ...(user.emails ?? [])],
+        },
+      })),
+    )
+    .add(
+      'POST',
+      '/me/identities/google',
+      signedIn(async (req, user) => {
+        const credential = req.body.credential;
+        if (typeof credential !== 'string' || !credential) throw badRequest('"credential" is required');
+        return { body: await linkGoogle(deps, user, await deps.verifyGoogle(credential)) };
+      }),
+    )
+    .add(
+      'DELETE',
+      '/me/identities/:provider/:sub',
+      signedIn(async (req, user) => {
+        await unlinkIdentity(deps, user, req.params.provider!, req.params.sub!);
+        return { body: { ok: true } };
+      }),
+    )
+    .add(
+      'POST',
+      '/me/merge',
+      signedIn(async (req, user) => {
+        const merged = await mergeWithTicket(deps, user, String(req.body.ticket ?? ''));
+        return { body: { user: meView(deps, merged) } };
       }),
     )
     .add('GET', '/public/catalog', async () => ({ body: { apps: (await listApps(deps)).map((a) => catalogEntry(a, null, false)) } }))

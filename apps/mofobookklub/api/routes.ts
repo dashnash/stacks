@@ -15,6 +15,7 @@ import type { Role, User } from './utils/model.js';
 /** Book Club's handlers take (req, user, deps); this is the signed-in viewer in that shape. */
 export const toUser = (v: Viewer<Deps>): User => ({
   id: v.user.id,
+  ...(v.user.formerIds ? { formerIds: v.user.formerIds } : {}),
   name: v.user.name,
   displayName: v.user.name,
   pictureUrl: v.user.pictureUrl,

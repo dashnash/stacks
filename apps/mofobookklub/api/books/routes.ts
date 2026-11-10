@@ -1,3 +1,4 @@
+import { isUser } from '@stacks/api';
 import { commentCounts } from '../comments/routes.js';
 import { getUpcomingMeeting, listLineup, listMeetings, listPastMeetings } from '../meetings/repo.js';
 import { nominationForBook } from '../meetings/routes.js';
@@ -29,9 +30,9 @@ async function requireBook(deps: Deps, rawIsbn: string): Promise<Book> {
 export async function canEditBook(deps: Deps, user: User, isbn: string): Promise<boolean> {
   if (isAdmin(user)) return true;
   const [lineup, meetings] = await Promise.all([listLineup(deps), listMeetings(deps)]);
-  if (lineup.some((n) => n.bookIsbn === isbn && n.nominatedById === user.id)) return true;
+  if (lineup.some((n) => n.bookIsbn === isbn && isUser(user, n.nominatedById))) return true;
   return meetings.some(
-    (m) => m.bookIsbn === isbn && m.chosenNomination?.nominatedById === user.id,
+    (m) => m.bookIsbn === isbn && isUser(user, m.chosenNomination?.nominatedById),
   );
 }
 

@@ -22,4 +22,4 @@ Routes (members only): `GET|POST /threads/:kind/:id` (`{ body, parentId? }`),
 "Former member" once they lose access), `canEdit`, `canDelete`. A deleted comment with replies is
 blanked so replies keep their place. Keys: `THREAD#<KIND>#<id>` / `COMMENT#<id>` and `COUNT`.
 
-`migrateComments` (an `ItemMigration`) turns stored `authorEmail` into `authorId` for the user-id cut-over; apps with the module compose it into `api/migrations/user-ids.ts`.
+Authors who merged accounts keep editing their old comments (`isUser`). `migrateComments` (an `ItemMigration`) turns stored `authorEmail` into `authorId` for the user-id cut-over; apps with the module compose it into `api/migrations/user-ids.ts`.

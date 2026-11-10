@@ -85,7 +85,14 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     let user = session.user;
     try {
       const member = (await appMembers(deps)).find((m) => m.id === user.id);
-      if (member) user = { id: user.id, ...(member.email ? { email: member.email } : {}), name: member.name, ...(member.pictureUrl ? { pictureUrl: member.pictureUrl } : {}) };
+      if (member)
+        user = {
+          id: user.id,
+          ...(member.email ? { email: member.email } : {}),
+          name: member.name,
+          ...(member.pictureUrl ? { pictureUrl: member.pictureUrl } : {}),
+          ...(member.formerIds?.length ? { formerIds: member.formerIds } : {}),
+        };
     } catch {
       // Platform unreachable: keep the name from sign-in.
     }

@@ -8,8 +8,9 @@ export type { Person };
  * Members come from the platform now (it owns grants). `name` and `displayName` are both the
  * display name the platform gives, so `shownName()` keeps working unchanged.
  */
-const toUser = (m: { id: string; name: string; pictureUrl?: string; role: string }): User => ({
+const toUser = (m: { id: string; name: string; pictureUrl?: string; role: string; formerIds?: string[] }): User => ({
   id: m.id,
+  ...(m.formerIds ? { formerIds: m.formerIds } : {}),
   name: m.name,
   displayName: m.name,
   pictureUrl: m.pictureUrl,
@@ -18,7 +19,7 @@ const toUser = (m: { id: string; name: string; pictureUrl?: string; role: string
 });
 
 export async function getUser(deps: Deps, id: string): Promise<User | undefined> {
-  const m = (await appMembers(deps)).find((x) => x.id === id);
+  const m = (await appMembers(deps)).find((x) => x.id === id || !!x.formerIds?.includes(id));
   return m ? toUser(m) : undefined;
 }
 

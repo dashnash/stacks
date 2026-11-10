@@ -33,11 +33,23 @@ export function forgetMembers(deps: AppDeps): void {
  */
 export async function getPeople(deps: AppDeps, ids: string[]): Promise<Map<string, Person>> {
   const members = await appMembers(deps);
-  const byId = new Map(members.map((m) => [m.id, m]));
+  // A merged person's old ids resolve to them, so their old posts show their name.
+  const byId = new Map(members.flatMap((m) => [m.id, ...(m.formerIds ?? [])].map((id) => [id, m] as const)));
   return new Map(
     [...new Set(ids)].map((id) => {
       const m = byId.get(id);
-      return [id, m ? { id, name: m.name, ...(m.pictureUrl ? { pictureUrl: m.pictureUrl } : {}) } : { id, name: 'Former member' }];
+      return [id, m ? { id: m.id, name: m.name, ...(m.pictureUrl ? { pictureUrl: m.pictureUrl } : {}) } : { id, name: 'Former member' }];
     }),
   );
 }
+
+/**
+ * Is `storedId` this person? True for their id and for the ids of accounts they merged into it
+ * (`formerIds`). Use it for every "is this mine?" check on stored data.
+ */
+export function isUser(user: { id: string; formerIds?: string[] }, storedId: string | null | undefined): boolean {
+  return !!storedId && (storedId === user.id || !!user.formerIds?.includes(storedId));
+}
+
+/** Every id this person's data may be stored under: theirs, then any merged into it. */
+export const userIds = (user: { id: string; formerIds?: string[] }): string[] => [user.id, ...(user.formerIds ?? [])];

@@ -163,3 +163,32 @@ describe('footer', () => {
     expect(footer.querySelector('[data-stacks-build]')).not.toBeNull();
   });
 });
+
+describe('Settings › Sign-in methods', () => {
+  it("offers to merge another person's account, shows what happens, and merges it", async () => {
+    renderPortal('#/profile');
+    await signInAs('Sam Ortiz');
+    window.location.hash = '#/profile';
+    const methods = await screen.findByRole('list', { name: 'Sign-in methods' });
+    expect(await within(methods).findByText(/sam@demo\.stacks/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Link Priya Rao's account/ }));
+    const offer = await screen.findByRole('region', { name: 'Merge accounts' });
+    expect(offer).toHaveTextContent("can't be undone");
+    expect(within(offer).getByRole('row', { name: /MOFO Book Klub/ })).toHaveTextContent('Admin'); // Priya's role beats Sam's request
+
+    await userEvent.click(within(offer).getByRole('button', { name: 'Merge accounts' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Merged');
+    expect(await within(methods).findByText(/priya@demo\.stacks/)).toBeInTheDocument();
+  });
+
+  it("won't merge a platform admin's account from Settings", async () => {
+    renderPortal('#/profile');
+    await signInAs('Sam Ortiz');
+    window.location.hash = '#/profile';
+    await userEvent.click(await screen.findByRole('button', { name: /Link Dash Nash's account/ }));
+    const offer = await screen.findByRole('region', { name: 'Merge accounts' });
+    expect(offer).toHaveTextContent('Platform admin accounts can only be merged by a platform admin.');
+    expect(within(offer).getByRole('button', { name: 'Merge accounts' })).toBeDisabled();
+  });
+});
