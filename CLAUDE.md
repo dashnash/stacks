@@ -28,6 +28,8 @@ reference apps and the remaining modules (uploads, scheduled jobs) are next.
   and `apps/mofobookklub/` (large: comments module, content bucket, admin page on `/stacks/access`)
 - Media of real people (photos) never goes in git: it lives in the app's content bucket.
 - Conformance rules for all apps: `tools/app-conformance` (spec: "Account menu").
+- The iOS app: `docs/NATIVE_APP_SPEC.md`; the web side of its bridge is `@stacks/native`
+  (`packages/native/README.md`), the wire format `native/protocol/v1.json`.
 
 ## Reference implementation
 

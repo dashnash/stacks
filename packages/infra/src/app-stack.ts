@@ -20,6 +20,7 @@ import type { Construct } from 'constructs';
 import { existsSync } from 'node:fs';
 import { hasModule, secretParameterName, type AppManifest } from '@stacks/manifest';
 import {
+  aasaRoute,
   appOrigin,
   authOrigin,
   bootstrapQualifier,
@@ -36,12 +37,14 @@ import { buildCsp } from './csp';
  * CloudFront viewer-request function: every extension-less path serves index.html; files (with a
  * dot) are served as-is. Apps route with #hashes, so nothing more is needed.
  */
-export const SITE_ROUTER_CODE = `
+export const siteRouterCode = (env?: EnvConfig) => `
 function handler(event) {
-  var request = event.request;
+  var request = event.request;${env ? aasaRoute(env) : ''}
   if (request.uri.split('/').pop().indexOf('.') === -1) request.uri = '/index.html';
   return request;
 }`;
+/** The router without the iOS association file. */
+export const SITE_ROUTER_CODE = siteRouterCode();
 
 /** Requests per second (steady, burst) each app's API accepts across all callers. */
 export const API_RATE_LIMIT = 25;
@@ -216,7 +219,7 @@ export class AppStack extends cdk.Stack {
 
     const spaRewrite = new cloudfront.Function(this, 'SpaRewrite', {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
-      code: cloudfront.FunctionCode.fromInline(SITE_ROUTER_CODE),
+      code: cloudfront.FunctionCode.fromInline(siteRouterCode(props.env)),
     });
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: `stacks ${envTag(envName)} ${slug}`,

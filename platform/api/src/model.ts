@@ -117,6 +117,8 @@ export interface PlatformConfig {
   platformAdmins: string[];
   /** While true, every route but /health and /config answers 503 (the user-id cut-over). */
   maintenance?: boolean;
+  /** The iOS app: the oldest version the web still supports (default 1.0.0). */
+  minShellVersion?: string;
 }
 
 export interface PlatformDeps {

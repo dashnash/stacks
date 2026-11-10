@@ -137,9 +137,11 @@ import only `@stacks/native`, never `native/`.
 | Share | `stacksNative.share({ url, text, title })` opens the share sheet; the web fallback is `navigator.share` |
 | Updates | Content is always live. The shell checks a `minShellVersion` in the Platform API's `/native/config` and shows "Update DashyHQ" when the shell is too old for the current bridge |
 
-**Universal links on the web side.** The platform stack and the `PlatformApp` construct serve
-`/.well-known/apple-app-site-association` (JSON, no redirect) on `auth.<domain>` and every app host,
-built from config (Team ID + both bundle IDs). No app code changes.
+**Universal links on the web side.** The portal's and every app's CloudFront router answer
+`/.well-known/apple-app-site-association` themselves (JSON, no redirect, cached an hour), built from
+the environment's `native` settings (Team ID + that environment's bundle ID), so every host serves it
+with no file in S3 and no app code. Sign-in plumbing (`/api/*`, `/authorize`, `/logout`) stays in the
+browser. Nothing is served until `appleTeamId` is set.
 
 ## Sign-in
 
@@ -433,7 +435,9 @@ client and the Swift handlers can't drift. The protocol version is in the user a
    `auth.<domain>`, a signing key → SSM.
 5. Google Cloud: one iOS OAuth client per bundle ID; add their IDs to `stacks.config.json`
    (`googleIosClientIds`). The web client ID stays.
-6. `stacks.config.json` gains `apple: { teamId, bundleIds, servicesIds }` per environment (none secret).
+6. `stacks.config.json`, per environment (none secret): `native: { appleTeamId, iosBundleId,
+   googleIosClientIds, minShellVersion }`. The bundle IDs are filled in; the Team ID and iOS client
+   IDs go in during this setup. (Sign in with Apple adds its Services ID here in N4.)
 
 ## Build plan
 
@@ -448,11 +452,10 @@ Each phase ends with a gate. N1 is pure platform work and can start before any i
 
 Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching, linking and merging (incl. block-wins and alias resolution).
 
-**N2 — Shell and native Google sign-in**
-- [ ] `native/ios` (XcodeGen), web view shell, URL policy, offline screen, pull-to-refresh, share, universal links (AASA on all hosts)
-- [ ] Bridge core + `@stacks/native` (protocol, origin checks, `/native/config`); portal "Continue with Google" via the bridge; `azp` allowlist
-- [ ] `ios.yml`: PR builds, signed uploads of both apps to TestFlight internal
-- [ ] `docs/IOS_SETUP.md` written while doing the setup
+**N2 — Shell and native Google sign-in**, in three PRs
+- [x] **N2a** (web side): `native` settings in `stacks.config.json`; apple-app-site-association on every host (CloudFront routers); `azp` allowlist for the iOS app's Google tokens; `GET /native/config`; `native/protocol/v1.json`; `@stacks/native` (client, web fallbacks, fake); the portal signs in, links accounts and signs out through the bridge in the app
+- [ ] **N2b**: `native/ios` (XcodeGen), web view shell, URL policy, offline screen, pull-to-refresh, share, universal links, bridge with origin checks; `ios.yml` unsigned PR build and tests on macOS
+- [ ] **N2c**: signed uploads of both apps to TestFlight internal; `docs/IOS_SETUP.md` written while doing the setup
 
 Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
 

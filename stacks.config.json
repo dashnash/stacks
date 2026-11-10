@@ -10,7 +10,8 @@
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
-      "maintenance": false
+      "maintenance": false,
+      "native": { "appleTeamId": "", "iosBundleId": "com.dashyhq.stacks", "googleIosClientIds": [], "minShellVersion": "1.0.0" }
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
@@ -18,7 +19,8 @@
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
-      "maintenance": false
+      "maintenance": false,
+      "native": { "appleTeamId": "", "iosBundleId": "com.dashyhq.stacks.test", "googleIosClientIds": [], "minShellVersion": "1.0.0" }
     }
   }
 }

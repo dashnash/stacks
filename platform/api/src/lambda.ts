@@ -22,6 +22,7 @@ const app = createPlatformApp({
     googleClientId: env('GOOGLE_CLIENT_ID'),
     platformAdmins: env('PLATFORM_ADMINS').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
     maintenance: process.env.STACKS_MAINTENANCE === '1',
+    minShellVersion: process.env.MIN_SHELL_VERSION || '1.0.0',
   },
   registry,
   appSessions: registry,
@@ -31,6 +32,7 @@ const app = createPlatformApp({
 });
 
 let verifier: ReturnType<typeof createGoogleVerifier> | undefined;
-const verify = (credential: string) => (verifier ??= createGoogleVerifier(env('GOOGLE_CLIENT_ID')))(credential);
+const iosClientIds = (process.env.GOOGLE_IOS_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const verify = (credential: string) => (verifier ??= createGoogleVerifier(env('GOOGLE_CLIENT_ID'), undefined, iosClientIds))(credential);
 
 export const handler = (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => app(event);

@@ -22,6 +22,51 @@ export interface EnvConfig {
    * health checks), so data can be migrated with nothing writing to it (the user-id cut-over).
    */
   maintenance?: boolean;
+  /** The native iOS app for this environment (docs/NATIVE_APP_SPEC.md). Nothing here is secret. */
+  native?: NativeConfig;
+}
+
+export interface NativeConfig {
+  /** Apple Developer Team ID (10 characters). Until it is set, no apple-app-site-association is served. */
+  appleTeamId?: string;
+  /** The iOS app's bundle ID in this environment, e.g. `com.dashyhq.stacks` (staging: `….test`). */
+  iosBundleId?: string;
+  /** iOS OAuth client IDs whose Google ID tokens the platform accepts (the token's `azp`). */
+  googleIosClientIds?: string[];
+  /** The oldest app version the web still supports; older ones are asked to update. Default 1.0.0. */
+  minShellVersion?: string;
+}
+
+/**
+ * The apple-app-site-association document for an environment, or null until the Team ID and
+ * bundle ID are set. Every link to the platform's hosts opens in the app, except sign-in plumbing.
+ */
+export function appleAppSiteAssociation(env: EnvConfig): string | null {
+  const team = env.native?.appleTeamId?.trim();
+  const bundle = env.native?.iosBundleId?.trim();
+  if (!team || !bundle) return null;
+  if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`native.appleTeamId "${team}" is not a 10-character Apple Team ID`);
+  const components = [
+    { '/': '/api/*', exclude: true },
+    { '/': '/authorize', exclude: true },
+    { '/': '/logout', exclude: true },
+    { '/': '/.well-known/*', exclude: true },
+    { '/': '*' },
+  ];
+  return JSON.stringify({ applinks: { details: [{ appIDs: [`${team}.${bundle}`], components }] } });
+}
+
+/**
+ * The part of a CloudFront viewer-request function that answers
+ * `/.well-known/apple-app-site-association` itself (JSON, no redirect), so every host serves it.
+ */
+export function aasaRoute(env: EnvConfig): string {
+  const aasa = appleAppSiteAssociation(env);
+  if (!aasa) return '';
+  return `
+  if (request.uri === '/.well-known/apple-app-site-association') {
+    return { statusCode: 200, statusDescription: 'OK', headers: { 'content-type': { value: 'application/json' }, 'cache-control': { value: 'public, max-age=3600' } }, body: { encoding: 'text', data: ${JSON.stringify(aasa)} } };
+  }`;
 }
 
 export interface StacksConfig {
