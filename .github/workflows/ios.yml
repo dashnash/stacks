@@ -177,6 +177,8 @@ jobs:
           </plist>
           PLIST
           # Cloud-managed signing: Xcode makes or reuses the certificates and profiles with the API key.
+          # The archive signs for distribution straight away: automatic signing would otherwise archive
+          # with a development profile, which needs registered devices (App Store builds need none).
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
             scheme="${pair%%:*}"
@@ -191,6 +193,7 @@ jobs:
               -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
               "${auth[@]}" \
               DEVELOPMENT_TEAM="$TEAM" \
+              CODE_SIGN_IDENTITY="Apple Distribution" \
               CURRENT_PROJECT_VERSION="$build"
             echo "::endgroup::"
             echo "::group::$scheme ($config): upload to App Store Connect"
