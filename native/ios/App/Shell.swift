@@ -77,7 +77,11 @@ final class Shell: NSObject, ObservableObject {
     }
 
     @objc private func pulledToRefresh() {
-        loadError == nil ? webView.reload() : retry()
+        if loadError == nil {
+            webView.reload()
+        } else {
+            retry()
+        }
     }
 
     private func checkForUpdate() async {
