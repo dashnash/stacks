@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getNative, NativeError } from '@stacks/native';
 import { ErrorNote } from '@stacks/web';
 import { loadGoogle, safeNext, usePortal } from '../portal';
 
@@ -8,6 +9,8 @@ export function SignIn({ next }: { next?: string }) {
   const button = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const target = safeNext(next);
+  // Inside the iOS app Google's web button can't run (Google blocks embedded browsers): the app signs in natively.
+  const inApp = getNative().has('auth.google');
 
   const finish = async () => {
     if (target) {
@@ -23,8 +26,20 @@ export function SignIn({ next }: { next?: string }) {
     if (status === 'signedIn' && target) window.location.assign(target);
   }, [status, target]);
 
+  const signInInApp = async () => {
+    setError(null);
+    try {
+      const { credential } = await getNative().call('auth.google');
+      await api.signInWithGoogle(credential);
+      await finish();
+    } catch (err) {
+      if (err instanceof NativeError && err.code === 'cancelled') return;
+      setError((err as Error).message);
+    }
+  };
+
   useEffect(() => {
-    if (signInMethod.kind !== 'google') return;
+    if (signInMethod.kind !== 'google' || inApp) return;
     let cancelled = false;
     (async () => {
       const [{ googleClientId }] = await Promise.all([api.config(), loadGoogle()]);
@@ -55,7 +70,11 @@ export function SignIn({ next }: { next?: string }) {
     <section className="card narrow">
       <h1>Sign in</h1>
       <p className="muted">{target ? 'Sign in once to open the app. Every other app on this platform will know you too.' : 'One Google sign-in for every app here. No new password.'}</p>
-      {signInMethod.kind === 'google' ? (
+      {signInMethod.kind === 'google' && inApp ? (
+        <button type="button" className="button" onClick={() => void signInInApp()}>
+          Continue with Google
+        </button>
+      ) : signInMethod.kind === 'google' ? (
         <div ref={button} className="google-button" />
       ) : (
         <div className="stack">

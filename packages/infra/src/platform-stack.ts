@@ -17,7 +17,7 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { API_BURST_LIMIT, API_RATE_LIMIT } from './app-stack';
-import { authOrigin, bootstrapQualifier, envTag, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
+import { aasaRoute, authOrigin, bootstrapQualifier, envTag, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
 
 /** The portal needs Google Identity Services; nothing else may load from elsewhere. */
 export const PORTAL_CSP = [
@@ -35,10 +35,10 @@ export const PORTAL_CSP = [
 ].join('; ');
 
 /** Viewer-request function: the bare domain redirects to the portal; extension-less paths serve the SPA. */
-export const portalRouterCode = (rootDomain: string) => `
+export const portalRouterCode = (rootDomain: string, env?: EnvConfig) => `
 function handler(event) {
   var request = event.request;
-  var host = request.headers.host && request.headers.host.value;
+  var host = request.headers.host && request.headers.host.value;${env ? aasaRoute(env) : ''}
   if (host === '${rootDomain}') {
     return { statusCode: 301, statusDescription: 'Moved Permanently', headers: { location: { value: 'https://auth.${rootDomain}' + request.uri } } };
   }
@@ -125,6 +125,8 @@ export class PlatformStack extends cdk.Stack {
         STACKS_ENV_TAG: tag,
         STACKS_ROOT_DOMAIN: env.rootDomain,
         GOOGLE_CLIENT_ID: env.googleClientId,
+        GOOGLE_IOS_CLIENT_IDS: (env.native?.googleIosClientIds ?? []).join(','),
+        MIN_SHELL_VERSION: env.native?.minShellVersion ?? '1.0.0',
         PLATFORM_ADMINS: env.platformAdmins.join(','),
         ...(env.maintenance ? { STACKS_MAINTENANCE: '1' } : {}),
         NODE_OPTIONS: '--enable-source-maps',
@@ -164,7 +166,7 @@ export class PlatformStack extends cdk.Stack {
     });
     const router = new cloudfront.Function(this, 'PortalRouter', {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
-      code: cloudfront.FunctionCode.fromInline(portalRouterCode(env.rootDomain)),
+      code: cloudfront.FunctionCode.fromInline(portalRouterCode(env.rootDomain, env)),
     });
     const apiBehavior: cloudfront.BehaviorOptions = {
       origin: new origins.HttpOrigin(apiDomain, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY }),

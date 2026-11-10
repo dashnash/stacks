@@ -15,7 +15,7 @@ export const badRequest = (message: string) => new HttpError(400, message, 'BAD_
 /** Every route but health checks answers this while `maintenance` is on (the user-id cut-over). */
 export const maintenance = () => new HttpError(503, 'Stacks is being upgraded. Back in a few minutes.', 'MAINTENANCE');
 /** Paths that keep working during maintenance. */
-export const MAINTENANCE_OPEN_PATHS = new Set(['/health', '/config']);
+export const MAINTENANCE_OPEN_PATHS = new Set(['/health', '/config', '/native/config']);
 export const unauthorized = (message = 'Sign in required') => new HttpError(401, message, 'UNAUTHORIZED');
 export const forbidden = (message: string, code = 'FORBIDDEN') => new HttpError(403, message, code);
 export const notFound = (message: string) => new HttpError(404, message, 'NOT_FOUND');

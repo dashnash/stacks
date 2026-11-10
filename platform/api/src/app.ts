@@ -50,6 +50,8 @@ import { linkGoogle, mergeWithTicket, unlinkIdentity } from './merge';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
 const CSRF_HEADER = 'x-stacks-request';
+/** The bridge protocol the web speaks to the iOS app (native/protocol). */
+export const NATIVE_PROTOCOL = 1;
 const CODE_TTL_MS = 60_000;
 
 type AppEntry = RegisteredApp & { status: 'live' | 'archived' };
@@ -155,6 +157,17 @@ export function createPlatformApp(deps: PlatformDeps) {
   router
     .add('GET', '/health', async () => ({ body: { ok: true, platform: true } }))
     .add('GET', '/config', async () => ({ body: { googleClientId: deps.config.googleClientId, rootDomain: deps.config.rootDomain } }))
+    // For the iOS app (docs/NATIVE_APP_SPEC.md): which hosts open inside it, and the oldest app
+    // version the web still supports. Public and cacheable; works during maintenance.
+    .add('GET', '/native/config', async () => ({
+      headers: { 'Cache-Control': 'public, max-age=300' },
+      body: {
+        protocol: NATIVE_PROTOCOL,
+        minShellVersion: deps.config.minShellVersion ?? '1.0.0',
+        authHost: new URL(deps.config.authOrigin).host,
+        apps: (await listApps(deps)).map((a) => ({ slug: a.manifest.slug, name: a.manifest.name, host: new URL(appOrigin(deps.config, a.manifest.slug)).host })),
+      },
+    }))
 
     /* ---------- Portal sign-in ---------- */
     .add('POST', '/auth/google', async (req) => {

@@ -382,7 +382,7 @@ Developers and Claude sessions never hold AWS credentials; anyone with push acce
 
 One AWS account is kept on purpose; these controls are the isolation. If a Claude session cannot dispatch workflows through its GitHub proxy, the creator runs the same `gh workflow run` command, or the GitHub Actions page's "Run workflow" button, themselves; a push-triggered fallback would run the branch's own workflow file and is not allowed. One-time AWS and GitHub setup: `docs/SETUP.md`.
 
-**Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId`, `googleClientId`, `platformAdmins`. Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
+**Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId`, `googleClientId`, `platformAdmins`, `maintenance`, and `native` (the iOS app: Team ID, bundle ID, iOS OAuth client IDs, oldest supported app version; see `docs/NATIVE_APP_SPEC.md`). Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
 
 **Certificates**: one ACM wildcard cert per environment (`*.<domain>` and `*.test.<domain>`) in us-east-1, owned by the platform stack and shared via SSM.
 

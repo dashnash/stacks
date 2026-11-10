@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { getNative } from '@stacks/native';
 import { ApiError, isMaintenance, MaintenanceNotice } from '@stacks/web';
 import type { Me, PortalApi } from './api';
 
@@ -48,6 +49,9 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
       refresh,
       signOut: async () => {
         await api.signOut();
+        // In the iOS app, it forgets its Google session too (and, later, this device's push registration).
+        const app = getNative();
+        if (app.has('auth.signedOut')) await app.call('auth.signedOut').catch(() => undefined);
         setMe(null);
         setStatus('signedOut');
         window.location.hash = '#/?signedOut=1';

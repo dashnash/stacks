@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getNative, NativeError } from '@stacks/native';
 import { ErrorNote, useAsync } from '@stacks/web';
 import type { MergePlan } from '../api';
 import { loadGoogle, usePortal } from '../portal';
@@ -80,7 +81,22 @@ export function SignInMethods() {
       ) : (
         <div className="stack">
           <p className="muted small">Link another Google account to sign in with it too. If it already has its own account here, you can merge the two.</p>
-          {signInMethod.kind === 'google' ? (
+          {signInMethod.kind === 'google' && getNative().has('auth.google') ? (
+            <button
+              type="button"
+              className="button small secondary"
+              onClick={() =>
+                getNative()
+                  .call('auth.google')
+                  .then(({ credential }) => link(credential))
+                  .catch((err: unknown) => {
+                    if (!(err instanceof NativeError && err.code === 'cancelled')) setError((err as Error).message);
+                  })
+              }
+            >
+              Link another Google account
+            </button>
+          ) : signInMethod.kind === 'google' ? (
             <GoogleLinkButton onCredential={link} onError={setError} />
           ) : (
             <div className="row-gap">
