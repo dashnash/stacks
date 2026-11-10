@@ -16,7 +16,7 @@ function comment(id: string, overrides: Partial<CommentView> = {}): CommentView 
     editedAt: null,
     deleted: false,
     body: `Comment ${id}`,
-    author: { email: `${id}@x`, name: `Author ${id}` },
+    author: { id: `${id}@x`, name: `Author ${id}` },
     canEdit: false,
     canDelete: false,
     ...overrides,

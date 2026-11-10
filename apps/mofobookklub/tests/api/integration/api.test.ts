@@ -1,3 +1,4 @@
+import { testUserId as idOf } from '@stacks/testing';
 import { describe, expect, it } from 'vitest';
 import { keys, meetingItem } from '../../../api/utils/model.js';
 import { BOOKS, makeTestApp } from '../helpers';
@@ -34,11 +35,11 @@ describe('sign-in and access (now from the platform)', () => {
 
   it('lets admins (not members) use the access page, and changes go to the platform', async () => {
     const t = await setup();
-    t.platform.pending = [{ email: 'newbie@club.test', name: 'Newbie', role: 'PENDING' }];
+    t.platform.pending = [{ id: idOf('newbie@club.test'), email: 'newbie@club.test', name: 'Newbie', role: 'PENDING' }];
     expect((await t.call('GET', '/stacks/access', { as: ALICE })).status).toBe(403);
     const access = await t.call('GET', '/stacks/access', { as: ADMIN });
     expect(access.body.pending.map((p: { email: string }) => p.email)).toEqual(['newbie@club.test']);
-    expect((await t.call('PUT', '/stacks/access/newbie%40club.test', { as: ADMIN, body: { role: 'MEMBER' } })).status).toBe(200);
+    expect((await t.call('PUT', `/stacks/access/${idOf('newbie@club.test')}`, { as: ADMIN, body: { role: 'MEMBER' } })).status).toBe(200);
     expect(t.platform.members.find((m) => m.email === 'newbie@club.test')?.role).toBe('MEMBER');
   });
 });
@@ -79,13 +80,13 @@ describe('The Lineup', () => {
     const t = await setup();
     await t.store.put(
       meetingItem({
-        id: 'old', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderEmail: ALICE,
+        id: 'old', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderId: idOf(ALICE),
         status: 'UPCOMING', phase: 'VOTING' as never, createdAt: '2026-01-01T00:00:00.000Z',
       }),
     );
     await t.store.put({ ...keys.book(PHM), ...BOOKS[PHM]! });
-    await t.store.put({ PK: 'MEETING#old', SK: 'NOMINATION#n1', id: 'n1', meetingId: 'old', bookIsbn: PHM, nominatedByEmail: BOB, createdAt: '2026-01-02T00:00:00.000Z' });
-    await t.store.put({ PK: 'MEETING#old', SK: 'VOTE#bob@club.test', meetingId: 'old', userEmail: BOB, rankedIsbns: [PHM] });
+    await t.store.put({ PK: 'MEETING#old', SK: 'NOMINATION#n1', id: 'n1', meetingId: 'old', bookIsbn: PHM, nominatedById: idOf(BOB), createdAt: '2026-01-02T00:00:00.000Z' });
+    await t.store.put({ PK: 'MEETING#old', SK: 'VOTE#bob@club.test', meetingId: 'old', userId: BOB, rankedIsbns: [PHM] });
 
     const lineup = await t.call('GET', '/nominations', { as: ALICE });
     expect(lineup.body.nominations).toMatchObject([{ id: 'n1', book: { title: 'Project Hail Mary' } }]);
@@ -127,7 +128,7 @@ describe('discussion threads', () => {
   async function withBookAndMeeting() {
     const t = await setup();
     await t.call('POST', '/nominations', { as: BOB, body: { isbn: PHM } });
-    const meetingId = (await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } })).body.meeting.id;
+    const meetingId = (await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } })).body.meeting.id;
     return { t, meetingId };
   }
 
@@ -222,12 +223,12 @@ describe('meeting lifecycle', () => {
 
     const created = await t.call('POST', '/meetings', {
       as: ADMIN,
-      body: { title: 'February', dateTime: '2026-02-01T03:00:00Z', videoUrl: 'https://meet.google.com/abc', leaderEmail: ALICE },
+      body: { title: 'February', dateTime: '2026-02-01T03:00:00Z', videoUrl: 'https://meet.google.com/abc', leaderId: idOf(ALICE) },
     });
     expect(created.status).toBe(201);
     const id = created.body.meeting.id;
     // The admin who created it can manage it too.
-    expect(created.body.meeting).toMatchObject({ leaderEmail: ALICE, phase: 'PLANNING', status: 'UPCOMING', canManage: true });
+    expect(created.body.meeting).toMatchObject({ leaderId: idOf(ALICE), phase: 'PLANNING', status: 'UPCOMING', canManage: true });
     // Only one upcoming meeting at a time.
     expect((await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-03-01T03:00:00Z' } })).status).toBe(409);
 
@@ -241,7 +242,7 @@ describe('meeting lifecycle', () => {
     expect((await t.call('POST', `/meetings/${id}/book`, { as: ALICE, body: {} })).status).toBe(400);
 
     // Can't wrap up before a book is picked.
-    expect((await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderEmail: BOB } })).status).toBe(409);
+    expect((await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderId: idOf(BOB) } })).status).toBe(409);
 
     const picked = await t.call('POST', `/meetings/${id}/book`, { as: ALICE, body: { nominationId: phm } });
     expect(picked.status).toBe(200);
@@ -257,10 +258,10 @@ describe('meeting lifecycle', () => {
     // Completing requires naming an approved next leader.
     expect((await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: {} })).status).toBe(400);
     expect(
-      (await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderEmail: 'ghost@x.test' } })).status,
+      (await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderId: 'ghost@x.test' } })).status,
     ).toBe(400);
-    const done = await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderEmail: BOB } });
-    expect(done.body.meeting).toMatchObject({ status: 'PAST', phase: 'PAST', nextLeaderEmail: BOB });
+    const done = await t.call('POST', `/meetings/${id}/complete`, { as: ALICE, body: { nextLeaderId: idOf(BOB) } });
+    expect(done.body.meeting).toMatchObject({ status: 'PAST', phase: 'PAST', nextLeaderId: idOf(BOB) });
 
     const history = await t.call('GET', '/meetings/history', { as: CAROL });
     expect(history.body.meetings).toHaveLength(1);
@@ -268,21 +269,21 @@ describe('meeting lifecycle', () => {
 
     // The handoff: Bob (and only Bob, or an admin) can create the next meeting.
     const handoff = await t.call('GET', '/meetings/next', { as: BOB });
-    expect(handoff.body).toEqual({ meeting: null, nextLeader: { email: BOB, name: 'Bob' }, canCreateNext: true });
+    expect(handoff.body).toEqual({ meeting: null, nextLeader: { id: idOf(BOB), name: 'Bob' }, canCreateNext: true });
     expect((await t.call('POST', '/meetings', { as: CAROL, body: { dateTime: '2026-03-01T03:00:00Z' } })).status).toBe(403);
     expect(
-      (await t.call('POST', '/meetings', { as: BOB, body: { dateTime: '2026-03-01T03:00:00Z', leaderEmail: CAROL } })).status,
+      (await t.call('POST', '/meetings', { as: BOB, body: { dateTime: '2026-03-01T03:00:00Z', leaderId: idOf(CAROL) } })).status,
     ).toBe(403);
     const second = await t.call('POST', '/meetings', { as: BOB, body: { dateTime: '2026-03-01T03:00:00Z' } });
     expect(second.status).toBe(201);
-    expect(second.body.meeting.leaderEmail).toBe(BOB);
+    expect(second.body.meeting.leaderId).toBe(idOf(BOB));
     // The Lineup carries over: Dune is still waiting for its turn.
     expect((await t.call('GET', '/nominations', { as: BOB })).body).toMatchObject({ canPick: true, nominations: [{ book: { isbn: DUNE } }] });
   });
 
   it('puts a picked Lineup book back when the leader changes or clears the pick', async () => {
     const t = await setup();
-    const { body } = await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } });
+    const { body } = await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } });
     const id = body.meeting.id;
     const phm = (await t.call('POST', '/nominations', { as: BOB, body: { isbn: PHM } })).body.nomination.id;
     await t.call('POST', '/nominations', { as: CAROL, body: { isbn: DUNE } });
@@ -311,14 +312,14 @@ describe('meeting lifecycle', () => {
 
   it('lets admins run the current meeting even when they are not leading it', async () => {
     const t = await setup();
-    const { body } = await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE } });
+    const { body } = await t.call('POST', '/meetings', { as: ADMIN, body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) } });
     const id = body.meeting.id;
     const phm = (await t.call('POST', '/nominations', { as: BOB, body: { isbn: PHM } })).body.nomination.id;
 
     expect((await t.call('GET', '/meetings/next', { as: ADMIN })).body.meeting.canManage).toBe(true);
     expect((await t.call('POST', `/meetings/${id}/book`, { as: ADMIN, body: { nominationId: phm } })).status).toBe(200);
     expect((await t.call('PATCH', `/meetings/${id}`, { as: ADMIN, body: { title: 'Admin edit' } })).body.meeting.title).toBe('Admin edit');
-    expect((await t.call('POST', `/meetings/${id}/complete`, { as: ADMIN, body: { nextLeaderEmail: CAROL } })).status).toBe(200);
+    expect((await t.call('POST', `/meetings/${id}/complete`, { as: ADMIN, body: { nextLeaderId: idOf(CAROL) } })).status).toBe(200);
     // Past meetings can't be changed.
     expect((await t.call('POST', `/meetings/${id}/book`, { as: ADMIN, body: { isbn: DUNE } })).status).toBe(409);
   });
@@ -327,7 +328,7 @@ describe('meeting lifecycle', () => {
     const t = await setup();
     const { body } = await t.call('POST', '/meetings', {
       as: ADMIN,
-      body: { dateTime: '2026-02-01T03:00:00Z', leaderEmail: ALICE },
+      body: { dateTime: '2026-02-01T03:00:00Z', leaderId: idOf(ALICE) },
     });
     const id = body.meeting.id;
 
@@ -338,9 +339,9 @@ describe('meeting lifecycle', () => {
     expect(edited.body.meeting).toMatchObject({ title: 'Moved', dateTime: '2026-02-02T03:00:00.000Z' });
     expect((await t.call('PATCH', `/meetings/${id}`, { as: ALICE, body: { videoUrl: 'javascript:alert(1)' } })).status).toBe(400);
     expect((await t.call('PATCH', `/meetings/${id}`, { as: BOB, body: { title: 'Hijack' } })).status).toBe(403);
-    expect((await t.call('PATCH', `/meetings/${id}`, { as: ALICE, body: { leaderEmail: BOB } })).status).toBe(403);
-    const reassigned = await t.call('PATCH', `/meetings/${id}`, { as: ADMIN, body: { leaderEmail: BOB } });
-    expect(reassigned.body.meeting.leaderEmail).toBe(BOB);
+    expect((await t.call('PATCH', `/meetings/${id}`, { as: ALICE, body: { leaderId: idOf(BOB) } })).status).toBe(403);
+    const reassigned = await t.call('PATCH', `/meetings/${id}`, { as: ADMIN, body: { leaderId: idOf(BOB) } });
+    expect(reassigned.body.meeting.leaderId).toBe(idOf(BOB));
   });
 });
 
@@ -375,7 +376,7 @@ describe('high-resolution covers for the poster', () => {
     await t.store.put({ ...keys.book(PHM), isbn: PHM, title: 'Project Hail Mary', author: 'Andy Weir', coverUrl: 'https://small.example/phm.jpg', coverWidth: 180 });
     await t.store.put(
       meetingItem({
-        id: 'm-sel', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderEmail: ALICE,
+        id: 'm-sel', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderId: idOf(ALICE),
         bookIsbn: PHM, status: 'UPCOMING', phase: 'SELECTED', createdAt: '2026-01-01T00:00:00.000Z',
       }),
     );
@@ -394,7 +395,7 @@ describe('high-resolution covers for the poster', () => {
     await t.store.put({ ...keys.book(DUNE), isbn: DUNE, title: 'Dune', author: 'Frank Herbert', coverUrl: 'https://mine.example/dune.jpg', coverWidth: 500 });
     await t.store.put(
       meetingItem({
-        id: 'm-dune', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderEmail: ALICE,
+        id: 'm-dune', title: 'Nov', dateTime: '2026-11-19T03:00:00.000Z', leaderId: idOf(ALICE),
         bookIsbn: DUNE, status: 'UPCOMING', phase: 'SELECTED', createdAt: '2026-01-01T00:00:00.000Z',
       }),
     );
@@ -410,11 +411,11 @@ describe('cover backfill', () => {
     const t = await setup();
     // Saved before cover lookups improved: no cover, never re-checked.
     await t.store.put({ ...keys.book(PHM), isbn: PHM, title: 'Project Hail Mary', author: 'Andy Weir' });
-    await t.store.put({ ...keys.nomination('n1'), id: 'n1', bookIsbn: PHM, nominatedByEmail: BOB, createdAt: '2026-01-01T00:00:00.000Z' });
+    await t.store.put({ ...keys.nomination('n1'), id: 'n1', bookIsbn: PHM, nominatedById: idOf(BOB), createdAt: '2026-01-01T00:00:00.000Z' });
     await t.store.put({ ...keys.book(DUNE), isbn: DUNE, title: 'Dune', author: 'Frank Herbert' });
     await t.store.put(
       meetingItem({
-        id: 'past', title: 'Jan', dateTime: '2026-01-10T03:00:00.000Z', leaderEmail: ALICE,
+        id: 'past', title: 'Jan', dateTime: '2026-01-10T03:00:00.000Z', leaderId: idOf(ALICE),
         bookIsbn: DUNE, status: 'PAST', phase: 'PAST', createdAt: '2025-12-01T00:00:00.000Z',
       }),
     );

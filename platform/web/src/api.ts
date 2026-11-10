@@ -1,7 +1,7 @@
 import { createClient, type Client } from '@stacks/web';
 
 export interface Me {
-  user: { email: string; name: string; displayName: string | null; googleName: string; pictureUrl: string | null; isPlatformAdmin: boolean };
+  user: { id: string; email: string; name: string; displayName: string | null; googleName: string; pictureUrl: string | null; isPlatformAdmin: boolean };
   unread: number;
   pendingRequests: number;
   /** How many apps this person manages access to (0 hides the access grid). */
@@ -35,15 +35,17 @@ export interface Notification {
 export interface Grid {
   isPlatformAdmin: boolean;
   apps: { slug: string; name: string; status: string; topRole: string; defaultRole: string | null; roles: { id: string; label: string; canManageAccess: boolean }[]; canManageApprovers: boolean }[];
-  users: { email: string; name: string; pictureUrl: string | null }[];
-  grants: { app: string; email: string; role: string; requestedAt: string | null; grantedAt: string | null }[];
+  users: { id: string; email: string; name: string; pictureUrl: string | null }[];
+  grants: { app: string; userId: string; role: string; requestedAt: string | null; grantedAt: string | null }[];
 }
 
 export interface AuditEvent {
   id: string;
   at: string;
   app: string;
-  actorEmail: string;
+  actorId: string;
+  /** The actor's current email, when the platform still knows them. */
+  actorEmail?: string;
   actorName: string;
   action: string;
   label?: string;
@@ -66,7 +68,7 @@ export function createPortalApi(client: Client = createClient()) {
     notifications: () => client.get<{ notifications: Notification[] }>('/notifications'),
     markRead: () => client.post('/notifications/read'),
     grid: () => client.get<Grid>('/admin/access'),
-    setRole: (slug: string, email: string, role: string | null) => client.put(`/admin/access/${encodeURIComponent(slug)}/${encodeURIComponent(email)}`, { role }),
+    setRole: (slug: string, userId: string, role: string | null) => client.put(`/admin/access/${encodeURIComponent(slug)}/${encodeURIComponent(userId)}`, { role }),
     audit: (q: { app?: string; actor?: string; action?: string; before?: string }) => {
       const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
       return client.get<{ events: AuditEvent[]; nextBefore: string | null }>(`/admin/audit${qs ? `?${qs}` : ''}`);

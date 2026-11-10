@@ -4,8 +4,8 @@ import { cookieValue, FakePlatform } from '../src/index';
 describe('FakePlatform', () => {
   it('issues single-use codes', async () => {
     const p = new FakePlatform();
-    const code = p.issueCode({ email: 'a@b.c', name: 'A' }, 'MEMBER');
-    expect(await p.exchangeCode({ code, codeVerifier: 'v', redirectUri: 'r' })).toEqual({ user: { email: 'a@b.c', name: 'A' }, role: 'MEMBER' });
+    const code = p.issueCode({ id: 'u_a', email: 'a@b.c', name: 'A' }, 'MEMBER');
+    expect(await p.exchangeCode({ code, codeVerifier: 'v', redirectUri: 'r' })).toEqual({ user: { id: 'u_a', email: 'a@b.c', name: 'A' }, role: 'MEMBER' });
     await expect(p.exchangeCode({ code, codeVerifier: 'v', redirectUri: 'r' })).rejects.toThrow(/used/);
   });
 });

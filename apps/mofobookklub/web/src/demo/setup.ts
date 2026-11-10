@@ -24,5 +24,5 @@ export const demoOptions = (): DemoOptions<Deps> => ({
     { email: 'riley@demo.bookklub', name: 'Riley Chen' },
   ],
   seed: (deps) => seed(deps.store),
-  storageKey: 'bookklub.demo.v9',
+  storageKey: 'bookklub.demo.v10',
 });

@@ -14,5 +14,6 @@ t.advance(86_400_000);                     // move the clock
 t.store;                                   // inspect data
 ```
 
-`as` takes an email (name = part before "@") or `{ email, name }`; `role` defaults to the manifest's
+`as` takes an email (name = part before "@", id = `testUserId(email)`) or `{ email, name, id? }`. Seed
+members with `t.platform.members = [memberFor('ann@test.dev', 'EDITOR', 'Ann')]`. `role` defaults to the manifest's
 `defaultRole`. `noCsrf: true` drops the CSRF header. `cookieValue(res.cookies, name)` reads Set-Cookie.

@@ -105,7 +105,7 @@ export function App() {
         <h1>Hello Board</h1>
         <AccountMenu className="account" />
       </header>
-      {status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Board key={`${session.user.email}:${session.role}`} /> : <SignedOut />}
+      {status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <Board key={`${session.user.id}:${session.role}`} /> : <SignedOut />}
       <footer className="foot">
         Hello Board · <BuildVersion className="build" />
       </footer>

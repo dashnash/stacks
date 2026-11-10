@@ -91,6 +91,7 @@ export function StacksProvider({
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [accessNotice, setAccessNotice] = useState<AccessNotice>(readAccessNotice);
+  const [maintenance, setMaintenance] = useState(false);
   // A ref, so a new function each render doesn't re-run the session effect.
   const platformFetchRef = useRef(platformFetch);
   platformFetchRef.current = platformFetch;
@@ -129,10 +130,16 @@ export function StacksProvider({
     async (opts: { silent?: boolean } = {}) => {
       try {
         const s = await api.session();
+        setMaintenance(false);
         setSession(s);
         setStatus('signedIn');
         return;
       } catch (err) {
+        if (isMaintenance(err)) {
+          setMaintenance(true);
+          return;
+        }
+        setMaintenance(false);
         if (!(err instanceof ApiError) || err.status !== 401) console.error('Could not load the session', err);
       }
       const silent = opts.silent ?? silentSignIn;
@@ -182,7 +189,23 @@ export function StacksProvider({
     [status, session, api, accessNotice, refresh, navigator],
   );
 
-  return <StacksContext.Provider value={value}>{children}</StacksContext.Provider>;
+  return <StacksContext.Provider value={value}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</StacksContext.Provider>;
+}
+
+/** True for the API's 503 while the platform is in maintenance. */
+export const isMaintenance = (err: unknown) => err instanceof ApiError && err.status === 503 && err.code === 'MAINTENANCE';
+
+/** Shown instead of the app (or portal) while the platform is in maintenance (the user-id cut-over). */
+export function MaintenanceNotice({ onRetry }: { onRetry: () => void }) {
+  return (
+    <main role="main" style={{ maxWidth: '32rem', margin: '20vh auto', padding: '0 16px', fontFamily: 'system-ui, sans-serif', textAlign: 'center' }}>
+      <h1 style={{ fontSize: '1.5rem' }}>Back in a few minutes</h1>
+      <p>Stacks is being upgraded. Nothing you saved is lost.</p>
+      <button type="button" onClick={onRetry}>
+        Try again
+      </button>
+    </main>
+  );
 }
 
 export function useStacks(): StacksContextValue {

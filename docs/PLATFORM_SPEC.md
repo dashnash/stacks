@@ -27,7 +27,7 @@ Stacks is a monorepo platform on AWS for building many small, independent web ap
 
 **Non-goals for v1**: runtime AI inference in apps, email alerts for access requests (badge only), per-PR preview stacks, multiple root domains at once, non-Google identity providers, cross-app data sharing.
 
-> **Planned change (draft):** `docs/NATIVE_APP_SPEC.md` adds a native iOS/iPadOS app, Sign in with Apple (lifting the "non-Google identity providers" non-goal), internal user IDs in place of email keys, and APNs push. Nothing there is built yet; this spec stays authoritative until each phase lands.
+> **Planned change (draft):** `docs/NATIVE_APP_SPEC.md` adds a native iOS/iPadOS app, Sign in with Apple (lifting the "non-Google identity providers" non-goal), internal user IDs in place of email keys, and APNs push. N1a (internal user ids) is built; the rest isn't. This spec stays authoritative until each phase lands.
 
 **Success metric**: a non-technical creator goes from a one-paragraph description to an app live on staging, behind SSO, through `/new-app` in one Claude Code session, with the scaffold costing near-zero tokens.
 
@@ -136,13 +136,13 @@ Access is one **grant** per (user, app): a role from that app's manifest, or a p
 
 | Entity | Key | Fields |
 | --- | --- | --- |
-| User | `USER#<email>` | `name`, `displayName`, `pictureUrl`, `createdAt`, `isPlatformAdmin` |
+| User | `USER#<id>` (`u_…`; `EMAIL#<email>` and `IDENTITY#google#<sub>` point to it) | `email`, `name`, `displayName`, `pictureUrl`, `createdAt` (admins come from `platformAdmins`, by email) |
 | App | `APP#<slug>` | manifest snapshot, `visibility` (`public`/`private`), `status` (`live`/`archived`), `createdBy` |
-| Grant | `APP#<slug>` / `USER#<email>` (GSI by user) | `role`, `PENDING` or `BLOCKED`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
-| Master session | `SESSION#<sha256>` | `userEmail`, `expiresAt` (TTL), `lastUsedAt` |
-| Audit event | `AUDIT#<yyyy-mm>` | `app`, `actor`, `action`, `label`, `details` |
+| Grant | `APP#<slug>` / `GRANT#<userId>` (GSI by user) | `role`, `PENDING` or `BLOCKED`, `grantedBy`, `grantedAt`, `requestedAt`, `note` |
+| Master session | `SESSION#<sha256>` | `userId`, `expiresAt` (TTL), `lastUsedAt` |
+| Audit event | `AUDIT#<yyyy-mm>` | `app`, `actorId`, `actorName`, `action`, `label`, `details` |
 
-App sessions are not in the platform table: each lives in its app's own table (`SESSION#<sha256>`, indexed by `USERSESSIONS#<email>`, holding the user and role). When a grant changes, the platform deletes that user's sessions in the app's table, so the next request re-runs the handshake with the new role.
+App sessions are not in the platform table: each lives in its app's own table (`SESSION#<sha256>`, indexed by `USERSESSIONS#<userId>`, holding the user and role). When a grant changes, the platform deletes that user's sessions in the app's table, so the next request re-runs the handshake with the new role.
 
 **Rules**
 
@@ -315,7 +315,7 @@ stacks/
   tools/
     new-app/                 # deterministic scaffold (npm run new-app -- <slug>)
     app-conformance/         # platform rules every app must pass
-    migrate-book-club/       # one-time data migration (done)
+    migrate-user-ids/        # one-time email → user-id cut-over (N1a; migrate-book-club was removed then, it is in git history)
   docs/
     PLATFORM_SPEC.md         # this spec
     ARCHITECTURE.md
@@ -460,7 +460,7 @@ Phase 3 build notes:
 - **App admin pages manage access through the platform**: `GET /stacks/access` and `PUT /stacks/access/:email` in every app (approvers only) call the Platform API (`/api/apps/:slug/access`), which applies the grid's rules with the app vouching for the acting user.
 - **Members and names** come from the platform (`appMembers`, `getPeople` in `@stacks/api`, cached 30 s), so apps keep no user records. People who lose access show as "Former member".
 - **Photos of people never go in git.** Book Club's shared faces live only in its content bucket; the migration copies them bucket to bucket. Content deploys never prune.
-- **Notifications from apps**: `deps.platform.notify(email, text, link)`, members only.
+- **Notifications from apps**: `deps.platform.notify(userId, text, link)`, members only.
 - **Book Club keeps its address**: its slug is `mofobookklub`, so it lives at `mofobookklub.<domain>` like any app. During the cut-over, `holdApps` in `stacks.config.json` kept it out of production until the old stack released the hostname; the mechanism stays for future migrations.
 - Book Club's `GOOGLE_BOOKS_API_KEY` is an optional app secret (manifest `secrets`); without it, book sources use Google's lower anonymous quota.
 

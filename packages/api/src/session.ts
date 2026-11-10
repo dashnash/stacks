@@ -24,7 +24,7 @@ export interface SessionRecord {
 type SessionItem = Item & SessionRecord;
 
 const sessionKey = async (token: string) => ({ PK: `SESSION#${await sha256Hex(token)}`, SK: 'SESSION' });
-export const userSessionsKey = (email: string) => `USERSESSIONS#${email.toLowerCase()}`;
+export const userSessionsKey = (userId: string) => `USERSESSIONS#${userId}`;
 const expiryFor = (at: Date) => Math.floor((at.getTime() + SESSION_IDLE_DAYS * DAY_MS) / 1000);
 
 export async function createSession(deps: AppDeps, user: StacksUser, role: string): Promise<string> {
@@ -39,7 +39,7 @@ export async function createSession(deps: AppDeps, user: StacksUser, role: strin
   };
   await deps.store.put({
     ...(await sessionKey(token)),
-    GSI1PK: userSessionsKey(user.email),
+    GSI1PK: userSessionsKey(user.id),
     GSI1SK: record.createdAt,
     ...record,
   });
@@ -69,8 +69,8 @@ export async function endSession(deps: AppDeps, token: string | undefined): Prom
 }
 
 /** End every session a user has in this app (role changed, access revoked, removed). */
-export async function endUserSessions(deps: AppDeps, email: string): Promise<number> {
-  const items = await deps.store.queryGsi1<SessionItem>(userSessionsKey(email));
+export async function endUserSessions(deps: AppDeps, userId: string): Promise<number> {
+  const items = await deps.store.queryGsi1<SessionItem>(userSessionsKey(userId));
   await Promise.all(items.map((i) => deps.store.delete(i.PK, i.SK)));
   return items.length;
 }

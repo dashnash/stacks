@@ -108,7 +108,7 @@ describe('NextMeetingHero', () => {
 
   it("puts the chosen book's full-size cover on the poster, with the shelf's hover details", () => {
     const book = { ...books[0]!, coverUrl: 'https://covers.example/phm-large.jpg', coverWidth: 1200 };
-    const m = meeting({ phase: 'SELECTED', book, bookIsbn: book.isbn, nominatedBy: { email: 'm@x', name: 'Marcus Bell' } });
+    const m = meeting({ phase: 'SELECTED', book, bookIsbn: book.isbn, nominatedBy: { id: 'm@x', name: 'Marcus Bell' } });
     renderWithApi(<NextMeetingHero meeting={m} />);
     const cover = screen.getByRole('img', { name: 'Cover of Project Hail Mary' });
     expect(cover).toHaveAttribute('src', 'https://covers.example/phm-large.jpg');
@@ -135,7 +135,7 @@ describe('MeetingActions (header strip)', () => {
   it("tells the leader they're leading and leads with choosing the book from The Lineup", async () => {
     const api = fakeApi({ lineup: vi.fn().mockResolvedValue(lineupOf(books.slice(0, 2), { canPick: true, meetingId: 'm1' })) });
     const onChanged = vi.fn();
-    const m = meeting({ canManage: true, leaderEmail: member.email });
+    const m = meeting({ canManage: true, leaderId: member.id });
     renderWithApi(<MeetingActions meeting={m} user={member} onChanged={onChanged} />, api);
     const user = userEvent.setup();
 

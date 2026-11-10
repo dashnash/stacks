@@ -6,7 +6,8 @@ export interface AuditEvent {
   id: string;
   /** ISO date-time. */
   at: string;
-  actorEmail: string;
+  /** The actor's platform user id. */
+  actorId: string;
   actorName: string;
   /** e.g. "greeting.post", "auth.login". */
   action: string;
@@ -46,7 +47,7 @@ export function sanitize(value: unknown, depth = 0): unknown {
  */
 export async function recordAudit(
   deps: AppDeps,
-  actor: Pick<StacksUser, 'email' | 'name'>,
+  actor: Pick<StacksUser, 'id' | 'name'>,
   event: Pick<AuditEvent, 'action' | 'label' | 'params' | 'details'>,
 ): Promise<void> {
   const at = deps.now().toISOString();
@@ -54,7 +55,7 @@ export async function recordAudit(
   const record: AuditEvent = {
     id,
     at,
-    actorEmail: actor.email,
+    actorId: actor.id,
     actorName: actor.name,
     action: event.action,
     ...(event.label ? { label: event.label } : {}),
@@ -85,7 +86,7 @@ export async function listAudit(
   const before = opts.before ?? new Date(deps.now().getTime() + 1000).toISOString();
   const matches = (e: AuditEvent) =>
     e.at < before &&
-    (!opts.actor || e.actorEmail === opts.actor) &&
+    (!opts.actor || e.actorId === opts.actor) &&
     (!opts.action || e.action === opts.action || e.action.startsWith(opts.action.endsWith('.') ? opts.action : `${opts.action}.`));
 
   const events: AuditEvent[] = [];

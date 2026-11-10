@@ -82,7 +82,7 @@ export function AdminView({
         <div role="tabpanel" className="max-w-4xl">
           {tab === 'members' ? (
             <AdminPanel
-              me={user.email}
+              me={user.id}
               myRole={user.role}
               onChanged={async () => {
                 await Promise.all([onChanged(), members.reload()]);

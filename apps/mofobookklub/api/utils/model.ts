@@ -16,6 +16,8 @@ export function isAdmin(user: Pick<User, 'role'>): boolean {
 }
 
 export interface User {
+  /** Platform user id: what meetings, nominations, votes and edits record. */
+  id: string;
   email: string;
   role: Role;
   /** Their name as Google gives it (refreshed at each sign-in). Shown only as a first name. */
@@ -54,7 +56,7 @@ export interface Meeting {
   title: string;
   dateTime: string;
   videoUrl?: string;
-  leaderEmail: string;
+  leaderId: string;
   bookIsbn?: string;
   status: MeetingStatus;
   phase: MeetingPhase;
@@ -64,7 +66,7 @@ export interface Meeting {
    */
   chosenNomination?: Nomination;
   /** Set by the outgoing leader when the meeting is completed. */
-  nextLeaderEmail?: string;
+  nextLeaderId?: string;
   createdAt: string;
 }
 
@@ -96,7 +98,7 @@ export interface Book {
   amazonUrl?: string;
   /** When we last filled in missing details (publisher, pages, ...) from the book sources. */
   metadataCheckedAt?: string;
-  /** Who last edited the details by hand, and when. */
+  /** Who last edited the details by hand (user id), and when. */
   editedBy?: string;
   editedAt?: string;
 }
@@ -105,14 +107,14 @@ export interface Book {
 export interface Nomination {
   id: string;
   bookIsbn: string;
-  nominatedByEmail: string;
+  nominatedById: string;
   createdAt: string;
 }
 
 /** A vote for a book on The Lineup. */
 export interface NominationVote {
   nominationId: string;
-  userEmail: string;
+  userId: string;
   createdAt: string;
 }
 
@@ -127,7 +129,7 @@ export interface ThreadTarget {
 export interface Comment {
   id: string;
   parentId?: string;
-  authorEmail: string;
+  authorId: string;
   body: string;
   createdAt: string;
   editedAt?: string;
@@ -156,7 +158,7 @@ export const keys = {
   lineupPartition: 'LINEUP',
   nomination: (id: string) => ({ PK: 'LINEUP', SK: `NOMINATION#${id}` }),
   /** One item per member per nomination; prefix VOTE#<nominationId># lists a nomination's votes. */
-  nominationVote: (nominationId: string, email: string) => ({ PK: 'LINEUP', SK: `VOTE#${nominationId}#${email}` }),
+  nominationVote: (nominationId: string, userId: string) => ({ PK: 'LINEUP', SK: `VOTE#${nominationId}#${userId}` }),
   nominationVotePrefix: (nominationId: string) => `VOTE#${nominationId}#`,
 
   /** A discussion thread: every comment on one book or one meeting. */

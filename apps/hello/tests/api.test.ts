@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTestHarness } from '@stacks/testing';
+import { createTestHarness, testUserId } from '@stacks/testing';
 import { manifest } from '../api/manifest';
 import { routes } from '../api/routes';
 
@@ -14,7 +14,7 @@ describe('Hello Board API', () => {
     expect(pub.body.greetings.map((g: { text: string }) => g.text)).toEqual(['two', 'one']);
     expect(JSON.stringify(pub.body)).not.toContain('@x.dev');
     const mine = await t.call('GET', '/greetings', { as: 'max@x.dev' });
-    expect(mine.body).toMatchObject({ canDelete: false, greetings: [{ text: 'two', authorEmail: 'ann@x.dev' }, { text: 'one' }] });
+    expect(mine.body).toMatchObject({ canDelete: false, greetings: [{ text: 'two', authorId: testUserId('ann@x.dev') }, { text: 'one' }] });
   });
 
   it('rejects empty and over-long greetings and needs sign-in to post', async () => {

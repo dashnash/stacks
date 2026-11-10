@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
 import type { AppDeps, AppRoutes } from '@stacks/api';
-import { createTestHarness } from '@stacks/testing';
-import { commentCounts, commentRoutes } from '../src/index';
+import { createTestHarness, memberFor, testUserId } from '@stacks/testing';
+import { commentCounts, commentRoutes, migrateComments } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'notes', name: 'Notes', tagline: 't', description: 'd', visibility: 'private',
@@ -15,9 +15,9 @@ const routes = (api: AppRoutes<AppDeps>) =>
 function setup() {
   const t = createTestHarness({ manifest, routes });
   t.platform.members = [
-    { email: 'ann@x.dev', name: 'Ann', role: 'MEMBER' },
-    { email: 'bo@x.dev', name: 'Bo', role: 'MEMBER' },
-    { email: 'o@x.dev', name: 'Olive', role: 'OWNER' },
+    memberFor('ann@x.dev', 'MEMBER', 'Ann'),
+    memberFor('bo@x.dev', 'MEMBER', 'Bo'),
+    memberFor('o@x.dev', 'OWNER', 'Olive'),
   ];
   return t;
 }
@@ -62,10 +62,24 @@ describe('comments module', () => {
   it('credits people who lost access as "Former member"', async () => {
     const t = setup();
     await t.call('POST', '/threads/note/n1', { as: 'ann@x.dev', body: { body: 'Hi' } });
-    t.platform.members = t.platform.members.filter((m) => m.email !== 'ann@x.dev');
+    t.platform.members = t.platform.members.filter((m) => m.id !== testUserId('ann@x.dev'));
     const { forgetMembers } = await import('@stacks/api');
     forgetMembers(t.deps);
     const thread = await t.call('GET', '/threads/note/n1', { as: 'bo@x.dev' });
-    expect(thread.body.comments[0].author).toEqual({ email: 'ann@x.dev', name: 'Former member' });
+    expect(thread.body.comments[0].author).toEqual({ id: testUserId('ann@x.dev'), name: 'Former member' });
+  });
+});
+
+describe('user-id migration', () => {
+  it('turns authorEmail into authorId and leaves everything else alone', () => {
+    const idFor = (e: string) => `u_${e.split('@')[0]}`;
+    expect(migrateComments({ PK: 'THREAD#BOOK#b1', SK: 'COMMENT#c1', authorEmail: 'ann@x.dev', body: 'hi' }, idFor)).toEqual({
+      PK: 'THREAD#BOOK#b1',
+      SK: 'COMMENT#c1',
+      authorId: 'u_ann',
+      body: 'hi',
+    });
+    expect(migrateComments({ PK: 'THREAD#BOOK#b1', SK: 'COUNT', count: 2 }, idFor)).toBeUndefined();
+    expect(migrateComments({ PK: 'THREAD#BOOK#b1', SK: 'COMMENT#c2', authorId: 'u_bo' }, idFor)).toBeUndefined(); // already done
   });
 });

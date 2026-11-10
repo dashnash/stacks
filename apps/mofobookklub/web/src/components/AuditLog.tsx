@@ -103,7 +103,7 @@ function EventDetails({ e }: { e: AuditEvent }) {
   const changes = d.changes as Record<string, { from: unknown; to: unknown } | string> | undefined;
   delete d.changes;
   const rows: [string, string][] = [
-    ['Who', `${e.actorName} (${e.actorEmail})`],
+    ['Who', e.actorName],
     ['When', new Date(e.at).toLocaleString()],
     ['Action', e.action],
     ...Object.entries(e.params ?? {}).map(([k, v]): [string, string] => [k, v]),
@@ -198,7 +198,7 @@ export function AuditLog({ people }: { people: Person[] }) {
           <select className="input mt-1 !w-auto !py-2" value={actor} onChange={(e) => setActor(e.target.value)}>
             <option value="">Everyone</option>
             {people.map((p) => (
-              <option key={p.email} value={p.email}>
+              <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}

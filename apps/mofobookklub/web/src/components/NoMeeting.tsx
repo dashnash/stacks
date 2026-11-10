@@ -19,7 +19,7 @@ export function NoMeeting({
   const api = useApi();
   const canAdmin = isAdmin(user);
   const members = useAsync(() => (canAdmin ? api.members().then((r) => r.users) : Promise.resolve([])), [canAdmin]);
-  const youAreNext = nextLeader?.email === user.email;
+  const youAreNext = nextLeader?.id === user.id;
 
   return (
     <section
