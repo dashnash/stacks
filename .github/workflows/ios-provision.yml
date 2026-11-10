@@ -1,0 +1,36 @@
+name: iOS provision
+
+# One-time (and safe to repeat) setup of the iOS apps in Apple's developer account, through the
+# App Store Connect API: bundle IDs with Associated Domains, then each app's automatic internal
+# TestFlight group and tester. Apple can't create the app records by API: see docs/IOS_SETUP.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tester_email:
+        description: Your Apple ID email, to add as an internal TestFlight tester (optional)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    name: Provision bundle IDs and TestFlight
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ios-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Provision
+        shell: bash # -eo pipefail: a failure isn't hidden by tee
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          TESTER_EMAIL: ${{ inputs.tester_email }}
+        run: node scripts/asc-provision.mjs | tee -a "$GITHUB_STEP_SUMMARY"

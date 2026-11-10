@@ -1,66 +1,40 @@
 # iOS app: one-time setup
 
 Gets DashyHQ (production) and DashyHQ Test (staging) from GitHub Actions onto your iPhone through
-TestFlight. Background: `docs/NATIVE_APP_SPEC.md`. You do these steps once, in a browser (and
-Xcode for step 7); after that, every merge to `main` that touches the app uploads new builds.
+TestFlight. Background: `docs/NATIVE_APP_SPEC.md`. You do these steps once, in a browser; the
+**iOS provision** workflow does the rest through the App Store Connect API. After that, every merge
+to `main` that touches the app uploads new builds.
 
 Nothing here is pasted into a Claude session except the values marked **not secret**. The App Store
 Connect key goes straight into GitHub.
 
-| What | Where it ends up | Secret? |
-| --- | --- | --- |
-| Apple Team ID | `stacks.config.json` → `native.appleTeamId` (both environments) | No |
-| Two App IDs and two App Store Connect apps | Apple | No |
-| App Store Connect API key (`.p8`, Key ID, Issuer ID) | GitHub environment `ios-release` secrets | **Yes** |
-| Two iOS OAuth clients | `stacks.config.json` → `native.googleIosClientIds` | No |
+| What | Who | Where it ends up | Secret? |
+| --- | --- | --- | --- |
+| Apple Team ID | you | `stacks.config.json` → `native.appleTeamId` | No |
+| App Store Connect API key (`.p8`, Key ID, Issuer ID) | you | GitHub environment `ios-release` secrets | **Yes** |
+| Bundle IDs with Associated Domains | the **iOS provision** workflow | Apple | No |
+| The two App Store Connect apps | you (Apple has no API for it) | Apple | No |
+| TestFlight groups that get every build, with you as tester | the **iOS provision** workflow | Apple | No |
+| Two iOS OAuth clients | you | `stacks.config.json` → `native.googleIosClientIds` | No |
 
 ## 1. Your Team ID (not secret)
 
 [developer.apple.com/account](https://developer.apple.com/account) → **Membership details** → **Team ID**
 (10 characters, e.g. `A1B2C3D4E5`).
 
-## 2. Register the two App IDs
-
-[Certificates, Identifiers & Profiles → Identifiers](https://developer.apple.com/account/resources/identifiers/list)
-→ **+** → **App IDs** → **App**. Do this twice:
-
-| Description | Bundle ID (Explicit) |
-| --- | --- |
-| DashyHQ | `com.dashyhq.stacks` |
-| DashyHQ Test | `com.dashyhq.stacks.test` |
-
-Capabilities: tick **Associated Domains** (universal links). Push Notifications and Sign in with Apple
-come in later phases; you can tick them now or then.
-
-## 3. Create the two apps in App Store Connect
-
-[App Store Connect → Apps](https://appstoreconnect.apple.com/apps) → **+** → **New App**, twice:
-
-| Name | Primary language | Bundle ID | SKU |
-| --- | --- | --- | --- |
-| DashyHQ | English (U.S.) | `com.dashyhq.stacks` | `dashyhq` |
-| DashyHQ Test | English (U.S.) | `com.dashyhq.stacks.test` | `dashyhq-test` |
-
-Platform iOS; User Access **Full Access**. (The App Store name must be unique worldwide; if "DashyHQ"
-is taken, pick another name here. The name on the home screen comes from the build, not from this.)
-
-Then, in each app: **TestFlight** → **Internal Testing** → **+** → a group (e.g. "Dash"), add
-yourself, and turn on **Automatic Distribution** so every new build reaches you without clicking.
-
-## 4. An App Store Connect API key for GitHub Actions (secret)
+## 2. An App Store Connect API key for GitHub Actions (secret)
 
 [App Store Connect → Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api)
 → **Team Keys** → **Generate API Key**:
 
 - Name: `GitHub Actions (stacks)`
-- Access: **Admin**. CI uses Xcode's cloud-managed signing, which creates and renews the signing
-  certificates itself; that needs Admin (or App Manager with *Access to Cloud Managed Distribution
-  Certificate*).
+- Access: **Admin**. It registers bundle IDs and manages TestFlight (step 4), and CI uses Xcode's
+  cloud-managed signing, which creates and renews the signing certificates itself.
 
 Note the **Issuer ID** (top of the page) and the **Key ID**, and **Download** the `.p8` file. Apple
-lets you download it only once; keep it somewhere safe or revoke and make a new one if lost.
+lets you download it only once; keep it somewhere safe, or revoke it and make a new one if lost.
 
-## 5. Put the key in GitHub (secret)
+## 3. Put the key in GitHub (secret)
 
 [github.com/dashnash/stacks → Settings → Environments](https://github.com/dashnash/stacks/settings/environments)
 → **New environment** → name `ios-release` → **Configure**:
@@ -74,6 +48,28 @@ lets you download it only once; keep it somewhere safe or revoke and make a new 
 | `ASC_KEY_ID` | the Key ID |
 | `ASC_ISSUER_ID` | the Issuer ID |
 | `ASC_KEY_P8` | the whole contents of the `.p8` file, from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----` |
+
+## 4. Register the bundle IDs (the workflow does it)
+
+[Actions → iOS provision](https://github.com/dashnash/stacks/actions/workflows/ios-provision.yml) →
+**Run workflow** (branch `main`; leave the email empty for now). It registers `com.dashyhq.stacks`
+and `com.dashyhq.stacks.test` with Associated Domains, then says the two app records are missing:
+that's step 5. Running it again never duplicates anything.
+
+## 5. Create the two apps in App Store Connect (by hand: Apple has no API for this)
+
+[App Store Connect → Apps](https://appstoreconnect.apple.com/apps) → **+** → **New App**, twice:
+
+| Name | Primary language | Bundle ID (pick from the list) | SKU |
+| --- | --- | --- | --- |
+| DashyHQ | English (U.S.) | `com.dashyhq.stacks` | `dashyhq` |
+| DashyHQ Test | English (U.S.) | `com.dashyhq.stacks.test` | `dashyhq-test` |
+
+Platform iOS; User Access **Full Access**. (The App Store name must be unique worldwide; if "DashyHQ"
+is taken, pick another name here. The name on the home screen comes from the build, not from this.)
+
+Then run **iOS provision** again, this time with **your Apple ID email**: it gives each app an
+internal TestFlight group, "Internal (automatic)", that receives every build, with you in it.
 
 ## 6. Two iOS OAuth clients for native Google sign-in (not secret)
 
@@ -112,13 +108,13 @@ can do this if you give it the Team ID and the two client IDs. When it merges:
 - the platform starts serving `/.well-known/apple-app-site-association` and accepting the app's
   Google tokens (staging, then production, as with every deploy);
 - the `iOS` workflow's **Sign and upload to TestFlight** job archives both apps, signs them and
-  uploads them. Until steps 4–5 and 7 are done it says "TestFlight upload skipped: not set up yet"
+  uploads them. Until steps 2–3 and 7 are done it says "TestFlight upload skipped: not set up yet"
   and passes.
 
 ## 8. Install
 
 Install **TestFlight** from the App Store on your iPhone or iPad, sign in with the Apple ID you added
-in step 3, and install **DashyHQ Test** first (staging). Builds appear 5–15 minutes after the upload,
+in step 5, and install **DashyHQ Test** first (staging). Builds appear 5–15 minutes after the upload,
 once Apple has processed them; the first build of each app may ask you to confirm export compliance
 (the app declares it uses no non-exempt encryption).
 
@@ -131,6 +127,6 @@ N2 gate.
 
 - Builds expire after 90 days in TestFlight; the workflow rebuilds on the 1st of every month.
 - Signing certificates are cloud-managed and renewed by Xcode: nothing to rotate except the API key
-  (revoke it in step 4's page and repeat step 5 if it leaks).
+  (revoke it on step 2's page and repeat step 3 if it leaks).
 - Inviting other people: TestFlight → **External Testing** (needs Apple's Beta App Review once per
   version), or add them to your team in App Store Connect as internal testers.
