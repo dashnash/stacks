@@ -58,7 +58,8 @@ describe('Wishlist UI (on the demo backend)', () => {
     expect(await screen.findByText('Gardening gloves')).toBeInTheDocument();
   });
 
-  it('has one demo persona per role', () => {
-    expect(personas.map((p) => p.role).sort()).toEqual(manifest.roles.map((r) => r.id).sort());
+  it('has a demo persona for every role, top role first', () => {
+    expect([...new Set(personas.map((p) => p.role))].sort()).toEqual(manifest.roles.map((r) => r.id).sort());
+    expect(personas[0]!.role).toBe('ORGANIZER');
   });
 });

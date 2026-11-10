@@ -8,9 +8,9 @@ export interface ScreenshotPage {
   as?: string[];
 }
 
-// List ids are hashes of the owner's email (listIdFor in api/model.ts); these are the demo's.
-const NANA = 'a568b83327ec564d';
-const OLIVE = 'b3b25e42c64aafb2';
+// New list ids are hashes of the owner's user id (listIdFor in api/model.ts); these are the demo's.
+const NANA = 'b230e511d9e9c401';
+const OLIVE = 'dca44f775f74c3dc';
 
 export const screenshotPages: ScreenshotPage[] = [
   { name: 'nanas-list', hash: `#/l/${NANA}` },

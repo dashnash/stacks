@@ -1,8 +1,9 @@
-import { badRequest, sha256Hex, type Item } from '@stacks/api';
+import { badRequest, sha256Hex, type AppDeps, type Item } from '@stacks/api';
 
 /**
  * One partition per person's list (meta + items). Claims live apart, in CLAIMS#<listId>, so reading
- * your own list never touches them: the surprise rule holds by construction.
+ * your own list never touches them: the surprise rule holds by construction. People are stored by
+ * user id (`v.user.id`); names come from `getPeople` when a page is read.
  */
 export const PRIORITIES = ['love', 'like', 'idea'] as const;
 export type Priority = (typeof PRIORITIES)[number];
@@ -10,7 +11,7 @@ export const PRIORITY_LABEL: Record<Priority, string> = { love: 'Love it', like:
 
 export interface ListMeta {
   listId: string;
-  ownerName: string;
+  ownerId: string;
   note: string;
   updatedAt: string;
 }
@@ -29,24 +30,39 @@ export interface WishItem {
 export interface Claim {
   itemId: string;
   listId: string;
-  claimerEmail: string;
-  claimerName: string;
+  claimerId: string;
   bought: boolean;
   claimedAt: string;
 }
 
-/** A stable, email-free id for someone's list. */
-export const listIdFor = async (email: string) => (await sha256Hex(`wishlist:${email.toLowerCase()}`)).slice(0, 16);
+/** The id a new list gets from its owner's user id. */
+export const listIdFor = async (userId: string) => (await sha256Hex(`wishlist:${userId}`)).slice(0, 16);
+
+/**
+ * The id of someone's list, via their `OWNER#<userId>` pointer. Lists made before user ids keep
+ * their old id (a hash of the owner's email, so shared links still work): the first time, the
+ * pointer is filled in from the directory by `ownerId`.
+ */
+export async function myListId(deps: AppDeps, userId: string): Promise<string> {
+  const k = keys.owner(userId);
+  const pointer = await deps.store.get<Item & { listId: string }>(k.PK, k.SK);
+  if (pointer) return pointer.listId;
+  const existing = (await deps.store.queryGsi1<MetaItem>('LISTS')).find((m) => m.ownerId === userId);
+  const listId = existing?.listId ?? (await listIdFor(userId));
+  await deps.store.put({ ...k, listId });
+  return listId;
+}
 
 export const keys = {
   meta: (listId: string) => ({ PK: `LIST#${listId}`, SK: 'META' }),
-  directory: (ownerName: string, listId: string) => ({ GSI1PK: 'LISTS', GSI1SK: `${ownerName.toLowerCase()}#${listId}` }),
+  directory: (listId: string) => ({ GSI1PK: 'LISTS', GSI1SK: listId }),
+  owner: (userId: string) => ({ PK: `OWNER#${userId}`, SK: 'LIST' }),
   item: (listId: string, id: string) => ({ PK: `LIST#${listId}`, SK: `ITEM#${id}` }),
   claim: (listId: string, itemId: string) => ({ PK: `CLAIMS#${listId}`, SK: itemId }),
-  byClaimer: (email: string, claimedAt: string) => ({ GSI1PK: `CLAIMER#${email}`, GSI1SK: claimedAt }),
+  byClaimer: (userId: string, claimedAt: string) => ({ GSI1PK: `CLAIMER#${userId}`, GSI1SK: claimedAt }),
 };
 
-export type MetaItem = Item & ListMeta & { ownerEmail: string };
+export type MetaItem = Item & ListMeta;
 export type ItemRecord = Item & WishItem;
 export type ClaimItem = Item & Claim;
 

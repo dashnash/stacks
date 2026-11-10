@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTestHarness } from '@stacks/testing';
+import { createTestHarness, memberFor, testUserId } from '@stacks/testing';
 import { manifest } from '../api/manifest';
 import { listIdFor } from '../api/model';
 import { routes } from '../api/routes';
@@ -11,11 +11,11 @@ const ANN = { as: { email: 'ann@x.dev', name: 'Ann' }, role: 'MEMBER' };
 async function setup() {
   const t = createTestHarness({ manifest, routes });
   t.platform.members = [
-    { email: 'olive@x.dev', name: 'Olive', role: 'ORGANIZER' },
-    { email: 'max@x.dev', name: 'Max', role: 'MEMBER' },
-    { email: 'ann@x.dev', name: 'Ann', role: 'MEMBER' },
+    memberFor('olive@x.dev', 'ORGANIZER', 'Olive'),
+    memberFor('max@x.dev', 'MEMBER', 'Max'),
+    memberFor('ann@x.dev', 'MEMBER', 'Ann'),
   ];
-  const maxList = await listIdFor('max@x.dev');
+  const maxList = await listIdFor(testUserId('max@x.dev'));
   const sk = await t.call('POST', '/me/items', { ...MAX, body: { title: 'Skateboard', price: 80, priority: 'love', link: 'https://example.com/sk8' } });
   const socks = await t.call('POST', '/me/items', { ...MAX, body: { title: 'Socks' } });
   return { t, maxList, skate: sk.body.item.id as string, socks: socks.body.item.id as string };
@@ -45,6 +45,8 @@ describe('the surprise rule', () => {
     const before = await t.call('GET', `/lists/${maxList}`, MAX);
     await t.call('POST', `/lists/${maxList}/items/${skate}/claim`, ANN);
     await t.call('PATCH', `/lists/${maxList}/items/${skate}/claim`, { ...ANN, body: { bought: true } });
+    expect(await t.store.get(`CLAIMS#${maxList}`, skate)).toMatchObject({ claimerId: testUserId('ann@x.dev'), GSI1PK: `CLAIMER#${testUserId('ann@x.dev')}` });
+    expect(JSON.stringify([...(await t.store.query(`LIST#${maxList}`)), ...(await t.store.query(`CLAIMS#${maxList}`))])).not.toContain('@x.dev');
     const after = await t.call('GET', `/lists/${maxList}`, MAX);
     expect(after.body).toEqual(before.body); // byte-for-byte the same as before any claim
     expect(JSON.stringify(after.body)).not.toMatch(/status|claim|bought|taken|ann/i);
@@ -61,7 +63,7 @@ describe('the surprise rule', () => {
     const { t, maxList, skate } = await setup();
     await t.call('POST', `/lists/${maxList}/items/${skate}/claim`, ANN);
     await t.call('DELETE', `/me/items/${skate}`, MAX);
-    expect(t.platform.notifications).toEqual([expect.objectContaining({ email: 'ann@x.dev', text: expect.stringContaining('Skateboard') })]);
+    expect(t.platform.notifications).toEqual([expect.objectContaining({ userId: testUserId('ann@x.dev'), text: expect.stringContaining('Skateboard') })]);
     expect((await t.call('GET', '/me/claims', ANN)).body.groups).toEqual([]);
   });
 });
@@ -101,7 +103,7 @@ describe('claiming from other lists', () => {
     expect((await t.call('DELETE', `/lists/${maxList}/items/${skate}`, ANN)).status).toBe(403);
     expect((await t.call('DELETE', `/lists/${maxList}/items/${skate}`, OLIVE)).status).toBe(200);
     expect((await t.call('GET', `/lists/${maxList}`, MAX)).body.items.map((i: { title: string }) => i.title)).toEqual(['Socks']);
-    expect(t.platform.notifications.map((n) => n.email)).toEqual(['ann@x.dev']);
+    expect(t.platform.notifications.map((n) => n.userId)).toEqual([testUserId('ann@x.dev')]);
   });
 
   it('needs sign-in for everything', async () => {

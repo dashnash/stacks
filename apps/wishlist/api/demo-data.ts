@@ -1,4 +1,4 @@
-import type { AppDeps } from '@stacks/api';
+import { fixtureUserId, type AppDeps } from '@stacks/api';
 import type { Persona } from '@stacks/demo';
 import { keys, listIdFor, type Claim, type ListMeta, type Priority, type WishItem } from './model';
 
@@ -6,6 +6,9 @@ import { keys, listIdFor, type Claim, type ListMeta, type Priority, type WishIte
 export const personas: Persona[] = [
   { email: "olive@demo.stacks", name: "Olive", role: "ORGANIZER", blurb: "keeps the family organized" },
   { email: "max@demo.stacks", name: "Max", role: "MEMBER", blurb: "shops early" },
+  // Relatives with lists and claims in the sample data: members, so their names show.
+  { email: 'nana@demo.stacks', name: 'Nana June', role: 'MEMBER', blurb: 'a relative' },
+  { email: 'theo@demo.stacks', name: 'Theo', role: 'MEMBER', blurb: 'a relative' },
 ];
 
 /**
@@ -13,20 +16,16 @@ export const personas: Persona[] = [
  * around so every state shows (available, claimed by you, claimed by someone else, bought).
  */
 export async function seed(deps: AppDeps): Promise<void> {
-  const [org, member] = personas as [Persona, Persona];
-  const relatives = [
-    { email: 'nana@demo.stacks', name: 'Nana June' },
-    { email: 'theo@demo.stacks', name: 'Theo' },
-  ];
-  const people = [org, member, ...relatives];
+  // People are stored by user id; demo personas get `fixtureUserId(email)`.
+  const people = personas.map((p: Persona) => fixtureUserId(p.email));
   const now = deps.now().toISOString();
   const lists: Record<string, string> = {};
   const notes = ['Medium in tops, 9 in shoes. No more candles, please!', 'Anything for the garden makes me happy.', 'I love books and warm socks.', 'Into climbing and board games lately.'];
-  for (const [i, p] of people.entries()) {
-    const listId = await listIdFor(p.email);
-    lists[p.email] = listId;
-    const meta: ListMeta = { listId, ownerName: p.name, note: notes[i]!, updatedAt: now };
-    await deps.store.put({ ...keys.meta(listId), ...keys.directory(p.name, listId), ...meta, ownerEmail: p.email });
+  for (const [i, ownerId] of people.entries()) {
+    const listId = await listIdFor(ownerId);
+    lists[ownerId] = listId;
+    const meta: ListMeta = { listId, ownerId, note: notes[i]!, updatedAt: now };
+    await deps.store.put({ ...keys.meta(listId), ...keys.directory(listId), ...meta });
   }
   const items: [number, string, string | null, number | null, Priority, string][] = [
     [0, 'Cast-iron skillet, 10"', 'https://example.com/skillet', 35, 'love', 'Pre-seasoned if possible'],
@@ -43,7 +42,7 @@ export async function seed(deps: AppDeps): Promise<void> {
   ];
   const ids: string[] = [];
   for (const [i, [who, title, link, price, priority, notes2]] of items.entries()) {
-    const listId = lists[people[who]!.email]!;
+    const listId = lists[people[who]!]!;
     const item: WishItem = { id: `w${i + 1}`, listId, title, link, price, priority, notes: notes2, addedAt: now };
     ids.push(item.id);
     await deps.store.put({ ...keys.item(listId, item.id), ...item });
@@ -58,9 +57,9 @@ export async function seed(deps: AppDeps): Promise<void> {
   ];
   for (const [idx, who, bought] of claims) {
     const [owner] = items[idx]!;
-    const listId = lists[people[owner]!.email]!;
+    const listId = lists[people[owner]!]!;
     const p = people[who]!;
-    const claim: Claim = { itemId: ids[idx]!, listId, claimerEmail: p.email, claimerName: p.name, bought, claimedAt: now };
-    await deps.store.put({ ...keys.claim(listId, claim.itemId), ...keys.byClaimer(p.email, now), ...claim });
+    const claim: Claim = { itemId: ids[idx]!, listId, claimerId: p, bought, claimedAt: now };
+    await deps.store.put({ ...keys.claim(listId, claim.itemId), ...keys.byClaimer(p, now), ...claim });
   }
 }
