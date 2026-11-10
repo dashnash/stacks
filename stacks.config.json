@@ -10,7 +10,7 @@
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
-      "maintenance": true
+      "maintenance": false
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
