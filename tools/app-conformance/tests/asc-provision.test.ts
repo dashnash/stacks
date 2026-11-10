@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, GROUP_NAME, provision } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, createApi, GROUP_NAME, missingApps, provision } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -109,5 +109,14 @@ describe('App Store Connect provisioning', () => {
       fetchImpl: (async () => new Response(JSON.stringify({ errors: [{ title: 'Forbidden', detail: 'Admin role needed' }] }), { status: 403 })) as typeof fetch,
     });
     await expect(api('GET', '/v1/apps')).rejects.toThrow('GET /v1/apps → 403 Forbidden: Admin role needed');
+  });
+
+  it('tells the release job which app records are still missing', async () => {
+    const none = fakeAsc();
+    expect((await missingApps(none.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['com.dashyhq.stacks', 'com.dashyhq.stacks.test']);
+    const one = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
+    expect((await missingApps(one.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['com.dashyhq.stacks']);
+    const both = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
+    expect(await missingApps(both.api, apps)).toEqual([]);
   });
 });

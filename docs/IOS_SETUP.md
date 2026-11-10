@@ -88,6 +88,9 @@ for clients in its project.
 
 ## 7. Put the values in the repo (a small PR)
 
+> **Done** for the first setup (Team ID `47ZUZ59AHR` and both iOS clients went in with the PR that
+> added this guide). Repeat this step only if a value changes.
+
 In `stacks.config.json`:
 
 ```json
@@ -108,8 +111,8 @@ can do this if you give it the Team ID and the two client IDs. When it merges:
 - the platform starts serving `/.well-known/apple-app-site-association` and accepting the app's
   Google tokens (staging, then production, as with every deploy);
 - the `iOS` workflow's **Sign and upload to TestFlight** job archives both apps, signs them and
-  uploads them. Until steps 2–3 and 7 are done it says "TestFlight upload skipped: not set up yet"
-  and passes.
+  uploads them. It skips (and passes) with a notice saying what's missing until steps 2–3 and 7 are
+  done, and until both app records from step 5 exist.
 
 ## 8. Install
 

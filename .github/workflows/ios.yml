@@ -94,6 +94,9 @@ jobs:
     environment: ios-release
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up yet?
         id: ready
         env:
@@ -112,6 +115,17 @@ jobs:
             echo "go=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # The upload needs both apps to exist in App Store Connect (Apple has no API to create them).
+          set +e
+          node scripts/asc-provision.mjs --check-apps
+          apps=$?
+          set -e
+          if [ "$apps" = 3 ]; then
+            echo "::notice title=TestFlight upload skipped::Create the app records in App Store Connect first (docs/IOS_SETUP.md steps 4-5)."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$apps" = 0 ] || exit "$apps"
           key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
           printf '%s\n' "$ASC_KEY_P8" > "$key"
           chmod 600 "$key"

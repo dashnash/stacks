@@ -11,7 +11,7 @@
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
       "maintenance": false,
-      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "com.dashyhq.stacks", "googleIosClientIds": [], "minShellVersion": "1.0.0" }
+      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "com.dashyhq.stacks", "googleIosClientIds": ["880697273676-v00m7d4sr89svllu2chaoor2kbsub2r8.apps.googleusercontent.com"], "minShellVersion": "1.0.0" }
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
@@ -20,7 +20,7 @@
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
       "maintenance": false,
-      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "com.dashyhq.stacks.test", "googleIosClientIds": [], "minShellVersion": "1.0.0" }
+      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "com.dashyhq.stacks.test", "googleIosClientIds": ["880697273676-i8ajdh5h09js61fu4s15u8u372ur5fm6.apps.googleusercontent.com"], "minShellVersion": "1.0.0" }
     }
   }
 }
