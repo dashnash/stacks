@@ -104,19 +104,32 @@ async function ensureTestFlight(api, app, testerEmail, log) {
   if (!testerEmail) return { appMissing: false };
   const testers = (await api('GET', `/v1/betaTesters?filter[email]=${q(testerEmail)}&limit=200`)).data ?? [];
   const tester = testers.find((t) => t.attributes?.email?.toLowerCase() === testerEmail.toLowerCase());
-  if (tester) {
-    const inGroup = ((await api('GET', `/v1/betaGroups/${group.id}/betaTesters?limit=200`)).data ?? []).some((t) => t.id === tester.id);
-    if (inGroup) log(`= ${testerEmail} is a tester of ${app.name}`);
-    else {
-      await api('POST', `/v1/betaGroups/${group.id}/relationships/betaTesters`, { data: [{ type: 'betaTesters', id: tester.id }] });
-      log(`+ added ${testerEmail} to ${app.name}'s TestFlight group`);
-    }
-  } else {
-    // Internal testers must be members of the App Store Connect team (the account holder is).
-    await api('POST', '/v1/betaTesters', {
+  const invite = () =>
+    api('POST', '/v1/betaTesters', {
       data: { type: 'betaTesters', attributes: { email: testerEmail }, relationships: { betaGroups: { data: [{ type: 'betaGroups', id: group.id }] } } },
     });
-    log(`+ invited ${testerEmail} to ${app.name}'s TestFlight group`);
+  try {
+    if (!tester) {
+      // Internal testers must be members of the App Store Connect team (the account holder is).
+      await invite();
+      log(`+ invited ${testerEmail} to ${app.name}'s TestFlight group`);
+    } else if (((await api('GET', `/v1/betaGroups/${group.id}/betaTesters?limit=200`)).data ?? []).some((t) => t.id === tester.id)) {
+      log(`= ${testerEmail} is a tester of ${app.name}`);
+    } else {
+      try {
+        await api('POST', `/v1/betaGroups/${group.id}/relationships/betaTesters`, { data: [{ type: 'betaTesters', id: tester.id }] });
+      } catch (err) {
+        // Apple refuses to assign an existing tester to some internal groups ("409 Tester(s) cannot
+        // be assigned"); inviting them to the group by email works where that doesn't.
+        if (!/→ 409\b/.test(String(err?.message))) throw err;
+        await invite();
+      }
+      log(`+ added ${testerEmail} to ${app.name}'s TestFlight group`);
+    }
+  } catch (err) {
+    // The tester is a convenience: never let it fail the run (bundle IDs and groups are what matter).
+    log(`! couldn't add ${testerEmail} to ${app.name}'s TestFlight group (${err?.message ?? err}); add yourself in App Store Connect → ${app.name} → TestFlight → "${group.attributes?.name ?? GROUP_NAME}"`);
+    return { appMissing: false, testerProblem: true };
   }
   return { appMissing: false };
 }

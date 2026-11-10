@@ -33,12 +33,17 @@ function fakeAsc(opts: { apps?: { bundleId: string; name: string }[]; testers?: 
     if (method === 'POST' && p === '/v1/betaGroups') return { data: add('betaGroups', body.data.attributes, { app: body.data.relationships.app.data.id }) };
     if (method === 'GET' && p === '/v1/betaTesters') return { data: of('betaTesters').filter((t) => t.attributes.email === filter.email) };
     if (method === 'POST' && p === '/v1/betaTesters') {
-      const t = add('betaTesters', body.data.attributes);
+      // Like Apple: inviting an email that is already a tester adds that tester to the group.
+      const t = of('betaTesters').find((x) => x.attributes.email === body.data.attributes.email) ?? add('betaTesters', body.data.attributes);
       for (const g of body.data.relationships.betaGroups.data) (members.get(g.id) ?? members.set(g.id, new Set()).get(g.id)!).add(t.id);
       return { data: t };
     }
     if (method === 'GET' && (m = p!.match(/^\/v1\/betaGroups\/(.+)\/betaTesters$/))) return { data: [...(members.get(m[1]!) ?? [])].map((id) => ({ id })) };
     if (method === 'POST' && (m = p!.match(/^\/v1\/betaGroups\/(.+)\/relationships\/betaTesters$/))) {
+      // Like Apple (seen on the first real run): an existing tester can't be assigned to an internal group this way.
+      if (of('betaGroups').find((g) => g.id === m![1])?.attributes.isInternalGroup) {
+        throw new Error(`POST ${path} → 409 The request cannot be fulfilled because of the state of another resource.: Tester(s) cannot be assigned`);
+      }
       for (const t of body.data) (members.get(m[1]!) ?? members.set(m[1]!, new Set()).get(m[1]!)!).add(t.id);
       return {};
     }
@@ -118,5 +123,27 @@ describe('App Store Connect provisioning', () => {
     expect((await missingApps(one.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['com.dashyhq.stacks']);
     const both = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
     expect(await missingApps(both.api, apps)).toEqual([]);
+  });
+
+  it('adds a new tester to both apps (the first real run failed here on the second app)', async () => {
+    const asc = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
+    const log: string[] = [];
+    await provision({ api: asc.api, apps, testerEmail: 'dash@example.com', log: (l: string) => log.push(l) });
+    expect(asc.of('betaTesters')).toHaveLength(1);
+    const testerId = asc.of('betaTesters')[0]!.id;
+    for (const g of asc.of('betaGroups')) expect([...asc.members.get(g.id)!]).toEqual([testerId]);
+    expect(log.filter((l) => l.startsWith('!'))).toEqual([]);
+  });
+
+  it("finishes the run if Apple won't take the tester at all, saying how to add them by hand", async () => {
+    const asc = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }] });
+    const refusing = async (method: string, path: string, body?: unknown) => {
+      if (method === 'POST' && path === '/v1/betaTesters') throw new Error('POST /v1/betaTesters → 409 Not a team member');
+      return asc.api(method, path, body);
+    };
+    const log: string[] = [];
+    expect(await provision({ api: refusing, apps: [apps[0]!], testerEmail: 'friend@example.com', log: (l: string) => log.push(l) })).toEqual({ appsMissing: 0 });
+    expect(log.at(-1)).toMatch(/^! couldn't add friend@example.com to DashyHQ's TestFlight group .*add yourself in App Store Connect/);
+    expect(asc.of('betaGroups')).toHaveLength(1);
   });
 });
