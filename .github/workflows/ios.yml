@@ -1,0 +1,79 @@
+name: iOS
+
+# The DashyHQ app (native/ios). Its logic is a Foundation-only Swift package, tested on Linux
+# (cheap); the app itself builds on macOS (minutes count 10x), only when the app's files change.
+on:
+  pull_request:
+    paths:
+      - native/**
+      - scripts/ios-xcconfig.mjs
+      - stacks.config.json
+      - .github/workflows/ios.yml
+  push:
+    branches: [main]
+    paths:
+      - native/**
+      - scripts/ios-xcconfig.mjs
+      - stacks.config.json
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Shell logic (Swift on Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build settings match stacks.config.json
+        run: node scripts/ios-xcconfig.mjs --check
+      - run: swift --version
+      - name: Tests (incl. native/protocol/v1.json)
+        run: swift test --package-path native/ios/Core
+
+  app:
+    name: App (simulator build, unsigned)
+    needs: core
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Xcode 26
+        run: |
+          xcode=""
+          for candidate in /Applications/Xcode_26*.app; do xcode="$candidate"; done
+          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
+            echo "::error::No Xcode 26 on this runner image"
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec native/ios/project.yml
+      - name: Build both environments for the simulator
+        run: |
+          for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
+            scheme="${pair%%:*}"
+            config="${pair##*:}"
+            echo "::group::$scheme ($config)"
+            xcodebuild build -quiet \
+              -project native/ios/DashyHQ.xcodeproj \
+              -scheme "$scheme" \
+              -configuration "$config" \
+              -destination 'generic/platform=iOS Simulator' \
+              -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+              CODE_SIGNING_ALLOWED=NO
+            echo "::endgroup::"
+          done
