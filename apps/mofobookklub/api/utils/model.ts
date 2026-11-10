@@ -18,7 +18,6 @@ export function isAdmin(user: Pick<User, 'role'>): boolean {
 export interface User {
   /** Platform user id: what meetings, nominations, votes and edits record. */
   id: string;
-  email: string;
   role: Role;
   /** Their name as Google gives it (refreshed at each sign-in). Shown only as a first name. */
   name: string;

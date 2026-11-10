@@ -14,6 +14,7 @@ t.advance(86_400_000);                     // move the clock
 t.store;                                   // inspect data
 ```
 
-`as` takes an email (name = part before "@", id = `testUserId(email)`) or `{ email, name, id? }`. Seed
+`as` takes an email (name = part before "@", id = `testUserId(email)`) or `{ email, name, id? }`. Like the
+platform, the app gets no email (on `v.user` or members) unless its manifest has `needsEmail`. Seed
 members with `t.platform.members = [memberFor('ann@test.dev', 'EDITOR', 'Ann')]`. `role` defaults to the manifest's
 `defaultRole`. `noCsrf: true` drops the CSRF header. `cookieValue(res.cookies, name)` reads Set-Cookie.

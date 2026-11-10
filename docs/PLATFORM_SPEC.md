@@ -203,6 +203,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
 - `modules` turns on Tier 3 modules; the construct adds only the resources those modules need.
 - `csp` extends the platform's default Content-Security-Policy; anything not listed stays blocked.
 - `accountMenu`: `standard` (the app renders `<AccountMenu />`) or `custom` (it draws its own from `useAccountMenu()`). The old `portalBar` field is accepted and ignored.
+- `needsEmail` (default off) gives the app people's email addresses on `v.user`, members and its access page. Turning it on is platform work: CI marks the PR for code-owner review and refuses it on an `app/<slug>/` branch. No app uses it today.
 - `secrets` names the keys the app's server needs (at most 10, upper case). Values never go in git, CI or
   Lambda environment variables: an admin stores each as an SSM SecureString at
   `/stacks/<prod|test>/secrets/<slug>/<NAME>` from their own machine. That path is outside
@@ -414,7 +415,7 @@ The design assumes any single app may be buggy or malicious and limits what it c
 - **Throttling**: API Gateway rate limits per app; the platform API has its own, tighter limits on login and request-access.
 - **Revocation**: removing a grant or a user deletes their app sessions at once; super-admin can force sign-out everywhere.
 - **Supply chain**: `CODEOWNERS` review on shared code, lockfile committed, Dependabot on, no install scripts from new dependencies without review.
-- **Privacy**: apps see only email, display name and avatar of users with a grant; full Google names are never sent, as in Book Club.
+- **Privacy**: apps see only the user id, display name and avatar of users with a grant, plus the email for apps whose manifest has `needsEmail` (a code-owner decision: CI flags a PR that turns it on, and refuses it on an app branch); full Google names are never sent, as in Book Club.
 
 ## Build plan
 

@@ -232,9 +232,11 @@ and then:
 
 **What apps see**: `user.id`, `displayName`, `pictureUrl` and their role. Email is no longer given to
 apps by default. An app that truly needs it declares `"needsEmail": true` in its manifest
-(reviewed like a sensitive capability), and a relay address is what it gets for hidden-email users.
-No app needs it today: Book Club's admin page (`AdminPanel.tsx`), meeting form and audit filter
-switch from emails to display names in N1.
+(reviewed like a sensitive capability: `scripts/pr-paths.mjs` marks a PR that turns it on as platform
+work and refuses it on an app branch), and a relay address is what it gets for hidden-email users.
+No app needs it today. Built in N1b: the platform leaves emails out of `/token` and `/access` for
+apps without it, the SDK's test harness and demo do the same, the account menu shows an email only
+when there is one, and `tools/app-conformance` fails an app that puts any persona's email on screen.
 `deps.platform.notify(userId, …)`, `appMembers`, `getPeople` and the comments module all move to IDs.
 `stacks.config.json` keeps `platformAdmins` and manifest `owners` as emails, resolved through `EMAIL#`.
 
@@ -436,8 +438,8 @@ Each phase ends with a gate. N1 is pure platform work and can start before any i
 
 **N1 — Identity v2** (platform), in three PRs
 - [x] **N1a**: user IDs, Google identities by `sub`, email index; platform, SDK, comments module and all three apps on IDs; `tools/migrate-user-ids` + per-app migrations; maintenance mode
-- [ ] N1a cut-over on staging, then production (`docs/USER_IDS_CUTOVER.md`)
-- [ ] **N1b**: apps see no email by default (`needsEmail` in the manifest); Book Club's admin page shows display names, not emails
+- [x] N1a cut-over on staging, then production (`docs/USER_IDS_CUTOVER.md`), 2026-11-10
+- [x] **N1b**: apps see no email by default (`needsEmail` in the manifest); Book Club's admin page shows display names, not emails
 - [ ] **N1c**: Settings › Sign-in methods with self-serve merge (aliases, grant rules, `user.merged` webhook)
 
 Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching, linking and merging (incl. block-wins and alias resolution).

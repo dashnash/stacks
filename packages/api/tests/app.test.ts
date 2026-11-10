@@ -81,7 +81,7 @@ describe('route guards', () => {
   it('serves public routes to anyone and tells them who they are if signed in', async () => {
     const t = harness();
     expect((await t.call('GET', '/public/info')).body).toEqual({ app: 'Notes', signedInAs: null });
-    expect((await t.call('GET', '/public/info', { as: 'r@test.dev' })).body.signedInAs).toBe('r@test.dev');
+    expect((await t.call('GET', '/public/info', { as: 'r@test.dev' })).body.signedInAs).toBe('u_r_test_dev');
   });
 
   it('needs a session for member routes', async () => {
@@ -174,5 +174,14 @@ describe('activity log', () => {
     await t.call('POST', '/notes', { as: 'r@test.dev', role: 'READER', body: { text: 'x' } });
     await t.call('GET', '/notes', { as: 'r@test.dev', role: 'READER' });
     expect(t.platform.audit).toEqual([]);
+  });
+});
+
+describe('emails', () => {
+  it('gives the app no email unless its manifest has needsEmail', async () => {
+    const without = createTestHarness({ manifest, routes });
+    expect((await without.call('GET', '/auth/session', { as: 'r@test.dev', role: 'READER' })).body.user).toEqual({ id: 'u_r_test_dev', name: 'r' });
+    const withEmail = createTestHarness({ manifest: { ...manifest, needsEmail: true }, routes });
+    expect((await withEmail.call('GET', '/auth/session', { as: 'r@test.dev', role: 'READER' })).body.user).toMatchObject({ email: 'r@test.dev' });
   });
 });

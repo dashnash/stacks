@@ -127,8 +127,13 @@ export async function userForIdentity(deps: PlatformDeps, identity: GoogleIdenti
   return next;
 }
 
-/** What apps (and other people) see of a user. */
-export const appView = (u: PlatformUser) => ({ id: u.id, email: u.email, name: shownName(u), ...(u.pictureUrl ? { pictureUrl: u.pictureUrl } : {}) });
+/** What an app sees of a user: id, display name and avatar; the email only if its manifest has `needsEmail`. */
+export const appView = (u: PlatformUser, manifest: Pick<AppManifest, 'needsEmail'>) => ({
+  id: u.id,
+  ...(manifest.needsEmail ? { email: u.email } : {}),
+  name: shownName(u),
+  ...(u.pictureUrl ? { pictureUrl: u.pictureUrl } : {}),
+});
 
 /* ---------- Master sessions (the portal's own, on auth.<domain>) ---------- */
 

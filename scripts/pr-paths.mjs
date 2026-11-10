@@ -1,14 +1,39 @@
 /**
+ * Manifest changes that are platform decisions even inside an app folder (spec: Identity v2):
+ * turning on `needsEmail`. `manifests` maps a slug to its manifest before and after the PR
+ * (`null` when the file didn't exist). Returns one line per finding.
+ */
+export function sensitiveManifestChanges(manifests = {}) {
+  const found = [];
+  for (const [slug, { before, after }] of Object.entries(manifests)) {
+    if (after?.needsEmail === true && before?.needsEmail !== true) found.push(`apps/${slug}: turns on "needsEmail" (the app would get people's email addresses)`);
+  }
+  return found;
+}
+
+/**
  * What kind of pull request is this, judged by the files it changes (spec: Guardrails)?
  *
  * - `app/<slug>/…` branches may change only apps/<slug>/ (and package-lock.json).
  * - Any other PR that changes only apps/ is an app PR: it may change one app, never two.
  * - A PR that changes anything outside apps/ is platform work and needs CODEOWNERS review; it may
  *   also touch apps (e.g. an SDK change that updates an app using it).
+ * - Turning on a sensitive manifest field (`needsEmail`) is platform work wherever it happens, and
+ *   an app branch can't do it at all (see sensitiveManifestChanges).
  *
  * Returns { ok, kind: 'app' | 'platform' | 'none', apps, message }.
  */
-export function classifyPr(branch, changed) {
+export function classifyPr(branch, changed, manifests = {}) {
+  const sensitive = sensitiveManifestChanges(manifests);
+  const result = classifyPaths(branch, changed);
+  if (!sensitive.length) return result;
+  const why = `Platform decision${sensitive.length > 1 ? 's' : ''} in an app manifest, needs review from the code owners (CODEOWNERS):\n  - ${sensitive.join('\n  - ')}`;
+  // An app branch may not make it on its own; any other PR becomes platform work.
+  if (result.kind === 'app' && /^app\//.test(branch ?? '')) return { ...result, ok: false, message: `${why}\nOpen it as a platform PR instead of on an app branch.` };
+  return { ...result, kind: 'platform', message: result.kind === 'platform' ? `${why}\n${result.message}` : why };
+}
+
+function classifyPaths(branch, changed) {
   const files = changed.filter(Boolean);
   const apps = [...new Set(files.filter((f) => f.startsWith('apps/')).map((f) => f.split('/')[1]))].sort();
   const platform = files.filter((f) => !f.startsWith('apps/') && f !== 'package-lock.json');

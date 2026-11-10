@@ -6,8 +6,8 @@ import { Thread } from '../../web/src/components/Discussion';
 import { fakeApi, renderWithApi } from './fakes';
 
 const people = [
-  { id: 'admin@club.test', email: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
-  { id: 'bob@club.test', email: 'bob@club.test', name: 'Bob Smith', role: 'MEMBER' },
+  { id: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
+  { id: 'bob@club.test', name: 'Bob Smith', role: 'MEMBER' },
 ];
 
 describe('AdminPanel members', () => {
@@ -32,7 +32,7 @@ describe('AdminPanel members', () => {
 
 describe('AdminPanel blocking', () => {
   it('blocks a request so they cannot ask again, and unblocks from the Blocked list', async () => {
-    const pest = { id: 'pest@club.test', email: 'pest@club.test', name: 'Pest', role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' };
+    const pest = { id: 'pest@club.test', name: 'Pest', role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' };
     const api = fakeApi({
       access: vi
         .fn()

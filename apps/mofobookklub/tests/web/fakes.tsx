@@ -13,11 +13,10 @@ export const books: Book[] = [
 
 export const member: User = {
   id: 'u_alice',
-  email: 'alice@club.test',
   role: 'MEMBER',
   name: 'Alice',
 };
-export const admin: User = { ...member, id: 'u_admin', email: 'admin@club.test', name: 'Admin', role: 'ADMIN' };
+export const admin: User = { ...member, id: 'u_admin', name: 'Admin', role: 'ADMIN' };
 
 export function meeting(overrides: Partial<MeetingView> = {}): MeetingView {
   return {

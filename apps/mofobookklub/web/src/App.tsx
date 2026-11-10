@@ -18,6 +18,6 @@ export default function App() {
     );
   }
   if (status === 'signedOut' || !session) return <SignedOutSite />;
-  const user: User = { id: session.user.id, email: session.user.email, name: session.user.name, pictureUrl: session.user.pictureUrl, role: session.role as Role };
+  const user: User = { id: session.user.id, name: session.user.name, pictureUrl: session.user.pictureUrl, role: session.role as Role };
   return <DashboardView key={`${user.id}:${user.role}`} user={user} />;
 }

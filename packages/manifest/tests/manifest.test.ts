@@ -37,6 +37,11 @@ describe('validateManifest', () => {
     expect(errorsFor({ secrets: 'A_KEY' })[0]).toMatch(/must be a list/);
   });
 
+  it('takes needsEmail as true or false only', () => {
+    expect(errorsFor({ needsEmail: true })).toEqual([]);
+    expect(errorsFor({ needsEmail: 'yes' })).toEqual(['"needsEmail" must be true or false']);
+  });
+
   it('rejects bad and reserved slugs', () => {
     expect(errorsFor({ slug: 'Book Club' })[0]).toMatch(/slug/);
     expect(errorsFor({ slug: 'ab' })[0]).toMatch(/slug/);

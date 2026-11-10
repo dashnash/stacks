@@ -114,7 +114,7 @@ export function SignInView() {
           that people do to puppets.
         </p>
         <p className="mt-5 max-w-[60ch] leading-relaxed text-ink/70">
-          Members sign in once with Google for all our apps; we use your name, email and photo only to run your membership — see our{' '}
+          Members sign in once with Google for all our apps; we use your name and photo only to run your membership (your email stays with the sign-in) — see our{' '}
           <a href="/privacy.html" className="underline decoration-coral decoration-2 underline-offset-2">
             Privacy Policy
           </a>

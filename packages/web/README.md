@@ -10,7 +10,7 @@ createRoot(el).render(<StacksProvider><App /></StacksProvider>);
 function App() {
   const { status, session, signIn, signOut, accessNotice, refresh } = useStacks();
   // status: 'loading' | 'signedIn' | 'signedOut'
-  // session: { user: { id, email, name, pictureUrl? }, role, canManageAccess } | null
+  // session: { user: { id, name, pictureUrl?, email? }, role, canManageAccess } | null  (email only with needsEmail)
   // signIn(returnTo?) goes through platform sign-in and back to the current page
   // accessNotice: 'access_required' (signed in to the platform, no role here) | 'access_pending' | 'access_denied' (blocked) | null
   // Signed in to the platform = signed in here: the provider signs in silently in the background.

@@ -69,6 +69,17 @@ describe.each(appDirs)('%s', (slug) => {
     await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedOut"]')).not.toBeNull(), { timeout: 10_000 });
   });
 
+  it("shows nobody's email address unless the manifest has needsEmail", async () => {
+    const setup = await setups[`../../../apps/${slug}/web/src/demo/setup.ts`]!();
+    if (setup.demoOptions().manifest.needsEmail) return;
+    const demo = await load();
+    await demo.signInAs(demo.personas.find((p) => p.role)!.email);
+    await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedIn"]')).not.toBeNull(), { timeout: 10_000 });
+    await userEvent.click(screen.getByRole('button', { name: /^Account menu for / }));
+    const text = document.body.textContent ?? '';
+    for (const p of demo.personas) expect(text, `${p.email} is on the screen`).not.toContain(p.email);
+  });
+
   it('shows the build (<BuildVersion />) signed out and signed in', async () => {
     const demo = await load();
     await waitFor(() => expect(document.querySelector('[data-stacks-account-menu="signedOut"]')).not.toBeNull(), { timeout: 10_000 });

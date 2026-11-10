@@ -126,7 +126,8 @@ function useStyles() {
 
 export interface AccountMenuViewProps {
   state: AccountState;
-  user: { id: string; email: string; name: string; pictureUrl?: string } | null;
+  /** `email` is shown under the name when there is one (the portal, and apps with `needsEmail`). */
+  user: { id: string; email?: string; name: string; pictureUrl?: string } | null;
   /** e.g. "Owner of MOFO Book Klub". */
   subtitle?: string | null;
   /** The person's apps, linked. The current app can be left in; it is shown as the current one. */
@@ -268,7 +269,7 @@ export function AccountMenuView(props: AccountMenuViewProps) {
         <div ref={panel} id={menuId} role="menu" aria-label="Account" className="stacks-am-panel">
           <div className="stacks-am-head" role="presentation">
             <strong>{user.name}</strong>
-            <span className="stacks-am-sub">{user.email}</span>
+            {user.email && <span className="stacks-am-sub">{user.email}</span>}
             {props.subtitle && <span className="stacks-am-sub">{props.subtitle}</span>}
           </div>
           {others.length > 0 && <div className="stacks-am-label" role="presentation">Your apps</div>}

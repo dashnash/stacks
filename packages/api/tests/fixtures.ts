@@ -22,7 +22,7 @@ export function routes(api: AppRoutes<AppDeps>) {
   api
     .public('GET', '/public/info', async (_req, ctx) => {
       const viewer = await ctx.viewer();
-      return { body: { app: ctx.manifest.name, signedInAs: viewer?.user.email ?? null } };
+      return { body: { app: ctx.manifest.name, signedInAs: viewer?.user.id ?? null } };
     })
     .member('GET', '/notes', async (_req, v) => ({ body: { notes: await v.deps.store.query('NOTES') } }))
     .role(['OWNER', 'EDITOR'], 'POST', '/notes', async (req, v) => {

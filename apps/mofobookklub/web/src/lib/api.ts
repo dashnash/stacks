@@ -29,7 +29,6 @@ export { ApiError } from '@stacks/web';
 /** People with a role here and requests waiting (admins only), from the platform via /stacks/access. */
 export interface AccessPerson {
   id: string;
-  email: string;
   name: string;
   pictureUrl?: string;
   role: string;

@@ -8,9 +8,8 @@ export type { Person };
  * Members come from the platform now (it owns grants). `name` and `displayName` are both the
  * display name the platform gives, so `shownName()` keeps working unchanged.
  */
-const toUser = (m: { id: string; email: string; name: string; pictureUrl?: string; role: string }): User => ({
+const toUser = (m: { id: string; name: string; pictureUrl?: string; role: string }): User => ({
   id: m.id,
-  email: m.email,
   name: m.name,
   displayName: m.name,
   pictureUrl: m.pictureUrl,

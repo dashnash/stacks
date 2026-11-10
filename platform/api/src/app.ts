@@ -244,7 +244,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       const user = await getUser(deps, stored.userId);
       const grant = user && (await getGrant(deps, app.manifest.slug, user.id));
       if (!user || !grant || !holdsRole(grant.role)) throw forbidden('No access to this app');
-      return { body: { user: appView(user), role: grant.role } };
+      return { body: { user: appView(user, app.manifest), role: grant.role } };
     })
     .add('POST', '/apps/:slug/audit', async (req) => {
       const app = await requireAppCaller(req);
@@ -273,7 +273,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       const people = await Promise.all(grants.map(async (g) => ({ g, u: await getUser(deps, g.userId) })));
       const view = people
         .filter((p) => p.u)
-        .map(({ g, u }) => ({ id: u!.id, email: u!.email, name: shownName(u!), ...(u!.pictureUrl ? { pictureUrl: u!.pictureUrl } : {}), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
+        .map(({ g, u }) => ({ ...appView(u!, app.manifest), role: g.role, requestedAt: g.requestedAt ?? null, grantedAt: g.grantedAt ?? null }))
         .sort((a, b) => a.name.localeCompare(b.name));
       return { body: { members: view.filter((p) => holdsRole(p.role)), pending: view.filter((p) => p.role === PENDING), blocked: view.filter((p) => p.role === BLOCKED) } };
     })

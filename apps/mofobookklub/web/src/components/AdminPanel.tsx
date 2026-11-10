@@ -54,10 +54,7 @@ export function AdminPanel({
             <Avatar person={u} size={40} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-cond text-2xl font-extrabold uppercase leading-none">{u.name}</p>
-              <p className="truncate text-xs text-ink/60">
-                {u.email}
-                {u.requestedAt ? ` · asked ${formatShortDate(u.requestedAt)}` : ''}
-              </p>
+              {u.requestedAt && <p className="truncate text-xs text-ink/60">Asked {formatShortDate(u.requestedAt)}</p>}
             </div>
             <div className="flex gap-2">
               <button
@@ -102,7 +99,6 @@ export function AdminPanel({
                 {u.role === 'OWNER' && <span className="kicker ml-2 text-coral">Owner</span>}
                 {u.role === 'ADMIN' && <span className="kicker ml-2 text-coral">Admin</span>}
               </p>
-              <p className="truncate text-xs text-ink/60">{u.email}</p>
             </div>
             {/* Roles: only owners make or remove admins (the platform enforces it too). */}
             {isOwner && u.id !== me && u.role !== 'OWNER' && confirming !== u.id && (
@@ -166,7 +162,6 @@ export function AdminPanel({
                 <Avatar person={u} size={32} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold leading-tight">{u.name}</p>
-                  <p className="truncate text-xs text-ink/60">{u.email}</p>
                 </div>
                 <button type="button" className="btn-ghost !px-4 !py-1.5" disabled={busy !== null} onClick={() => act(u.id, () => api.setAccess(u.id, null))}>
                   Unblock

@@ -53,6 +53,8 @@ class DemoPlatform implements PlatformClient {
     this.audit.push(event);
   }
   readonly notifications: { userId: string; text: string; link?: string }[] = [];
+  /** Like the platform: no emails for apps without `needsEmail`. */
+  needsEmail = false;
   constructor(
     private readonly self: { slug: string; name: string },
     private readonly roles: { id: string; label: string; canManageAccess?: boolean }[],
@@ -77,6 +79,12 @@ class DemoPlatform implements PlatformClient {
     };
   }
   async access(): Promise<AppAccess> {
+    const access = this.everyone();
+    if (this.needsEmail) return access;
+    const strip = (list: AppAccess['members']) => list.map(({ email: _email, ...m }) => m);
+    return { members: strip(access.members), pending: strip(access.pending), blocked: strip(access.blocked) };
+  }
+  private everyone(): AppAccess {
     return {
       members: this.personas.filter((p) => p.role && p.role !== 'BLOCKED').map((p) => ({ id: p.id, email: p.email, name: p.name, role: p.role, ...(p.pictureUrl ? { pictureUrl: p.pictureUrl } : {}) })),
       pending: this.pendingPeople.map((p) => ({ ...p, role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' })),
@@ -151,6 +159,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),
   };
+  demoPlatform.needsEmail = !!opts.manifest.needsEmail;
   const deps = opts.extend ? opts.extend(base) : (base as D);
   const app = createStacksApp({ manifest: opts.manifest, deps, routes: opts.routes });
   const roles = new Set(opts.manifest.roles.map((r) => r.id));
@@ -196,7 +205,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     persona = personas.find((p) => p.email === email && !!p.role) ?? null;
     demoPlatform.current = persona;
     sessionToken = persona
-      ? await createSession(deps, { id: persona.id, email: persona.email, name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
+      ? await createSession(deps, { id: persona.id, ...(opts.manifest.needsEmail ? { email: persona.email } : {}), name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
       : null;
     save(key, store);
     notify();

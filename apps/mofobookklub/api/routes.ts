@@ -15,7 +15,6 @@ import type { Role, User } from './utils/model.js';
 /** Book Club's handlers take (req, user, deps); this is the signed-in viewer in that shape. */
 export const toUser = (v: Viewer<Deps>): User => ({
   id: v.user.id,
-  email: v.user.email,
   name: v.user.name,
   displayName: v.user.name,
   pictureUrl: v.user.pictureUrl,
@@ -82,6 +81,6 @@ export function routes(api: AppRoutes<Deps>) {
 
   // Members, for pickers such as "who leads next?".
   member('GET', '/users', async (_req, _user, deps) => ({
-    body: { users: (await listApprovedUsers(deps)).map((u) => ({ id: u.id, email: u.email, name: u.name, pictureUrl: u.pictureUrl, role: u.role })) },
+    body: { users: (await listApprovedUsers(deps)).map((u) => ({ id: u.id, name: u.name, pictureUrl: u.pictureUrl, role: u.role })) },
   }));
 }

@@ -22,7 +22,7 @@ export function routes(api: AppRoutes<AppDeps>) {
 ```
 
 - Paths are relative to `/api`. `req`: `params`, `query`, `body` (parsed JSON), `headers`, `cookies`.
-- `v` (signed-in routes): `user` `{ id, email, name, pictureUrl? }`, `role`, `canManageAccess`, `deps`, `manifest`.
+- `v` (signed-in routes): `user` `{ id, name, pictureUrl?, email? }` (`email` only with `"needsEmail": true`), `role`, `canManageAccess`, `deps`, `manifest`.
   **Store people by `v.user.id`** (a stable `u_…` id), never by email: emails change, and some hide the real one.
 - `ctx` (public routes): `deps`, `manifest`, `await ctx.viewer()` (the caller or `null`).
 - Return `{ status?, body?, headers?, cookies?, redirect?, audit? }`. Throw `badRequest`, `unauthorized`,
@@ -47,7 +47,7 @@ Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#�
 
 ```ts
 import { appMembers, getPeople } from '@stacks/api';
-const members = await appMembers(deps);                  // [{ id, email, name, pictureUrl?, role }], cached 30 s
+const members = await appMembers(deps);                  // [{ id, name, pictureUrl?, role, email? }], cached 30 s
 const people = await getPeople(deps, userIds);           // Map id -> { id, name, pictureUrl? } ("Former member" if gone)
 await deps.platform.notify(userId, 'Your pick won', url); // into their platform inbox (members only)
 ```
@@ -110,4 +110,4 @@ Small helpers apps use:
 - `fixtureUserId(email)`: the id demo personas and test users get (`ann@demo.dev` → `u_ann_demo_dev`), for seed data.
 - Types for splitting routes across files: `AppRoutes<D>`, `AppDeps`, `Viewer<D>` (the `v` in signed-in
   handlers), `PublicContext<D>` (`ctx`), `RequestContext` (`req`), `RouteResult`, `Item` (a stored row),
-  `StacksUser` (`{ id, email, name, pictureUrl? }`), `Person` (`{ id, name, pictureUrl? }`).
+  `StacksUser` (`{ id, name, pictureUrl?, email? }`), `Person` (`{ id, name, pictureUrl? }`).

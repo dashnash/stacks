@@ -2,14 +2,15 @@ import type { AppManifest } from '@stacks/manifest';
 import type { PlatformClient } from './platform';
 import type { Store } from './store';
 
-/** A signed-in person as apps see them: their id, email, the name they chose to show, and their avatar. */
+/** A signed-in person as apps see them: their id, the name they chose to show, and their avatar. */
 export interface StacksUser {
   /**
    * Stable platform user id (`u_…`). Key everything you store about a person on this, never on
    * their email: emails change, and some people sign in with addresses that hide their real one.
    */
   id: string;
-  email: string;
+  /** Only for apps whose manifest has `needsEmail` (it may be a relay address). Never a key. */
+  email?: string;
   /** The display name from their global profile (never their full Google name). */
   name: string;
   pictureUrl?: string;

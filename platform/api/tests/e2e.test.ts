@@ -24,7 +24,7 @@ function world() {
   });
 
   const routes = (api: AppRoutes<AppDeps>) =>
-    api.member('GET', '/whoami', async (_req, v) => ({ body: { email: v.user.email, name: v.user.name, role: v.role } }));
+    api.member('GET', '/whoami', async (_req, v) => ({ body: { id: v.user.id, email: v.user.email ?? null, name: v.user.name, role: v.role } }));
 
   const apps = new Map<string, ReturnType<typeof createStacksApp>>();
   for (const manifest of [privateApp, publicApp] as AppManifest[]) {
@@ -134,7 +134,7 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     expect(page).toMatch(/^https:\/\/auth\.stacks\.test\/#\/signin\?next=/);
     const landed = await b.signInOnPortal(page, 'max@test.dev');
     expect(landed).toBe('https://hello.stacks.test/#/notes/7');
-    expect((await b.api('https://hello.stacks.test/api/whoami')).body).toEqual({ email: 'max@test.dev', name: 'max', role: 'MEMBER' });
+    expect((await b.api('https://hello.stacks.test/api/whoami')).body).toEqual({ id: await w.platform.idOf('max@test.dev'), email: null, name: 'max', role: 'MEMBER' });
 
     // The private app: no sign-in prompt (the portal session is reused), but access must be requested.
     b.visited = [];
@@ -205,14 +205,15 @@ describe('Phase 2 gate: one sign-in across apps', () => {
     // The owner signs in to the app and sees her request on the app's own admin page.
     await owner.signInOnPortal(await owner.go('https://club.stacks.test/api/auth/login?return=%2F'), 'owner@test.dev');
     const access = await owner.api('https://club.stacks.test/api/stacks/access');
-    expect(access.body.pending.map((p: { email: string }) => p.email)).toEqual(['ann@test.dev']);
+    expect(access.body.pending.map((p: { name: string }) => p.name)).toEqual(['ann']);
+    expect(JSON.stringify(access.body)).not.toContain('@test.dev'); // no emails for this app
     expect(access.body.roles.map((r: { id: string }) => r.id)).toEqual(['OWNER', 'ADMIN', 'MEMBER']);
 
     expect((await owner.request('PUT', `https://club.stacks.test/api/stacks/access/${await w.platform.idOf('ann@test.dev')}`, { role: 'MEMBER' })).status).toBe(200);
     expect(await ann.go('https://club.stacks.test/api/auth/login?return=%2F')).toBe('https://club.stacks.test/');
-    expect((await ann.api('https://club.stacks.test/api/stacks/members')).body.members.map((m: { email: string; role: string }) => `${m.email}:${m.role}`)).toEqual([
-      'ann@test.dev:MEMBER',
-      'owner@test.dev:OWNER',
+    expect((await ann.api('https://club.stacks.test/api/stacks/members')).body.members.map((m: { name: string; role: string }) => `${m.name}:${m.role}`)).toEqual([
+      'ann:MEMBER',
+      'owner:OWNER',
     ]);
     // Ann (a member) cannot use the access page; the owner cannot demote the last owner.
     expect((await ann.api('https://club.stacks.test/api/stacks/access')).status).toBe(403);
