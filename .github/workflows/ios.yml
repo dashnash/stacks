@@ -2,6 +2,8 @@ name: iOS
 
 # The DashyHQ app (native/ios). Its logic is a Foundation-only Swift package, tested on Linux
 # (cheap); the app itself builds on macOS (minutes count 10x), only when the app's files change.
+# On main, both apps are signed and uploaded to TestFlight (docs/IOS_SETUP.md), and once a month
+# again so testers never hit TestFlight's 90-day expiry.
 on:
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - scripts/ios-xcconfig.mjs
       - stacks.config.json
       - .github/workflows/ios.yml
+  schedule:
+    - cron: '23 9 1 * *' # monthly rebuild, before TestFlight builds expire
   workflow_dispatch:
 
 concurrency:
@@ -44,6 +48,8 @@ jobs:
   app:
     name: App (simulator build, unsigned)
     needs: core
+    # On main the release job builds (and signs) the same code, so this runs for PRs and by hand.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -77,3 +83,126 @@ jobs:
               CODE_SIGNING_ALLOWED=NO
             echo "::endgroup::"
           done
+
+  release:
+    name: Sign and upload to TestFlight
+    needs: core
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 45
+    # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect key.
+    environment: ios-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up yet?
+        id: ready
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          team="$(sed -n 's/^DEVELOPMENT_TEAM = *//p' native/ios/Config/Production.xcconfig)"
+          missing=""
+          [ -n "$team" ] || missing="$missing appleTeamId (stacks.config.json)"
+          [ -n "$ASC_KEY_ID" ] || missing="$missing ASC_KEY_ID"
+          [ -n "$ASC_ISSUER_ID" ] || missing="$missing ASC_ISSUER_ID"
+          [ -n "$ASC_KEY_P8" ] || missing="$missing ASC_KEY_P8"
+          if [ -n "$missing" ]; then
+            echo "::notice title=TestFlight upload skipped::Not set up yet:$missing. See docs/IOS_SETUP.md."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The upload needs both apps to exist in App Store Connect (Apple has no API to create them).
+          set +e
+          node scripts/asc-provision.mjs --check-apps
+          apps=$?
+          set -e
+          if [ "$apps" = 3 ]; then
+            echo "::notice title=TestFlight upload skipped::Create the app records in App Store Connect first (docs/IOS_SETUP.md steps 4-5)."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$apps" = 0 ] || exit "$apps"
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          chmod 600 "$key"
+          {
+            echo "go=true"
+            echo "team=$team"
+            echo "key=$key"
+          } >> "$GITHUB_OUTPUT"
+      - name: Use Xcode 26
+        if: steps.ready.outputs.go == 'true'
+        run: |
+          xcode=""
+          for candidate in /Applications/Xcode_26*.app; do xcode="$candidate"; done
+          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
+            echo "::error::No Xcode 26 on this runner image"
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: Generate the Xcode project
+        if: steps.ready.outputs.go == 'true'
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec native/ios/project.yml
+      - name: Archive, sign and upload both apps
+        if: steps.ready.outputs.go == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM: ${{ steps.ready.outputs.team }}
+          KEY: ${{ steps.ready.outputs.key }}
+          RUN: ${{ github.run_number }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          # Every upload needs a new build number; a re-run of the same run gets the next one.
+          build=$((RUN * 100 + ATTEMPT))
+          echo "Build $build"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          # Cloud-managed signing: Xcode makes or reuses the certificates and profiles with the API key.
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
+            scheme="${pair%%:*}"
+            config="${pair##*:}"
+            echo "::group::$scheme ($config): archive"
+            xcodebuild archive -quiet \
+              -project native/ios/DashyHQ.xcodeproj \
+              -scheme "$scheme" \
+              -configuration "$config" \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$RUNNER_TEMP/$config.xcarchive" \
+              -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+              "${auth[@]}" \
+              DEVELOPMENT_TEAM="$TEAM" \
+              CURRENT_PROJECT_VERSION="$build"
+            echo "::endgroup::"
+            echo "::group::$scheme ($config): upload to App Store Connect"
+            xcodebuild -exportArchive \
+              -archivePath "$RUNNER_TEMP/$config.xcarchive" \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+              -exportPath "$RUNNER_TEMP/export-$config" \
+              "${auth[@]}"
+            echo "::endgroup::"
+          done
+          echo "### Uploaded build $build of DashyHQ and DashyHQ Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "TestFlight shows them after Apple finishes processing (usually 5-15 minutes)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8

@@ -10,6 +10,7 @@ share sheet, universal links, and later push and device features. Spec: `docs/NA
 | `project.yml` | XcodeGen spec; the `.xcodeproj` is generated, not committed |
 | `Config/*.xcconfig` | Per-environment settings, **generated** from `stacks.config.json` by `node scripts/ios-xcconfig.mjs` (CI fails if stale) |
 | `VERSION` | The marketing version; CI sets the build number |
+| `App/Assets.xcassets` | The app icon (a generated placeholder: replace `AppIcon-1024.png`, 1024×1024, no transparency) |
 | `../protocol/v1.json` | The bridge contract, shared with `@stacks/native` |
 
 ## On a Mac
@@ -26,6 +27,12 @@ Schemes: **DashyHQ Test** (staging, `*.test.iamdashnash.com`) and **DashyHQ** (p
 Debug with staging settings, Archive uses Production). Needs Xcode 26 (iOS 26 is the minimum).
 Native Google sign-in answers "isn't set up in this build yet" until `googleIosClientIds` is in
 `stacks.config.json`; the first entry for an environment is that app's iOS client.
+
+## Releases
+
+Every merge to `main` that touches the app (and the 1st of each month) signs both apps and uploads
+them to TestFlight: the **Sign and upload to TestFlight** job in `.github/workflows/ios.yml`. One-time
+setup (Apple, Google, GitHub secrets): `docs/IOS_SETUP.md`. Bump `VERSION` for a new marketing version.
 
 ## Rules the code keeps
 

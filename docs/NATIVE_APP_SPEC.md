@@ -112,7 +112,6 @@ native/
     Widget/                 # WidgetKit extension
     Tests/                  # XCTest: bridge routing, origin checks, URL policy, protocol fixtures
     UITests/                # XCUITest smoke against the portal's demo build
-    fastlane/               # TestFlight groups, changelog, screenshots (lanes only, no secrets)
 packages/native/            # @stacks/native: typed bridge client, web fallbacks, demo fakes, README
 .github/workflows/ios.yml
 docs/IOS_SETUP.md           # one-time Apple/Google setup runbook (learning goal)
@@ -382,15 +381,16 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 | Trigger | What runs |
 | --- | --- |
 | PR touching `native/**`, `packages/native/**` or `ios.yml` | Unsigned simulator build, XCTest + protocol fixtures, XCUITest smoke against the portal's demo build. No secrets |
-| Push to `main` touching the same paths, or `workflow_dispatch` | The above, then archive + upload **both** apps; staging to internal testers, production to the internal group (promoting to the external group is a manual dispatch input) |
-| Monthly schedule | Rebuild and upload production so a TestFlight build never reaches its 90-day expiry |
+| Push to `main` touching the same paths, or `workflow_dispatch` on `main` | Core tests, then archive, sign and upload **both** apps; each app's internal TestFlight group has automatic distribution. Skips with a notice until the setup is done |
+| Monthly schedule | The same, so a TestFlight build never reaches its 90-day expiry |
 
 - Runner: `macos-26` with Xcode 26 (pinned with `xcode-select`). `xcodegen generate`, then
   `xcodebuild archive -allowProvisioningUpdates` with an **App Store Connect API key**
   (cloud-managed signing: no certificates or profiles in the repo or secrets), then
-  `-exportArchive` with `destination: upload`. fastlane (`pilot`) assigns TestFlight groups and the
-  "What to Test" note from the commit log.
-- Build number = `github.run_number`; marketing version from `native/ios/VERSION`.
+  `-exportArchive` with `destination: upload`. No fastlane: internal groups receive builds through
+  TestFlight's automatic distribution, set once in App Store Connect.
+- Build number = `run_number × 100 + run_attempt` (a re-run uploads a new build); marketing version
+  from `native/ios/VERSION`. The icon is a generated placeholder (`App/Assets.xcassets`).
 - Secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` live in a GitHub environment `ios-release`
   that allows only `main`, like `production`. Uploads never run on PR code. The API key needs
   permission to use cloud-managed distribution certificates (Admin role, or App Manager with that
@@ -455,7 +455,8 @@ Gate: every existing user signs in with Google and sees the same data and roles;
 **N2 — Shell and native Google sign-in**, in three PRs
 - [x] **N2a** (web side): `native` settings in `stacks.config.json`; apple-app-site-association on every host (CloudFront routers); `azp` allowlist for the iOS app's Google tokens; `GET /native/config`; `native/protocol/v1.json`; `@stacks/native` (client, web fallbacks, fake); the portal signs in, links accounts and signs out through the bridge in the app
 - [x] **N2b**: `native/ios`: `Core` (Foundation-only Swift package: link rules, bridge router with origin checks, protocol types tested against `v1.json`), `App` (WKWebView shell, offline screen, pull-to-refresh, last page, update notice, share, native Google sign-in, universal links), XcodeGen `project.yml`, build settings generated from `stacks.config.json`; `ios.yml`: Core tests on Linux, unsigned simulator builds of both environments on macOS
-- [ ] **N2c**: signed uploads of both apps to TestFlight internal; `docs/IOS_SETUP.md` written while doing the setup
+- [x] **N2c**: `ios.yml` signs and uploads both apps to TestFlight from `main` (cloud-managed signing with an App Store Connect API key in the `ios-release` environment; skips until set up; monthly rebuild); app icon; `docs/IOS_SETUP.md`; `ios-provision.yml` (by hand, on `main`) registers the bundle IDs with Associated Domains and sets up each app's automatic internal TestFlight group and tester through the App Store Connect API (`scripts/asc-provision.mjs`). App records stay manual: Apple has no API to create them
+- [ ] The setup itself (`docs/IOS_SETUP.md`), then the gate on a real device
 
 Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
 
