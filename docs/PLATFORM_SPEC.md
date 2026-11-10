@@ -27,6 +27,8 @@ Stacks is a monorepo platform on AWS for building many small, independent web ap
 
 **Non-goals for v1**: runtime AI inference in apps, email alerts for access requests (badge only), per-PR preview stacks, multiple root domains at once, non-Google identity providers, cross-app data sharing.
 
+> **Planned change (draft):** `docs/NATIVE_APP_SPEC.md` adds a native iOS/iPadOS app, Sign in with Apple (lifting the "non-Google identity providers" non-goal), internal user IDs in place of email keys, and APNs push. Nothing there is built yet; this spec stays authoritative until each phase lands.
+
 **Success metric**: a non-technical creator goes from a one-paragraph description to an app live on staging, behind SSO, through `/new-app` in one Claude Code session, with the scaffold costing near-zero tokens.
 
 ## Decisions log
