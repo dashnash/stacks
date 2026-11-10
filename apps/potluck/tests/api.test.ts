@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createTestHarness } from '@stacks/testing';
+import { forgetMembers, type AppDeps } from '@stacks/api';
+import { createTestHarness, memberFor, testUserId } from '@stacks/testing';
 import { manifest } from '../api/manifest';
 import { routes } from '../api/routes';
 
@@ -11,9 +12,9 @@ const needs = { mains: 1, sides: 2, desserts: 1, drinks: 0 };
 async function withEvent(overrides: Record<string, unknown> = {}) {
   const t = createTestHarness({ manifest, routes });
   t.platform.members = [
-    { email: 'olive@x.dev', name: 'Olive', role: 'HOST' },
-    { email: 'max@x.dev', name: 'Max', role: 'GUEST' },
-    { email: 'ann@x.dev', name: 'Ann', role: 'GUEST' },
+    memberFor('olive@x.dev', 'HOST', 'Olive'),
+    memberFor('max@x.dev', 'GUEST', 'Max'),
+    memberFor('ann@x.dev', 'GUEST', 'Ann'),
   ];
   const res = await t.call('POST', '/events', { ...HOST, body: { title: 'Harvest', startsAt: '2026-01-10T23:00:00Z', place: '14 Maple Ct', needs, ...overrides } });
   return { t, res, id: res.body.event?.id as string };
@@ -24,7 +25,7 @@ describe('potlucks', () => {
     const { t, res } = await withEvent();
     expect(res.status).toBe(201);
     expect(res.body.event).toMatchObject({ title: 'Harvest', needs, hostName: 'Olive', cancelled: false });
-    expect(t.platform.notifications.map((n) => n.email).sort()).toEqual(['ann@x.dev', 'max@x.dev']);
+    expect(t.platform.notifications.map((n) => n.userId).sort()).toEqual([testUserId('ann@x.dev'), testUserId('max@x.dev')].sort());
     expect(t.platform.notifications[0]!.text).toContain('New potluck: Harvest');
     expect(t.platform.audit.map((e) => e.action)).toEqual(['event.create']);
   });
@@ -86,6 +87,21 @@ describe('dishes and RSVPs', () => {
     const page = await t.call('GET', `/events/${id}`, ANN);
     expect(page.body.dishes).toEqual([expect.objectContaining({ name: 'Veggie chili', bringerName: 'Max', serves: 8, tags: ['vegan', 'gluten-free'], mine: false, canRemove: false })]);
     expect(JSON.stringify(page.body.dishes)).not.toContain('@x.dev');
+  });
+
+  it('stores people by user id and shows their current names', async () => {
+    const { t, id } = await withEvent();
+    await t.call('PUT', `/events/${id}/rsvp`, { ...MAX, body: { status: 'going', guests: 1 } });
+    await t.call('POST', `/events/${id}/dishes`, { ...MAX, body: { course: 'sides', name: 'Slaw' } });
+    const stored = JSON.stringify(await t.store.query(`EVENT#${id}`));
+    expect(stored).not.toContain('@x.dev');
+    expect(await t.store.get(`EVENT#${id}`, `RSVP#${testUserId('max@x.dev')}`)).toMatchObject({ userId: testUserId('max@x.dev'), status: 'going' });
+    t.platform.members = t.platform.members.map((m) => (m.name === 'Max' ? { ...m, name: 'Maxine' } : m));
+    forgetMembers({ platform: t.platform } as unknown as AppDeps); // as if the 30 s member cache had expired
+    const page = await t.call('GET', `/events/${id}`, ANN);
+    expect(page.body.event.hostName).toBe('Olive');
+    expect(page.body.rsvps).toEqual([expect.objectContaining({ name: 'Maxine', guests: 1, mine: false })]);
+    expect(page.body.dishes).toEqual([expect.objectContaining({ bringerName: 'Maxine' })]);
   });
 
   it('lets people change or drop only their own dish; hosts can remove any', async () => {

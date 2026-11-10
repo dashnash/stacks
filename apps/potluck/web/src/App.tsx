@@ -59,7 +59,7 @@ export function App() {
         </a>
         <AccountMenu className="account" />
       </header>
-      <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <SignedIn key={`${session.user.email}:${session.role}`} /> : <Landing />}</main>
+      <main>{status === 'loading' ? <Spinner /> : status === 'signedIn' && session ? <SignedIn key={`${session.user.id}:${session.role}`} /> : <Landing />}</main>
       <footer className="foot muted small">
         {manifest.name} · made for sharing · <BuildVersion className="build" />
       </footer>

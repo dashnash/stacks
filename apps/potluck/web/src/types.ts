@@ -18,7 +18,7 @@ export interface RsvpView {
   mine: boolean;
 }
 export interface EventDetail {
-  event: PotluckEvent;
+  event: PotluckEvent & { hostName: string };
   canEdit: boolean;
   dishes: DishView[];
   rsvps: RsvpView[];

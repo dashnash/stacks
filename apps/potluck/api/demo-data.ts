@@ -1,4 +1,4 @@
-import type { AppDeps } from '@stacks/api';
+import { fixtureUserId, type AppDeps } from '@stacks/api';
 import type { Persona } from '@stacks/demo';
 import { keys, type Course, type Dish, type PotluckEvent, type Rsvp, type RsvpStatus, type Tag } from './model';
 
@@ -6,11 +6,17 @@ import { keys, type Course, type Dish, type PotluckEvent, type Rsvp, type RsvpSt
 export const personas: Persona[] = [
   { email: "olive@demo.stacks", name: "Olive", role: "HOST", blurb: "hosts most of the potlucks" },
   { email: "max@demo.stacks", name: "Max", role: "GUEST", blurb: "always brings dessert" },
+  // Neighbours who bring dishes in the sample data: members, so their names show.
+  { email: 'rosa@demo.stacks', name: 'Rosa', role: 'GUEST', blurb: 'a neighbour' },
+  { email: 'dev@demo.stacks', name: 'Dev', role: 'GUEST', blurb: 'a neighbour' },
+  { email: 'kim@demo.stacks', name: 'Kim', role: 'GUEST', blurb: 'a neighbour' },
 ];
 
 /** Sample data for the demo: two upcoming potlucks (one nearly full) and one that's over. */
 export async function seed(deps: AppDeps): Promise<void> {
-  const [host, guest] = personas as [Persona, Persona];
+  // People are stored by user id; demo personas get `fixtureUserId(email)`.
+  const people = personas.map((p) => fixtureUserId(p.email));
+  const host = people[0]!;
   const day = 86_400_000;
   // Local time: in the demo this runs in the visitor's browser, so 6 PM reads as 6 PM.
   const at = (days: number, hour: number) => {
@@ -19,17 +25,11 @@ export async function seed(deps: AppDeps): Promise<void> {
     return d.toISOString();
   };
   const created = deps.now().toISOString();
-  const neighbors = [
-    { email: 'rosa@demo.stacks', name: 'Rosa' },
-    { email: 'dev@demo.stacks', name: 'Dev' },
-    { email: 'kim@demo.stacks', name: 'Kim' },
-  ];
-  const people = [host, guest, ...neighbors];
 
   const events: PotluckEvent[] = [
-    { id: 'harvest', title: 'Fall Harvest Potluck', startsAt: at(5, 17), place: '14 Maple Court (back yard)', notes: 'Bring a chair if you have one. Kids welcome!', needs: { mains: 3, sides: 4, desserts: 2, drinks: 2 }, hostEmail: host.email, hostName: host.name, cancelled: false, createdAt: created },
-    { id: 'game-night', title: 'Game Night Snacks', startsAt: at(12, 19), place: "Max's place, 3B", notes: 'Finger food only: we will be holding cards.', needs: { mains: 0, sides: 3, desserts: 2, drinks: 2 }, hostEmail: host.email, hostName: host.name, cancelled: false, createdAt: created },
-    { id: 'summer', title: 'Summer Send-off', startsAt: at(-30, 16), place: 'Riverside Park, pavilion 2', notes: '', needs: { mains: 2, sides: 2, desserts: 2, drinks: 1 }, hostEmail: host.email, hostName: host.name, cancelled: false, createdAt: created },
+    { id: 'harvest', title: 'Fall Harvest Potluck', startsAt: at(5, 17), place: '14 Maple Court (back yard)', notes: 'Bring a chair if you have one. Kids welcome!', needs: { mains: 3, sides: 4, desserts: 2, drinks: 2 }, hostId: host, cancelled: false, createdAt: created },
+    { id: 'game-night', title: 'Game Night Snacks', startsAt: at(12, 19), place: "Max's place, 3B", notes: 'Finger food only: we will be holding cards.', needs: { mains: 0, sides: 3, desserts: 2, drinks: 2 }, hostId: host, cancelled: false, createdAt: created },
+    { id: 'summer', title: 'Summer Send-off', startsAt: at(-30, 16), place: 'Riverside Park, pavilion 2', notes: '', needs: { mains: 2, sides: 2, desserts: 2, drinks: 1 }, hostId: host, cancelled: false, createdAt: created },
   ];
   for (const e of events) await deps.store.put({ ...keys.event(e.id), ...keys.eventIndex(e), ...e });
 
@@ -46,7 +46,7 @@ export async function seed(deps: AppDeps): Promise<void> {
   ];
   for (const [i, [eventId, course, name, serves, tags, who]] of dishes.entries()) {
     const p = people[who]!;
-    const dish: Dish = { id: `d${i + 1}`, eventId, course, name, serves, tags, bringerEmail: p.email, bringerName: p.name, createdAt: created };
+    const dish: Dish = { id: `d${i + 1}`, eventId, course, name, serves, tags, bringerId: p, createdAt: created };
     await deps.store.put({ ...keys.dish(eventId, dish.id), ...dish });
   }
 
@@ -62,7 +62,7 @@ export async function seed(deps: AppDeps): Promise<void> {
   ];
   for (const [eventId, who, status, guests] of rsvps) {
     const p = people[who]!;
-    const rsvp: Rsvp = { eventId, email: p.email, name: p.name, status, guests, updatedAt: created };
-    await deps.store.put({ ...keys.rsvp(eventId, p.email), ...rsvp });
+    const rsvp: Rsvp = { eventId, userId: p, status, guests, updatedAt: created };
+    await deps.store.put({ ...keys.rsvp(eventId, p), ...rsvp });
   }
 }

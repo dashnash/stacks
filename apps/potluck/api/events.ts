@@ -1,4 +1,4 @@
-import { appMembers, forbidden, notFound, optionalString, requireIsoDate, requireString, strip, type AppDeps, type AppRoutes } from '@stacks/api';
+import { appMembers, forbidden, getPeople, notFound, optionalString, requireIsoDate, requireString, strip, type AppDeps, type AppRoutes } from '@stacks/api';
 import { COURSES, keys, parseNeeds, STILL_ON_MS, type DishItem, type EventItem, type PotluckEvent, type RsvpItem } from './model';
 
 export async function loadEvent(deps: AppDeps, id: string) {
@@ -46,13 +46,13 @@ export function eventRoutes(api: AppRoutes<AppDeps>) {
           const { dishes, rsvps } = await loadEvent(v.deps, e.id);
           const filled = Object.fromEntries(COURSES.map((c) => [c, dishes.filter((d) => d.course === c).length]));
           const going = rsvps.filter((r) => r.status === 'going');
-          const mine = rsvps.find((r) => r.email === v.user.email);
+          const mine = rsvps.find((r) => r.userId === v.user.id);
           return {
             ...e,
             filled,
             headcount: going.reduce((n, r) => n + 1 + r.guests, 0),
             myRsvp: mine?.status ?? null,
-            myDishes: dishes.filter((d) => d.bringerEmail === v.user.email).length,
+            myDishes: dishes.filter((d) => d.bringerId === v.user.id).length,
           };
         }),
       );
@@ -61,12 +61,14 @@ export function eventRoutes(api: AppRoutes<AppDeps>) {
     .member('GET', '/events/:id', async (req, v) => {
       const { event, dishes, rsvps } = await loadEvent(v.deps, req.params.id!);
       const isHost = v.canManageAccess;
+      const people = await getPeople(v.deps, [event.hostId, ...dishes.map((d) => d.bringerId), ...rsvps.map((r) => r.userId)]);
+      const nameOf = (id: string) => people.get(id)?.name ?? 'Former member';
       return {
         body: {
-          event,
+          event: { ...event, hostName: nameOf(event.hostId) },
           canEdit: isHost,
-          dishes: dishes.map(({ bringerEmail, ...d }) => ({ ...d, mine: bringerEmail === v.user.email, canRemove: isHost || bringerEmail === v.user.email })),
-          rsvps: rsvps.map(({ email, ...r }) => ({ ...r, mine: email === v.user.email })),
+          dishes: dishes.map(({ bringerId, ...d }) => ({ ...d, bringerName: nameOf(bringerId), mine: bringerId === v.user.id, canRemove: isHost || bringerId === v.user.id })),
+          rsvps: rsvps.map(({ userId, ...r }) => ({ ...r, name: nameOf(userId), mine: userId === v.user.id })),
           headcount: rsvps.filter((r) => r.status === 'going').reduce((n, r) => n + 1 + r.guests, 0),
         },
       };
@@ -77,13 +79,13 @@ export function eventRoutes(api: AppRoutes<AppDeps>) {
       '/events',
       async (req, v) => {
         const now = v.deps.now().toISOString();
-        const event: PotluckEvent = { id: v.deps.newId(), ...fields(req.body), hostEmail: v.user.email, hostName: v.user.name, cancelled: false, createdAt: now };
+        const event: PotluckEvent = { id: v.deps.newId(), ...fields(req.body), hostId: v.user.id, cancelled: false, createdAt: now };
         await v.deps.store.put({ ...keys.event(event.id), ...keys.eventIndex(event), ...event });
         // Tell everyone else (platform inbox badge).
         const link = `${v.deps.config.appOrigin}/#/e/${event.id}`;
-        const members = (await appMembers(v.deps)).filter((m) => m.email !== v.user.email);
-        await Promise.all(members.map((m) => v.deps.platform.notify(m.email, `New potluck: ${event.title} (${new Date(event.startsAt).toDateString()})`, link).catch(() => undefined)));
-        return { status: 201, body: { event }, audit: { label: event.title, notified: members.length } };
+        const members = (await appMembers(v.deps)).filter((m) => m.id !== v.user.id);
+        await Promise.all(members.map((m) => v.deps.platform.notify(m.id, `New potluck: ${event.title} (${new Date(event.startsAt).toDateString()})`, link).catch(() => undefined)));
+        return { status: 201, body: { event: { ...event, hostName: v.user.name } }, audit: { label: event.title, notified: members.length } };
       },
       { audit: 'event.create' },
     )

@@ -1,5 +1,6 @@
 import { badRequest, type Item } from '@stacks/api';
 
+/** People are stored by user id (`v.user.id`); names come from `getPeople` when a page is read. */
 /** Each potluck is one partition: the event, its dish sign-ups and its RSVPs (one query loads a page). */
 export const COURSES = ['mains', 'sides', 'desserts', 'drinks'] as const;
 export type Course = (typeof COURSES)[number];
@@ -26,8 +27,7 @@ export interface PotluckEvent {
   place: string;
   notes: string;
   needs: Needs;
-  hostEmail: string;
-  hostName: string;
+  hostId: string;
   cancelled: boolean;
   createdAt: string;
 }
@@ -39,15 +39,13 @@ export interface Dish {
   name: string;
   serves: number | null;
   tags: Tag[];
-  bringerEmail: string;
-  bringerName: string;
+  bringerId: string;
   createdAt: string;
 }
 
 export interface Rsvp {
   eventId: string;
-  email: string;
-  name: string;
+  userId: string;
   status: RsvpStatus;
   guests: number;
   updatedAt: string;
@@ -57,7 +55,7 @@ export const keys = {
   event: (id: string) => ({ PK: `EVENT#${id}`, SK: 'EVENT' }),
   eventIndex: (e: Pick<PotluckEvent, 'id' | 'startsAt'>) => ({ GSI1PK: 'EVENTS', GSI1SK: `${e.startsAt}#${e.id}` }),
   dish: (eventId: string, id: string) => ({ PK: `EVENT#${eventId}`, SK: `DISH#${id}` }),
-  rsvp: (eventId: string, email: string) => ({ PK: `EVENT#${eventId}`, SK: `RSVP#${email}` }),
+  rsvp: (eventId: string, userId: string) => ({ PK: `EVENT#${eventId}`, SK: `RSVP#${userId}` }),
 };
 
 export type EventItem = Item & PotluckEvent;

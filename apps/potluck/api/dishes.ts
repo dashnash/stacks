@@ -13,9 +13,9 @@ export function dishRoutes(api: AppRoutes<AppDeps>) {
         const status = req.body.status as RsvpStatus;
         if (!RSVP_STATUSES.includes(status)) throw badRequest(`"status" must be one of ${RSVP_STATUSES.join(', ')}`);
         const guests = status === 'going' ? (optionalInt(req.body, 'guests', 0, MAX_GUESTS) ?? 0) : 0;
-        const rsvp: Rsvp = { eventId: event.id, email: v.user.email, name: v.user.name, status, guests, updatedAt: v.deps.now().toISOString() };
-        await v.deps.store.put({ ...keys.rsvp(event.id, v.user.email), ...rsvp });
-        return { body: { rsvp }, audit: { label: event.title, status, guests } };
+        const rsvp: Rsvp = { eventId: event.id, userId: v.user.id, status, guests, updatedAt: v.deps.now().toISOString() };
+        await v.deps.store.put({ ...keys.rsvp(event.id, v.user.id), ...rsvp });
+        return { body: { rsvp: { ...rsvp, name: v.user.name } }, audit: { label: event.title, status, guests } };
       },
       { audit: 'rsvp.set' },
     )
@@ -34,12 +34,11 @@ export function dishRoutes(api: AppRoutes<AppDeps>) {
           name: requireString(req.body, 'name', 60),
           serves: optionalInt(req.body, 'serves', 1, 100) ?? null,
           tags: parseTags(req.body.tags),
-          bringerEmail: v.user.email,
-          bringerName: v.user.name,
+          bringerId: v.user.id,
           createdAt: v.deps.now().toISOString(),
         };
         await v.deps.store.put({ ...keys.dish(event.id, dish.id), ...dish });
-        return { status: 201, body: { dish }, audit: { label: `${dish.name} (${course}) for ${event.title}` } };
+        return { status: 201, body: { dish: { ...dish, bringerName: v.user.name } }, audit: { label: `${dish.name} (${course}) for ${event.title}` } };
       },
       { audit: 'dish.add' },
     )
@@ -49,7 +48,7 @@ export function dishRoutes(api: AppRoutes<AppDeps>) {
       async (req, v) => {
         const found = await v.deps.store.get<DishItem>(keys.dish(req.params.id!, req.params.dishId!).PK, keys.dish(req.params.id!, req.params.dishId!).SK);
         if (!found) throw notFound('That dish is gone');
-        if (found.bringerEmail !== v.user.email) throw forbidden('You can only change your own dish');
+        if (found.bringerId !== v.user.id) throw forbidden('You can only change your own dish');
         const dish: Dish = {
           ...(strip(found) as Dish),
           name: req.body.name === undefined ? found.name : requireString(req.body, 'name', 60),
@@ -69,9 +68,9 @@ export function dishRoutes(api: AppRoutes<AppDeps>) {
         const found = await v.deps.store.get<DishItem>(k.PK, k.SK);
         if (!found) throw notFound('That dish is gone');
         // Your own dish, or any dish if you're a host.
-        if (found.bringerEmail !== v.user.email && !v.canManageAccess) throw forbidden('You can only remove your own dish');
+        if (found.bringerId !== v.user.id && !v.canManageAccess) throw forbidden('You can only remove your own dish');
         await v.deps.store.delete(k.PK, k.SK);
-        return { body: { ok: true }, audit: { label: found.name, bringer: found.bringerEmail } };
+        return { body: { ok: true }, audit: { label: found.name, bringer: found.bringerId } };
       },
       { audit: 'dish.remove' },
     );
