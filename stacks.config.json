@@ -9,14 +9,16 @@
       "hostedZoneId": "Z34UPUIR94DZXQ",
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
-      "platformAdmins": ["dashiell.nash@gmail.com"]
+      "platformAdmins": ["dashiell.nash@gmail.com"],
+      "maintenance": true
     },
     "staging": {
       "rootDomain": "test.iamdashnash.com",
       "hostedZoneId": "Z34UPUIR94DZXQ",
       "hostedZoneName": "iamdashnash.com",
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
-      "platformAdmins": ["dashiell.nash@gmail.com"]
+      "platformAdmins": ["dashiell.nash@gmail.com"],
+      "maintenance": true
     }
   }
 }

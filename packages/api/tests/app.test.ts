@@ -26,7 +26,7 @@ describe('sign-in handshake (app side)', () => {
     const start = await t.call('GET', '/auth/login', { query: { return: '/notes' } });
     const state = new URL(start.headers.Location!).searchParams.get('state')!;
     const loginCookie = cookieValue(start.cookies, '__Host-stacks-login')!;
-    const code = t.platform.issueCode({ email: 'ed@test.dev', name: 'Ed' }, 'EDITOR');
+    const code = t.platform.issueCode({ id: 'u_ed', email: 'ed@test.dev', name: 'Ed' }, 'EDITOR');
 
     const done = await t.call('GET', '/auth/callback', { query: { code, state }, cookies: { '__Host-stacks-login': loginCookie } });
     expect(done.status).toBe(302);
@@ -36,7 +36,7 @@ describe('sign-in handshake (app side)', () => {
     expect(cookieValue(done.cookies, '__Host-stacks-login')).toBe('');
 
     const session = await t.call('GET', '/auth/session', { cookies: { [SESSION_COOKIE]: token } });
-    expect(session.body).toEqual({ user: { email: 'ed@test.dev', name: 'Ed' }, role: 'EDITOR', canManageAccess: false });
+    expect(session.body).toEqual({ user: { id: 'u_ed', email: 'ed@test.dev', name: 'Ed' }, role: 'EDITOR', canManageAccess: false });
     // Only the hash is stored, and the sign-in is in the activity log (and mirrored).
     expect(JSON.stringify([...t.store.items.values()])).not.toContain(token);
     expect(t.platform.audit.map((e) => e.action)).toEqual(['auth.login']);
@@ -147,10 +147,10 @@ describe('account menu data', () => {
 
   it('shows names from the platform profile, so a rename needs no new sign-in', async () => {
     const t = harness();
-    const token = await t.sessionFor({ email: 'r@test.dev', name: 'Old Name' }, 'READER');
+    const token = await t.sessionFor({ id: 'u_r', email: 'r@test.dev', name: 'Old Name' }, 'READER');
     const cookies = { '__Host-stacks-session': token };
     expect((await t.call('GET', '/auth/session', { cookies })).body.user.name).toBe('Old Name');
-    t.platform.members = [{ email: 'r@test.dev', name: 'New Name', role: 'READER' }];
+    t.platform.members = [{ id: 'u_r', email: 'r@test.dev', name: 'New Name', role: 'READER' }];
     const { forgetMembers } = await import('../src/people');
     forgetMembers(t.deps);
     expect((await t.call('GET', '/auth/session', { cookies })).body.user.name).toBe('New Name');
@@ -162,7 +162,7 @@ describe('activity log', () => {
     const t = harness();
     await t.call('POST', '/notes', { as: 'e@test.dev', role: 'EDITOR', body: { text: 'Hello world', token: 'secret' } });
     const mirrored = t.platform.audit.at(-1)!;
-    expect(mirrored).toMatchObject({ action: 'note.post', actorEmail: 'e@test.dev', label: 'Hello world', details: { input: { text: 'Hello world' } } });
+    expect(mirrored).toMatchObject({ action: 'note.post', actorId: 'u_e_test_dev', label: 'Hello world', details: { input: { text: 'Hello world' } } });
 
     expect((await t.call('GET', '/admin/audit', { as: 'e@test.dev', role: 'EDITOR' })).status).toBe(403);
     const log = await t.call('GET', '/admin/audit', { as: 'o@test.dev', role: 'OWNER' });

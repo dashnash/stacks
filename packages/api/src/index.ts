@@ -8,6 +8,8 @@ export {
   badRequest,
   conflict,
   forbidden,
+  maintenance,
+  MAINTENANCE_OPEN_PATHS,
   notFound,
   optionalInt,
   optionalString,
@@ -27,3 +29,5 @@ export type { HttpMethod, RequestContext } from './router';
 export { clearCookie, cookie, createSession, endSession, endUserSessions, readSession, SESSION_COOKIE, SESSION_IDLE_DAYS, userSessionsKey } from './session';
 export { ConditionFailedError, MemoryStore, strip } from './store';
 export type { Item, Store } from './store';
+export { composeMigrations, fixtureUserId, migrateSdkItems, renameEmailField } from './migrate';
+export type { IdFor, ItemMigration } from './migrate';

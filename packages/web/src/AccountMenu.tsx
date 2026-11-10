@@ -57,7 +57,7 @@ export function useAccountMenu(opts: { manageAccessHref?: string } = {}) {
     return () => {
       live = false;
     };
-  }, [api, status, session?.user.email, session?.role]);
+  }, [api, status, session?.user.id, session?.role]);
 
   const state: AccountState =
     status === 'loading'
@@ -126,7 +126,7 @@ function useStyles() {
 
 export interface AccountMenuViewProps {
   state: AccountState;
-  user: { email: string; name: string; pictureUrl?: string } | null;
+  user: { id: string; email: string; name: string; pictureUrl?: string } | null;
   /** e.g. "Owner of MOFO Book Klub". */
   subtitle?: string | null;
   /** The person's apps, linked. The current app can be left in; it is shown as the current one. */

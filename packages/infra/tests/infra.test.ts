@@ -55,6 +55,12 @@ function synth(envName: EnvName, env = envs[envName]) {
 }
 
 describe('AppStack', () => {
+  it("passes the environment's maintenance flag to the app's Lambda", () => {
+    const vars = (t: Template) => JSON.stringify(Object.values(t.findResources('AWS::Lambda::Function')).map((f) => f.Properties?.Environment?.Variables ?? {}));
+    expect(vars(synth('staging').template)).not.toContain('STACKS_MAINTENANCE');
+    expect(vars(synth('staging', { ...envs.staging, maintenance: true }).template)).toContain('"STACKS_MAINTENANCE":"1"');
+  });
+
   it('is named by environment and slug, and uses that environment\'s bootstrap', () => {
     const { stack, app } = synth('staging');
     expect(stack.stackName).toBe('stacks-test-app-hello');

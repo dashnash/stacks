@@ -24,7 +24,7 @@ describe('DashboardView', () => {
 
   it('lets the handed-off leader schedule the next meeting', async () => {
     const api = fakeApi({
-      nextMeeting: vi.fn().mockResolvedValue({ meeting: null, nextLeader: { email: member.email, name: member.name }, canCreateNext: true }),
+      nextMeeting: vi.fn().mockResolvedValue({ meeting: null, nextLeader: { id: member.id, name: member.name }, canCreateNext: true }),
     });
     renderWithApi(<DashboardView user={member} />, api);
     expect(await screen.findByRole('heading', { name: /You're up!/ })).toBeInTheDocument();
@@ -37,7 +37,7 @@ describe('DashboardView', () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({
         members: [],
-        pending: [{ email: 'new@x.test', name: 'Newbie', role: 'PENDING', requestedAt: '2026-01-01T00:00:00Z' }],
+        pending: [{ id: 'new@x.test', email: 'new@x.test', name: 'Newbie', role: 'PENDING', requestedAt: '2026-01-01T00:00:00Z' }],
       }),
     });
     renderWithApi(<DashboardView user={admin} />, api);
@@ -52,7 +52,7 @@ describe('DashboardView', () => {
 
   it('closes the page with a critic quote, and has no separate easter egg button', async () => {
     const api = fakeApi({
-      randomEasterEgg: vi.fn().mockResolvedValue({ id: 'e', quote: 'Hamlet, but he finally decides.', characterName: 'Bo', imageUrl: null }),
+      randomEasterEgg: vi.fn().mockResolvedValue({ id: 'e', quote: 'Hamlet, but he finally decides.', imageUrl: null }),
     });
     renderWithApi(<DashboardView user={member} />, api);
     expect(await screen.findByRole('region', { name: 'From our literary critics' })).toHaveTextContent(/Hamlet, but he finally decides\./);
@@ -61,15 +61,15 @@ describe('DashboardView', () => {
 });
 
 describe('who gets the header meeting controls', () => {
-  const upcoming = (leaderEmail: string) =>
+  const upcoming = (leaderId: string) =>
     fakeApi({
       nextMeeting: vi.fn().mockResolvedValue({
-        meeting: meeting({ leaderEmail, leader: { email: leaderEmail, name: 'Lead' }, canManage: true }),
+        meeting: meeting({ leaderId, leader: { id: leaderId, name: 'Lead' }, canManage: true }),
       }),
     });
 
   it('shows the strip to the leader', async () => {
-    renderWithApi(<DashboardView user={member} />, upcoming(member.email));
+    renderWithApi(<DashboardView user={member} />, upcoming(member.id));
     expect(await screen.findByRole('region', { name: "You're leading" })).toBeInTheDocument();
   });
 

@@ -3,7 +3,8 @@ import { notFound, requireString, strip, type AppDeps, type AppRoutes, type Item
 export interface Greeting {
   id: string;
   text: string;
-  authorEmail: string;
+  /** The author's platform user id. */
+  authorId: string;
   authorName: string;
   createdAt: string;
 }
@@ -32,7 +33,7 @@ export function routes(api: AppRoutes<AppDeps>) {
       async (req, v) => {
         const text = requireString(req.body, 'text', MAX_GREETING);
         const now = v.deps.now().toISOString();
-        const greeting: Greeting = { id: v.deps.newId(), text, authorEmail: v.user.email, authorName: v.user.name, createdAt: now };
+        const greeting: Greeting = { id: v.deps.newId(), text, authorId: v.user.id, authorName: v.user.name, createdAt: now };
         await v.deps.store.put({ PK, SK: `${now}#${greeting.id}`, ...greeting });
         return { status: 201, body: { greeting }, audit: { label: text.slice(0, 40) } };
       },
@@ -45,7 +46,7 @@ export function routes(api: AppRoutes<AppDeps>) {
         const found = (await v.deps.store.query<GreetingItem>(PK)).find((g) => g.id === req.params.id);
         if (!found) throw notFound('That greeting is gone');
         await v.deps.store.delete(found.PK, found.SK);
-        return { body: { ok: true }, audit: { label: found.text.slice(0, 40), author: found.authorEmail } };
+        return { body: { ok: true }, audit: { label: found.text.slice(0, 40), author: found.authorId } };
       },
       { audit: 'greeting.delete' },
     );

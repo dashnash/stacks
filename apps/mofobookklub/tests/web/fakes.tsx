@@ -12,11 +12,12 @@ export const books: Book[] = [
 ];
 
 export const member: User = {
+  id: 'u_alice',
   email: 'alice@club.test',
   role: 'MEMBER',
   name: 'Alice',
 };
-export const admin: User = { ...member, email: 'admin@club.test', name: 'Admin', role: 'ADMIN' };
+export const admin: User = { ...member, id: 'u_admin', email: 'admin@club.test', name: 'Admin', role: 'ADMIN' };
 
 export function meeting(overrides: Partial<MeetingView> = {}): MeetingView {
   return {
@@ -24,8 +25,8 @@ export function meeting(overrides: Partial<MeetingView> = {}): MeetingView {
     title: 'October',
     dateTime: '2026-10-24T02:00:00.000Z',
     videoUrl: 'https://meet.google.com/abc',
-    leaderEmail: 'jane@club.test',
-    leader: { email: 'jane@club.test', name: 'Jane Doe' },
+    leaderId: 'jane@club.test',
+    leader: { id: 'jane@club.test', name: 'Jane Doe' },
     status: 'UPCOMING',
     phase: 'PLANNING',
     createdAt: '2026-01-01T00:00:00Z',
@@ -44,7 +45,7 @@ export function lineupOf(list: Book[], overrides: Partial<Lineup> & { canWithdra
       id: `n${i}`,
       createdAt: '2026-01-01T00:00:00Z',
       book,
-      nominatedBy: { email: 'marcus@club.test', name: 'Marcus Bell' },
+      nominatedBy: { id: 'marcus@club.test', name: 'Marcus Bell' },
       canWithdraw,
       votes: 0,
       myVote: false,
@@ -85,6 +86,9 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     editComment: vi.fn().mockResolvedValue({}),
     deleteComment: vi.fn().mockResolvedValue({}),
     randomEasterEgg: vi.fn(),
+    faces: vi.fn().mockResolvedValue({ faces: [] }),
+    uploadFaces: vi.fn().mockResolvedValue({ faces: [] }),
+    deleteFace: vi.fn().mockResolvedValue({}),
     members: vi.fn().mockResolvedValue({ users: [] }),
     access: vi.fn().mockResolvedValue({ members: [], pending: [] }),
     setAccess: vi.fn().mockResolvedValue({}),

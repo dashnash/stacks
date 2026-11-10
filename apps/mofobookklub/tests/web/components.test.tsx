@@ -14,19 +14,20 @@ describe('QuoteBand', () => {
   it('shows a critic quote and swaps it for a different one', async () => {
     const randomEasterEgg = vi
       .fn()
-      .mockResolvedValueOnce({ id: 'e1', quote: 'A caterpillar critique.', characterName: 'Gary', imageUrl: 'https://img/gary.jpg' })
-      .mockResolvedValueOnce({ id: 'e2', quote: 'Moby Dick is about tax law.', characterName: 'Pam', imageUrl: null });
+      .mockResolvedValueOnce({ id: 'e1', quote: 'A caterpillar critique.', imageUrl: 'https://img/gary.jpg' })
+      .mockResolvedValueOnce({ id: 'e2', quote: 'Moby Dick is about tax law.', imageUrl: null });
     renderWithApi(<QuoteBand />, fakeApi({ randomEasterEgg }));
 
     expect(await screen.findByText(/A caterpillar critique\./)).toBeInTheDocument();
-    expect(screen.getByText('— Gary')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Gary' })).toHaveAttribute('src', 'https://img/gary.jpg');
+    // Quotes are unsigned: a face, but no critic's name.
+    expect(screen.queryByText(/^—/)).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'One of our critics' })).toHaveAttribute('src', 'https://img/gary.jpg');
 
     await userEvent.setup().click(screen.getByRole('button', { name: /Another one/ }));
     expect(await screen.findByText(/Moby Dick is about tax law\./)).toBeInTheDocument();
     expect(randomEasterEgg).toHaveBeenLastCalledWith('e1');
-    // Pam has no photo, so a decorative silhouette stands in.
-    expect(screen.queryByRole('img', { name: 'Pam' })).not.toBeInTheDocument();
+    // No photo for this one, so a decorative silhouette stands in.
+    expect(screen.queryByRole('img', { name: 'One of our critics' })).not.toBeInTheDocument();
   });
 
   it('renders nothing when no quotes have been seeded', async () => {
@@ -107,7 +108,7 @@ describe('NextMeetingHero', () => {
 
   it("puts the chosen book's full-size cover on the poster, with the shelf's hover details", () => {
     const book = { ...books[0]!, coverUrl: 'https://covers.example/phm-large.jpg', coverWidth: 1200 };
-    const m = meeting({ phase: 'SELECTED', book, bookIsbn: book.isbn, nominatedBy: { email: 'm@x', name: 'Marcus Bell' } });
+    const m = meeting({ phase: 'SELECTED', book, bookIsbn: book.isbn, nominatedBy: { id: 'm@x', name: 'Marcus Bell' } });
     renderWithApi(<NextMeetingHero meeting={m} />);
     const cover = screen.getByRole('img', { name: 'Cover of Project Hail Mary' });
     expect(cover).toHaveAttribute('src', 'https://covers.example/phm-large.jpg');
@@ -134,7 +135,7 @@ describe('MeetingActions (header strip)', () => {
   it("tells the leader they're leading and leads with choosing the book from The Lineup", async () => {
     const api = fakeApi({ lineup: vi.fn().mockResolvedValue(lineupOf(books.slice(0, 2), { canPick: true, meetingId: 'm1' })) });
     const onChanged = vi.fn();
-    const m = meeting({ canManage: true, leaderEmail: member.email });
+    const m = meeting({ canManage: true, leaderId: member.id });
     renderWithApi(<MeetingActions meeting={m} user={member} onChanged={onChanged} />, api);
     const user = userEvent.setup();
 

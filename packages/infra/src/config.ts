@@ -17,6 +17,11 @@ export interface EnvConfig {
    * hostname (Book Club's old stack holds mofobookklub.<domain> until the cut-over).
    */
   holdApps?: string[];
+  /**
+   * While true, the platform API and every app API answer 503 "Back in a few minutes" (except
+   * health checks), so data can be migrated with nothing writing to it (the user-id cut-over).
+   */
+  maintenance?: boolean;
 }
 
 export interface StacksConfig {

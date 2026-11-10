@@ -64,11 +64,11 @@ export class SsmAppRegistry implements AppRegistry, AppSessionRevoker {
     return value;
   }
 
-  async endUserSessions(slug: string, email: string): Promise<void> {
+  async endUserSessions(slug: string, userId: string): Promise<void> {
     const table = (await this.list()).find((a) => a.manifest.slug === slug)?.tableName;
     if (!table) return;
     const res = await this.doc.send(
-      new QueryCommand({ TableName: table, IndexName: 'GSI1', KeyConditionExpression: 'GSI1PK = :pk', ExpressionAttributeValues: { ':pk': `USERSESSIONS#${email.toLowerCase()}` } }),
+      new QueryCommand({ TableName: table, IndexName: 'GSI1', KeyConditionExpression: 'GSI1PK = :pk', ExpressionAttributeValues: { ':pk': `USERSESSIONS#${userId}` } }),
     );
     await Promise.all((res.Items ?? []).map((i) => this.doc.send(new DeleteCommand({ TableName: table, Key: { PK: i.PK, SK: i.SK } }))));
   }

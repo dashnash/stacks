@@ -3,9 +3,9 @@
  * taking nominations, discussions) and a fake book catalog. `main.tsx` runs the real API on it
  * in the browser through @stacks/demo.
  */
-import type { BookCandidate, BookSource, CoverCandidate, Edition } from '../../../api/utils/deps';
+import type { BookCandidate, BookSource, CoverCandidate, Edition, FacePhotos } from '../../../api/utils/deps';
 import { keys, meetingItem, type Meeting, type Role, type ThreadTarget } from '../../../api/utils/model';
-import type { Store } from '@stacks/api';
+import { fixtureUserId as idOf, type Store } from '@stacks/api';
 import quotes from '../../../content/eggs/quotes.json';
 import { DEMO_CATALOG } from './catalog';
 
@@ -84,17 +84,17 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
     ['9780553418026', 'priya@demo.bookklub', 'The Martian'],
     ['9780307744432', 'theo@demo.bookklub', 'The Night Circus'],
   ];
-  for (const [i, [isbn, leaderEmail]] of past.entries()) {
+  for (const [i, [isbn, leaderId]] of past.entries()) {
     const meeting: Meeting = {
       id: `past-${i + 1}`,
       title: 'Book Klub',
       dateTime: month(-(i + 1)),
-      leaderEmail,
+      leaderId: idOf(leaderId),
       bookIsbn: isbn,
       status: 'PAST',
       phase: 'PAST',
       // The most recent meeting handed off to Jane, who scheduled the current one.
-      nextLeaderEmail: i === 0 ? 'jane@demo.bookklub' : past[i - 1]![1],
+      nextLeaderId: idOf(i === 0 ? 'jane@demo.bookklub' : past[i - 1]![1]),
       createdAt: month(-(i + 2)),
     };
     await store.put(meetingItem(meeting));
@@ -107,7 +107,7 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
     title: `${upcoming.toLocaleDateString('en-US', { month: 'long' })} Book Klub`,
     dateTime: upcoming.toISOString(),
     videoUrl: 'https://meet.google.com/',
-    leaderEmail: 'jane@demo.bookklub',
+    leaderId: idOf('jane@demo.bookklub'),
     status: 'UPCOMING',
     phase: 'PLANNING',
     createdAt: now.toISOString(),
@@ -126,7 +126,7 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
       ...keys.nomination(`seed-${i + 1}`),
       id: `seed-${i + 1}`,
       bookIsbn: isbn,
-      nominatedByEmail: by,
+      nominatedById: idOf(by),
       createdAt: new Date(now.getTime() - (lineup.length - i) * 3_600_000).toISOString(),
     });
   }
@@ -140,11 +140,11 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
     ['seed-4', ADMIN_EMAIL],
     ['seed-4', 'priya@demo.bookklub'],
   ];
-  for (const [nominationId, userEmail] of votes) {
+  for (const [nominationId, email] of votes) {
     await store.put({
-      ...keys.nominationVote(nominationId, userEmail),
+      ...keys.nominationVote(nominationId, idOf(email)),
       nominationId,
-      userEmail,
+      userId: idOf(email),
       createdAt: now.toISOString(),
     });
   }
@@ -208,7 +208,7 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
       ...keys.comment(target, id),
       id,
       ...(parentId ? { parentId } : {}),
-      authorEmail,
+      authorId: idOf(authorEmail),
       body,
       createdAt: ago(minutes),
     });
@@ -281,7 +281,7 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
       SK: `${at}#seed-${i}`,
       id: `seed-${i}`,
       at,
-      actorEmail: email,
+      actorId: idOf(email),
       actorName: nameOf(email),
       action,
       ...(label ? { label } : {}),
@@ -289,8 +289,31 @@ export async function seed(store: Store, now = new Date()): Promise<void> {
     });
   }
 
-  for (const q of quotes as { id: string; quote: string; characterName: string }[]) {
-    await store.put({ ...keys.easterEgg(q.id), id: q.id, quote: q.quote, characterName: q.characterName });
+  for (const q of quotes as { id: string; quote: string }[]) {
+    await store.put({ ...keys.easterEgg(q.id), id: q.id, quote: q.quote });
   }
 }
 
+/**
+ * The demo's face photos: the demo ships none (photos of people never go in git), and the ones an
+ * admin adds stay in this browser tab only, as blob links, until the page reloads.
+ */
+export class DemoFaces implements FacePhotos {
+  private readonly urls = new Map<string, string>();
+  async list() {
+    return [...this.urls.keys()];
+  }
+  async put(key: string, body: Uint8Array, contentType: string) {
+    const blob = new Blob([body as BlobPart], { type: contentType });
+    this.urls.set(key, typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : key);
+  }
+  async delete(key: string) {
+    const url = this.urls.get(key);
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    this.urls.delete(key);
+  }
+  /** Stands in for the content bucket's signed links. */
+  async signUrl(key: string) {
+    return this.urls.get(key) ?? key;
+  }
+}

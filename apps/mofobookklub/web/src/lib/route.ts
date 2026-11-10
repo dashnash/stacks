@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * anything else (including in-page
  * anchors like `#shelf`) is the home page.
  */
-export type AdminTab = 'members' | 'meeting' | 'activity';
+export type AdminTab = 'members' | 'meeting' | 'critics' | 'activity';
 export type Route =
   | { name: 'home'; anchor?: string }
   | { name: 'book'; isbn: string }
@@ -15,7 +15,7 @@ export type Route =
 export function parseRoute(hash: string): Route {
   const book = /^#\/book\/([\dXx-]+)\/?$/.exec(hash);
   if (book) return { name: 'book', isbn: book[1]! };
-  const admin = /^#\/admin(?:\/(members|meeting|activity))?\/?$/.exec(hash);
+  const admin = /^#\/admin(?:\/(members|meeting|critics|activity))?\/?$/.exec(hash);
   if (admin) return { name: 'admin', tab: (admin[1] as AdminTab | undefined) ?? 'members' };
   const anchor = hash.replace(/^#\/?/, '');
   return anchor ? { name: 'home', anchor } : { name: 'home' };

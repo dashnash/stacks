@@ -8,7 +8,8 @@ of truth for architecture, decisions and the phased build plan.
 
 Phases 1-3 are built and live: `packages/*` (SDK) and `packages/modules/comments`, `platform/api`
 and `platform/web`, the `hello` and `mofobookklub` apps, `infra/` and the workflows. The Book Club
-cut-over is done (`docs/BOOK_CLUB_MIGRATION.md`). **Phase 4 — `/new-app`** is under way: the template,
+cut-over is done (`docs/BOOK_CLUB_MIGRATION.md`). People are keyed by internal user id (`u_…`), not
+email (N1a of `docs/NATIVE_APP_SPEC.md`; cut-over runbook `docs/USER_IDS_CUTOVER.md`). **Phase 4 — `/new-app`** is under way: the template,
 `tools/new-app` and the skill (`.claude/skills/new-app/SKILL.md`) are built; the eval run on the
 reference apps and the remaining modules (uploads, scheduled jobs) are next.
 
@@ -46,6 +47,7 @@ its tests) rather than rewriting from scratch.
   `@dashnash` (`CODEOWNERS`). Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.
+- Store people by `v.user.id`, never by email.
 - Every app has `<AccountMenu />` at the top right of its header, shows `<BuildVersion />` (usually in
   its footer) signed in and out, and exports `App` + `demoOptions()` from `web/src/demo/setup.ts`;
   `tools/app-conformance` enforces all three.

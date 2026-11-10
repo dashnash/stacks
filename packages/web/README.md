@@ -10,7 +10,7 @@ createRoot(el).render(<StacksProvider><App /></StacksProvider>);
 function App() {
   const { status, session, signIn, signOut, accessNotice, refresh } = useStacks();
   // status: 'loading' | 'signedIn' | 'signedOut'
-  // session: { user: { email, name, pictureUrl? }, role, canManageAccess } | null
+  // session: { user: { id, email, name, pictureUrl? }, role, canManageAccess } | null
   // signIn(returnTo?) goes through platform sign-in and back to the current page
   // accessNotice: 'access_required' (signed in to the platform, no role here) | 'access_pending' | 'access_denied' (blocked) | null
   // Signed in to the platform = signed in here: the provider signs in silently in the background.
@@ -39,4 +39,4 @@ function App() {
 - **Build info (required):** put `<BuildVersion />` somewhere on every screen, usually the footer: it
   shows "Build 1a2b3c4" linking to the commit (CI sets `VITE_STACKS_BUILD_SHA`/`VITE_STACKS_REPO_URL`;
   local builds say "Build dev"). Takes `className`/`style`. `tools/app-conformance` checks for it.
-- Remount views that load per-user data when the user changes: `<Board key={session.user.email + session.role} />`.
+- Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

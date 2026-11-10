@@ -49,9 +49,9 @@ export function DashboardView({ user }: { user: User }) {
         pendingCount={pending.data?.length ?? 0}
         // Only the people the meeting is waiting on get the header strip; admins step in from the admin page.
         meetingActions={
-          meeting && meeting.leaderEmail === user.email ? (
+          meeting && meeting.leaderId === user.id ? (
             <MeetingActions meeting={meeting} user={user} onChanged={refresh} />
-          ) : data && !data.meeting && data.nextLeader?.email === user.email ? (
+          ) : data && !data.meeting && data.nextLeader?.id === user.id ? (
             <ScheduleNextAction youAreNext />
           ) : undefined
         }

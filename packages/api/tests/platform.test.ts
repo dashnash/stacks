@@ -10,7 +10,7 @@ describe('HttpPlatformClient', () => {
       credential: async () => 'cred-123',
       fetch: (async (url: string, init: RequestInit) => {
         calls.push({ url, init });
-        return new Response(JSON.stringify({ user: { email: 'a@b.c', name: 'A' }, role: 'READER' }), { status: 200 });
+        return new Response(JSON.stringify({ user: { id: 'u_a', email: 'a@b.c', name: 'A' }, role: 'READER' }), { status: 200 });
       }) as typeof fetch,
     });
     const res = await client.exchangeCode({ code: 'c', codeVerifier: 'v', redirectUri: 'https://notes.example.com/api/auth/callback' });

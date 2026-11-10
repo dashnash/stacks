@@ -11,7 +11,7 @@ const allowed = (app: GridApp, roleId: string | null) => !roleId || roleId === '
 export function toCsv(grid: Grid, apps: GridApp[]): string {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const header = ['name', 'email', ...apps.map((a) => a.slug)];
-  const rows = grid.users.map((u) => [u.name, u.email, ...apps.map((a) => grid.grants.find((g) => g.app === a.slug && g.email === u.email)?.role ?? '')]);
+  const rows = grid.users.map((u) => [u.name, u.email, ...apps.map((a) => grid.grants.find((g) => g.app === a.slug && g.userId === u.id)?.role ?? '')]);
   return [header, ...rows].map((r) => r.map(esc).join(',')).join('\n');
 }
 
@@ -66,25 +66,26 @@ export function AccessGrid({ initialApp }: { initialApp?: string }) {
   const [problem, setProblem] = useState<string | null>(null);
 
   const apps = useMemo(() => (data?.apps ?? []).filter((a) => !appFilter || a.slug === appFilter), [data, appFilter]);
-  const roleOf = (slug: string, email: string) => data?.grants.find((g) => g.app === slug && g.email === email)?.role ?? null;
+  const roleOf = (slug: string, userId: string) => data?.grants.find((g) => g.app === slug && g.userId === userId)?.role ?? null;
   const q = search.trim().toLowerCase();
   const users = (data?.users ?? []).filter(
-    (u) => (!q || `${u.name} ${u.email}`.toLowerCase().includes(q)) && (!pendingOnly || apps.some((a) => roleOf(a.slug, u.email) === 'PENDING')),
+    (u) => (!q || `${u.name} ${u.email}`.toLowerCase().includes(q)) && (!pendingOnly || apps.some((a) => roleOf(a.slug, u.id) === 'PENDING')),
   );
 
-  const set = async (slug: string, email: string, role: string | null) => {
+  const set = async (slug: string, userId: string, role: string | null) => {
     setProblem(null);
     try {
-      await api.setRole(slug, email, role);
+      await api.setRole(slug, userId, role);
     } catch (err) {
-      setProblem(`${email} in ${slug}: ${(err as Error).message}`);
+      const who = data?.users.find((u) => u.id === userId);
+      setProblem(`${who?.email ?? userId} in ${slug}: ${(err as Error).message}`);
     }
     await reload();
     void refresh();
   };
 
   const applyBulk = async () => {
-    for (const email of selected) await set(bulkApp, email, bulkRole === '-' ? null : bulkRole);
+    for (const userId of selected) await set(bulkApp, userId, bulkRole === '-' ? null : bulkRole);
     setSelected(new Set());
   };
 
@@ -172,17 +173,17 @@ export function AccessGrid({ initialApp }: { initialApp?: string }) {
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.email}>
+              <tr key={u.id}>
                 <th scope="row" className="sticky">
                   <label className="person">
                     <input
                       type="checkbox"
                       aria-label={`Select ${u.email}`}
-                      checked={selected.has(u.email)}
+                      checked={selected.has(u.id)}
                       onChange={(e) => {
                         const next = new Set(selected);
-                        if (e.target.checked) next.add(u.email);
-                        else next.delete(u.email);
+                        if (e.target.checked) next.add(u.id);
+                        else next.delete(u.id);
                         setSelected(next);
                       }}
                     />
@@ -195,7 +196,7 @@ export function AccessGrid({ initialApp }: { initialApp?: string }) {
                 </th>
                 {apps.map((a) => (
                   <td key={a.slug}>
-                    <Cell app={a} email={u.email} role={roleOf(a.slug, u.email)} onSet={(r) => void set(a.slug, u.email, r)} />
+                    <Cell app={a} email={u.email} role={roleOf(a.slug, u.id)} onSet={(r) => void set(a.slug, u.id, r)} />
                   </td>
                 ))}
               </tr>

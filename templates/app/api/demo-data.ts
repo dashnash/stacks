@@ -1,4 +1,4 @@
-import type { AppDeps } from '@stacks/api';
+import { fixtureUserId, type AppDeps } from '@stacks/api';
 import type { Persona } from '@stacks/demo';
 
 /** One persona per role (top role first, so "Sign in" in the demo shows every control). */
@@ -11,6 +11,6 @@ export async function seed(deps: AppDeps): Promise<void> {
     const createdAt = new Date((t += 60_000)).toISOString();
     const id = deps.newId();
     const text = i === 0 ? 'Welcome! This is a starter note: replace it with the real features.' : `Hi, I'm ${p.name}.`;
-    await deps.store.put({ PK: 'NOTES', SK: `${createdAt}#${id}`, id, text, authorEmail: p.email, authorName: p.name, createdAt });
+    await deps.store.put({ PK: 'NOTES', SK: `${createdAt}#${id}`, id, text, authorId: fixtureUserId(p.email), authorName: p.name, createdAt });
   }
 }

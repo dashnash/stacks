@@ -30,8 +30,8 @@ export function AdminPanel({
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
-  async function act(email: string, action: () => Promise<unknown>) {
-    setBusy(email);
+  async function act(userId: string, action: () => Promise<unknown>) {
+    setBusy(userId);
     setError(null);
     try {
       await action();
@@ -50,7 +50,7 @@ export function AdminPanel({
       {pending.length === 0 && <p className="voice text-2xl">Nobody is waiting. The velvet rope holds.</p>}
       <ul>
         {pending.map((u) => (
-          <li key={u.email} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
+          <li key={u.id} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
             <Avatar person={u} size={40} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-cond text-2xl font-extrabold uppercase leading-none">{u.name}</p>
@@ -64,7 +64,7 @@ export function AdminPanel({
                 type="button"
                 className="btn-ghost !px-4 !py-1.5"
                 disabled={busy !== null}
-                onClick={() => act(u.email, () => api.setAccess(u.email, 'BLOCKED'))}
+                onClick={() => act(u.id, () => api.setAccess(u.id, 'BLOCKED'))}
                 title="Turn them away and stop further requests"
               >
                 Block
@@ -73,7 +73,7 @@ export function AdminPanel({
                 type="button"
                 className="btn-ghost !px-4 !py-1.5"
                 disabled={busy !== null}
-                onClick={() => act(u.email, () => api.setAccess(u.email, null))}
+                onClick={() => act(u.id, () => api.setAccess(u.id, null))}
               >
                 Dismiss
               </button>
@@ -81,7 +81,7 @@ export function AdminPanel({
                 type="button"
                 className="btn-accent !px-4 !py-1.5"
                 disabled={busy !== null}
-                onClick={() => act(u.email, () => api.setAccess(u.email, 'MEMBER'))}
+                onClick={() => act(u.id, () => api.setAccess(u.id, 'MEMBER'))}
               >
                 Approve
               </button>
@@ -94,7 +94,7 @@ export function AdminPanel({
       <ErrorNote error={members.error} />
       <ul aria-label="Members">
         {(members.data ?? []).map((u) => (
-          <li key={u.email} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
+          <li key={u.id} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
             <Avatar person={u} size={32} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold leading-tight">
@@ -105,20 +105,20 @@ export function AdminPanel({
               <p className="truncate text-xs text-ink/60">{u.email}</p>
             </div>
             {/* Roles: only owners make or remove admins (the platform enforces it too). */}
-            {isOwner && u.email !== me && u.role !== 'OWNER' && confirming !== u.email && (
+            {isOwner && u.id !== me && u.role !== 'OWNER' && confirming !== u.id && (
               <button
                 type="button"
                 className="btn-ghost !px-3 !py-1"
                 disabled={busy !== null}
-                onClick={() => act(u.email, () => api.setAccess(u.email, u.role === 'ADMIN' ? 'MEMBER' : 'ADMIN'))}
+                onClick={() => act(u.id, () => api.setAccess(u.id, u.role === 'ADMIN' ? 'MEMBER' : 'ADMIN'))}
               >
                 {u.role === 'ADMIN' ? 'Make member' : 'Make admin'}
               </button>
             )}
-            {u.email !== me &&
+            {u.id !== me &&
               u.role !== 'OWNER' &&
               (u.role !== 'ADMIN' || isOwner) &&
-              (confirming === u.email ? (
+              (confirming === u.id ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="text-ink/70">Remove {u.name}?</span>
                   <button
@@ -134,8 +134,8 @@ export function AdminPanel({
                     className="btn-accent !px-3 !py-1"
                     disabled={busy !== null}
                     onClick={() =>
-                      act(u.email, async () => {
-                        await api.setAccess(u.email, null);
+                      act(u.id, async () => {
+                        await api.setAccess(u.id, null);
                         setConfirming(null);
                       })
                     }
@@ -148,7 +148,7 @@ export function AdminPanel({
                   type="button"
                   className="btn-ghost !px-3 !py-1"
                   disabled={busy !== null}
-                  onClick={() => setConfirming(u.email)}
+                  onClick={() => setConfirming(u.id)}
                   aria-label={`Remove ${u.name}`}
                 >
                   Remove
@@ -162,13 +162,13 @@ export function AdminPanel({
           <p className="kicker pt-4">Blocked · {blocked.length}</p>
           <ul aria-label="Blocked">
             {blocked.map((u) => (
-              <li key={u.email} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
+              <li key={u.id} className="flex flex-wrap items-center gap-3 border-t-2 border-ink py-3 last:border-b-2">
                 <Avatar person={u} size={32} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold leading-tight">{u.name}</p>
                   <p className="truncate text-xs text-ink/60">{u.email}</p>
                 </div>
-                <button type="button" className="btn-ghost !px-4 !py-1.5" disabled={busy !== null} onClick={() => act(u.email, () => api.setAccess(u.email, null))}>
+                <button type="button" className="btn-ghost !px-4 !py-1.5" disabled={busy !== null} onClick={() => act(u.id, () => api.setAccess(u.id, null))}>
                   Unblock
                 </button>
               </li>

@@ -37,7 +37,7 @@ import {
 
 /** The leader runs their meeting; admins can always step in. */
 function canManage(user: User, meeting: Meeting): boolean {
-  return isAdmin(user) || user.email === meeting.leaderEmail;
+  return isAdmin(user) || user.id === meeting.leaderId;
 }
 
 function requireManager(user: User, meeting: Meeting): void {
@@ -51,21 +51,21 @@ function requireUpcoming(meeting: Meeting): void {
 /** The member the last leader handed off to, if any. */
 async function designatedNextLeader(deps: Deps): Promise<string | undefined> {
   const [latest] = await listPastMeetings(deps);
-  return latest?.nextLeaderEmail;
+  return latest?.nextLeaderId;
 }
 
-async function requireApprovedUser(deps: Deps, email: string, field: string): Promise<User> {
-  const user = await getUser(deps, email);
+async function requireApprovedUser(deps: Deps, id: string, field: string): Promise<User> {
+  const user = await getUser(deps, id);
   if (!user) throw badRequest(`"${field}" must be an approved member`);
   return user;
 }
 
 /** A meeting with its leader, book and (if picked from The Lineup) who nominated it. */
 async function meetingView(deps: Deps, meeting: Meeting, user: User) {
-  const nominator = meeting.chosenNomination?.nominatedByEmail;
+  const nominator = meeting.chosenNomination?.nominatedById;
   const [book, people, [commentCount, bookCommentCount]] = await Promise.all([
     meeting.bookIsbn ? getBook(deps, meeting.bookIsbn) : Promise.resolve(undefined),
-    getPeople(deps, [meeting.leaderEmail, ...(nominator ? [nominator] : [])]),
+    getPeople(deps, [meeting.leaderId, ...(nominator ? [nominator] : [])]),
     commentCounts(deps, [
       { kind: 'meeting', id: meeting.id },
       ...(meeting.bookIsbn ? [{ kind: 'book' as const, id: meeting.bookIsbn }] : []),
@@ -74,7 +74,7 @@ async function meetingView(deps: Deps, meeting: Meeting, user: User) {
   const { chosenNomination: _chosen, ...rest } = meeting;
   return {
     ...rest,
-    leader: people.get(meeting.leaderEmail),
+    leader: people.get(meeting.leaderId),
     book,
     nominatedBy: nominator ? people.get(nominator) : undefined,
     canManage: canManage(user, meeting),
@@ -105,12 +105,12 @@ export const getNextMeeting: Handler = async (_req, user, deps) => {
     return { body: { meeting: await meetingView(deps, meeting, user) } };
   }
 
-  const nextLeaderEmail = await designatedNextLeader(deps);
+  const nextLeaderId = await designatedNextLeader(deps);
   return {
     body: {
       meeting: null,
-      nextLeader: nextLeaderEmail ? person(await getUser(deps, nextLeaderEmail), nextLeaderEmail) : null,
-      canCreateNext: isAdmin(user) || nextLeaderEmail === user.email,
+      nextLeader: nextLeaderId ? person(await getUser(deps, nextLeaderId), nextLeaderId) : null,
+      canCreateNext: isAdmin(user) || nextLeaderId === user.id,
     },
   };
 };
@@ -123,7 +123,7 @@ export const getHistory: Handler = async (_req, _user, deps) => {
     getBooks(deps, isbns),
     getPeople(
       deps,
-      meetings.map((m) => m.leaderEmail),
+      meetings.map((m) => m.leaderId),
     ),
     Promise.all(
       meetings.map((m) =>
@@ -138,7 +138,7 @@ export const getHistory: Handler = async (_req, _user, deps) => {
     body: {
       meetings: meetings.map((m, i) => ({
         ...m,
-        leader: people.get(m.leaderEmail),
+        leader: people.get(m.leaderId),
         book: m.bookIsbn ? books.get(m.bookIsbn) : undefined,
         commentCount: counts[i]![0] ?? 0,
         bookCommentCount: m.bookIsbn ? (counts[i]![1] ?? 0) : 0,
@@ -154,15 +154,15 @@ export const getHistory: Handler = async (_req, _user, deps) => {
 export const createMeeting: Handler = async (req, user, deps) => {
   if (await getUpcomingMeeting(deps)) throw conflict('There is already an upcoming meeting');
 
-  let leaderEmail = user.email;
+  let leaderId = user.id;
   if (isAdmin(user)) {
-    const requested = optionalString(req.body, 'leaderEmail')?.toLowerCase();
-    if (requested) leaderEmail = (await requireApprovedUser(deps, requested, 'leaderEmail')).email;
+    const requested = optionalString(req.body, 'leaderId');
+    if (requested) leaderId = (await requireApprovedUser(deps, requested, 'leaderId')).id;
   } else {
-    if ((await designatedNextLeader(deps)) !== user.email) {
+    if ((await designatedNextLeader(deps)) !== user.id) {
       throw forbidden('Only the member the last leader handed off to (or an admin) can create the next meeting');
     }
-    if (req.body.leaderEmail !== undefined && req.body.leaderEmail !== user.email) {
+    if (req.body.leaderId !== undefined && req.body.leaderId !== user.id) {
       throw forbidden('Only admins can assign someone else as leader');
     }
   }
@@ -173,7 +173,7 @@ export const createMeeting: Handler = async (req, user, deps) => {
     title: optionalString(req.body, 'title') ?? 'Book Club',
     dateTime,
     videoUrl: optionalUrl(req.body, 'videoUrl'),
-    leaderEmail,
+    leaderId,
     status: 'UPCOMING',
     phase: 'PLANNING',
     createdAt: deps.now().toISOString(),
@@ -191,10 +191,9 @@ export const updateMeeting: Handler = async (req, user, deps) => {
   if (req.body.title !== undefined) updated.title = requireString(req.body, 'title');
   if (req.body.dateTime !== undefined) updated.dateTime = requireIsoDate(req.body, 'dateTime');
   if (req.body.videoUrl !== undefined) updated.videoUrl = optionalUrl(req.body, 'videoUrl');
-  if (req.body.leaderEmail !== undefined) {
+  if (req.body.leaderId !== undefined) {
     if (!isAdmin(user)) throw forbidden('Only admins can reassign the leader');
-    const email = requireString(req.body, 'leaderEmail').toLowerCase();
-    updated.leaderEmail = (await requireApprovedUser(deps, email, 'leaderEmail')).email;
+    updated.leaderId = (await requireApprovedUser(deps, requireString(req.body, 'leaderId'), 'leaderId')).id;
   }
   await saveMeeting(deps, updated);
   return { body: { meeting: await meetingView(deps, updated, user) }, audit: { label: updated.title } };
@@ -259,11 +258,10 @@ export const completeMeeting: Handler = async (req, user, deps) => {
   requireUpcoming(meeting);
   if (!meeting.bookIsbn) throw conflict('Pick the book before wrapping up the meeting');
 
-  const email = requireString(req.body, 'nextLeaderEmail').toLowerCase();
-  const nextLeader = await requireApprovedUser(deps, email, 'nextLeaderEmail');
+  const nextLeader = await requireApprovedUser(deps, requireString(req.body, 'nextLeaderId'), 'nextLeaderId');
 
   // Re-keys the item onto the PAST GSI partition.
-  const updated: Meeting = { ...meeting, status: 'PAST', phase: 'PAST', nextLeaderEmail: nextLeader.email };
+  const updated: Meeting = { ...meeting, status: 'PAST', phase: 'PAST', nextLeaderId: nextLeader.id };
   await saveMeeting(deps, updated);
   return { body: { meeting: updated }, audit: { label: meeting.title } };
 };
@@ -273,14 +271,14 @@ export const completeMeeting: Handler = async (req, user, deps) => {
 // ---------------------------------------------------------------------------
 
 /** A nomination as The Lineup shows it to `user`: who nominated it and its votes. */
-function nominationCard(n: Nomination, user: User, votes: { userEmail: string }[], nominatedBy: Person | undefined) {
+function nominationCard(n: Nomination, user: User, votes: { userId: string }[], nominatedBy: Person | undefined) {
   return {
     id: n.id,
     createdAt: n.createdAt,
     nominatedBy,
-    canWithdraw: n.nominatedByEmail === user.email || isAdmin(user),
+    canWithdraw: n.nominatedById === user.id || isAdmin(user),
     votes: votes.length,
-    myVote: votes.some((v) => v.userEmail === user.email),
+    myVote: votes.some((v) => v.userId === user.id),
   };
 }
 
@@ -297,7 +295,7 @@ export const getLineup: Handler = async (_req, user, deps) => {
     ),
     getPeople(
       deps,
-      lineup.map((n) => n.nominatedByEmail),
+      lineup.map((n) => n.nominatedById),
     ),
     lineupVotes(deps),
     commentCounts(
@@ -306,7 +304,7 @@ export const getLineup: Handler = async (_req, user, deps) => {
     ),
   ]);
   const views = lineup.map((n, i) => ({
-    ...nominationCard(n, user, votes.get(n.id) ?? [], people.get(n.nominatedByEmail)),
+    ...nominationCard(n, user, votes.get(n.id) ?? [], people.get(n.nominatedById)),
     book: books.get(n.bookIsbn) ?? { isbn: n.bookIsbn, title: n.bookIsbn, author: '' },
     commentCount: counts[i] ?? 0,
   }));
@@ -327,10 +325,10 @@ export async function nominationForBook(deps: Deps, isbn: string, user: User) {
   const nomination = (await listLineup(deps)).find((n) => n.bookIsbn === isbn);
   if (!nomination) return null;
   const [people, votes] = await Promise.all([
-    getPeople(deps, [nomination.nominatedByEmail]),
+    getPeople(deps, [nomination.nominatedById]),
     deps.store.query<NominationVoteItem>(keys.lineupPartition, keys.nominationVotePrefix(nomination.id)),
   ]);
-  return nominationCard(nomination, user, votes, people.get(nomination.nominatedByEmail));
+  return nominationCard(nomination, user, votes, people.get(nomination.nominatedById));
 }
 
 export const nominate: Handler = async (req, user, deps) => {
@@ -342,7 +340,7 @@ export const nominate: Handler = async (req, user, deps) => {
   const nomination: Nomination = {
     id: deps.newId(),
     bookIsbn: book.isbn,
-    nominatedByEmail: user.email,
+    nominatedById: user.id,
     createdAt: deps.now().toISOString(),
   };
   await saveNomination(deps, nomination);
@@ -353,7 +351,7 @@ export const nominate: Handler = async (req, user, deps) => {
 export const withdrawNomination: Handler = async (req, user, deps) => {
   const nomination = await getNomination(deps, req.params.id!);
   if (!nomination) throw notFound('Nomination not found');
-  if (nomination.nominatedByEmail !== user.email && !isAdmin(user)) {
+  if (nomination.nominatedById !== user.id && !isAdmin(user)) {
     throw forbidden('You can only withdraw your own nominations');
   }
   await deleteNomination(deps, nomination.id);
@@ -361,7 +359,7 @@ export const withdrawNomination: Handler = async (req, user, deps) => {
   const book = await getBook(deps, nomination.bookIsbn);
   return {
     body: { ok: true },
-    audit: { label: book?.title ?? nomination.bookIsbn, nominatedBy: nomination.nominatedByEmail },
+    audit: { label: book?.title ?? nomination.bookIsbn, nominatedBy: nomination.nominatedById },
   };
 };
 
@@ -379,15 +377,15 @@ export const voteForNomination: Handler = async (req, user, deps) => {
   if (!nomination) throw notFound('That book is no longer on The Lineup');
   const vote: NominationVote = {
     nominationId: nomination.id,
-    userEmail: user.email,
+    userId: user.id,
     createdAt: deps.now().toISOString(),
   };
-  await deps.store.put({ ...keys.nominationVote(nomination.id, user.email), ...vote });
+  await deps.store.put({ ...keys.nominationVote(nomination.id, user.id), ...vote });
   return { body: { ok: true }, audit: { label: (await getBook(deps, nomination.bookIsbn))?.title } };
 };
 
 export const removeVote: Handler = async (req, user, deps) => {
-  const { PK, SK } = keys.nominationVote(req.params.id!, user.email);
+  const { PK, SK } = keys.nominationVote(req.params.id!, user.id);
   await deps.store.delete(PK, SK);
   const nomination = await getNomination(deps, req.params.id!);
   const book = nomination && (await getBook(deps, nomination.bookIsbn));

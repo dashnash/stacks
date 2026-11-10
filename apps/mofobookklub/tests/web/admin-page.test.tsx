@@ -9,7 +9,7 @@ import { fakeApi, renderWithApi } from './fakes';
 const ev = (action: string, more: Partial<AuditEvent> = {}): AuditEvent => ({
   id: `${action}-${Math.random()}`,
   at: new Date().toISOString(),
-  actorEmail: 'alice@club.test',
+  actorId: 'u_alice',
   actorName: 'Alice',
   action,
   ...more,
@@ -48,7 +48,7 @@ describe('AuditLog', () => {
       opts.before ? { events: older, nextBefore: null } : { events: first, nextBefore: first[0]!.at },
     );
     const api = fakeApi({ auditLog });
-    renderWithApi(<AuditLog people={[{ email: 'bob@club.test', name: 'Bob' }]} />, api);
+    renderWithApi(<AuditLog people={[{ id: 'u_bob', name: 'Bob' }]} />, api);
     const user = userEvent.setup();
 
     const list = await screen.findByRole('list', { name: 'Activity' });
@@ -63,10 +63,10 @@ describe('AuditLog', () => {
     expect(await within(list).findByText(/voted for Dune/)).toBeInTheDocument();
     expect(auditLog).toHaveBeenLastCalledWith(expect.objectContaining({ before: first[0]!.at }));
 
-    await user.selectOptions(screen.getByLabelText('Person'), 'bob@club.test');
+    await user.selectOptions(screen.getByLabelText('Person'), 'u_bob');
     await user.selectOptions(screen.getByLabelText('What'), 'comment');
     await waitFor(() =>
-      expect(auditLog).toHaveBeenLastCalledWith(expect.objectContaining({ actor: 'bob@club.test', action: 'comment' })),
+      expect(auditLog).toHaveBeenLastCalledWith(expect.objectContaining({ actor: 'u_bob', action: 'comment' })),
     );
   });
 });
@@ -75,8 +75,8 @@ describe('AdminPanel roles', () => {
   it('lets the owner make a member an admin (and never offers it for yourself)', async () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({ members: [
-          { email: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
-          { email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
+          { id: 'admin@club.test', email: 'admin@club.test', name: 'Admin', role: 'ADMIN' },
+          { id: 'bob@club.test', email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
         ], pending: [] }),
     });
     renderWithApi(<AdminPanel me="admin@club.test" myRole="OWNER" onChanged={() => {}} />, api);
@@ -91,10 +91,10 @@ describe('AdminPanel roles', () => {
   it('gives plain admins no admin controls: no making admins, no removing admins or the owner', async () => {
     const api = fakeApi({
       access: vi.fn().mockResolvedValue({ members: [
-          { email: 'owner@club.test', name: 'Olive', role: 'OWNER' },
-          { email: 'admin@club.test', name: 'Me', role: 'ADMIN' },
-          { email: 'ada@club.test', name: 'Ada', role: 'ADMIN' },
-          { email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
+          { id: 'owner@club.test', email: 'owner@club.test', name: 'Olive', role: 'OWNER' },
+          { id: 'admin@club.test', email: 'admin@club.test', name: 'Me', role: 'ADMIN' },
+          { id: 'ada@club.test', email: 'ada@club.test', name: 'Ada', role: 'ADMIN' },
+          { id: 'bob@club.test', email: 'bob@club.test', name: 'Bob', role: 'MEMBER' },
         ], pending: [] }),
     });
     renderWithApi(<AdminPanel me="admin@club.test" myRole="ADMIN" onChanged={() => {}} />, api);

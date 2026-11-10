@@ -32,6 +32,13 @@ export const MAX_BODY_BYTES = 256 * 1024;
 
 export class Router {
   private readonly routes: Route[] = [];
+  private readonly hooks: ((method: HttpMethod, path: string) => void)[] = [];
+
+  /** Run before any route matches; throw an {@link HttpError} to answer instead (e.g. maintenance). */
+  before(hook: (method: HttpMethod, path: string) => void): this {
+    this.hooks.push(hook);
+    return this;
+  }
 
   add(method: HttpMethod, pattern: string, handler: RouteHandler): this {
     this.routes.push({ method, segments: split(pattern), handler });
@@ -43,6 +50,7 @@ export class Router {
       const method = event.requestContext.http.method.toUpperCase() as HttpMethod;
       let path = event.rawPath || '/';
       if (path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)) path = path.slice(API_PREFIX.length) || '/';
+      for (const hook of this.hooks) hook(method, path);
       const segments = split(path);
 
       let pathMatched = false;

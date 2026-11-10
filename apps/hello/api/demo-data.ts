@@ -1,4 +1,4 @@
-import type { AppDeps } from '@stacks/api';
+import { fixtureUserId, type AppDeps } from '@stacks/api';
 import type { Persona } from '@stacks/demo';
 
 /** One persona per role, so the demo shows every view. */
@@ -16,6 +16,6 @@ export async function seed(deps: AppDeps): Promise<void> {
   for (const [name, email, text] of samples) {
     const createdAt = new Date((t += 60_000)).toISOString();
     const id = deps.newId();
-    await deps.store.put({ PK: 'GREETINGS', SK: `${createdAt}#${id}`, id, text, authorEmail: email, authorName: name, createdAt });
+    await deps.store.put({ PK: 'GREETINGS', SK: `${createdAt}#${id}`, id, text, authorId: fixtureUserId(email), authorName: name, createdAt });
   }
 }

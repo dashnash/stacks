@@ -1,3 +1,4 @@
+import { testUserId as idOf } from '@stacks/testing';
 import { describe, expect, it } from 'vitest';
 import { makeTestApp } from '../helpers';
 
@@ -30,20 +31,20 @@ describe('the activity log', () => {
     await t.call('PATCH', `/books/${PHM}`, { as: ALICE, body: { title: 'Hijacked' } });
 
     const { events } = await log();
-    expect(events.map((e: { action: string; actorEmail: string }) => [e.action, e.actorEmail])).toEqual([
-      ['book.edit', BOB],
-      ['comment.delete', ADMIN],
-      ['comment.edit', ALICE],
-      ['comment.post', ALICE],
-      ['vote.add', ALICE],
-      ['nomination.create', BOB],
+    expect(events.map((e: { action: string; actorId: string }) => [e.action, e.actorId])).toEqual([
+      ['book.edit', idOf(BOB)],
+      ['comment.delete', idOf(ADMIN)],
+      ['comment.edit', idOf(ALICE)],
+      ['comment.post', idOf(ALICE)],
+      ['vote.add', idOf(ALICE)],
+      ['nomination.create', idOf(BOB)],
     ]);
     const byAction = Object.fromEntries(events.map((e: { action: string }) => [e.action, e]));
     expect(byAction['nomination.create']).toMatchObject({ actorName: 'Bob', label: 'Project Hail Mary', details: { input: { isbn: PHM } } });
     expect(byAction['vote.add'].label).toBe('Project Hail Mary');
     expect(byAction['comment.post']).toMatchObject({ label: 'Project Hail Mary', params: { kind: 'book', id: PHM }, details: { input: { body: 'Rocky rules' } } });
     expect(byAction['comment.edit'].details).toMatchObject({ before: 'Rocky rules', input: { body: 'Rocky RULES' } });
-    expect(byAction['comment.delete'].details).toEqual({ author: ALICE, text: 'Rocky RULES', byModerator: true });
+    expect(byAction['comment.delete'].details).toEqual({ author: idOf(ALICE), text: 'Rocky RULES', byModerator: true });
     expect(byAction['book.edit'].details.changes).toEqual({
       publisher: { from: null, to: 'Ballantine' },
       pageCount: { from: null, to: 496 },
@@ -60,7 +61,7 @@ describe('the activity log', () => {
     for (const body of ['one', 'two', 'three']) await t.call('POST', `/threads/book/${PHM}`, { as: ALICE, body: { body } });
     await t.call('PUT', `/stacks/access/${encodeURIComponent(BOB)}`, { as: ADMIN, body: { role: 'ADMIN' } });
 
-    expect((await log({ actor: BOB })).events.map((e: { action: string }) => e.action)).toEqual(['nomination.create']);
+    expect((await log({ actor: idOf(BOB) })).events.map((e: { action: string }) => e.action)).toEqual(['nomination.create']);
     expect((await log({ action: 'comment' })).events).toHaveLength(3);
     expect((await log({ action: 'access.set' })).events[0]).toMatchObject({ label: BOB, details: { to: 'ADMIN' } });
 
@@ -85,7 +86,7 @@ describe('the activity log', () => {
     await t.call('POST', `/threads/meeting/${meeting}`, { as: ALICE, body: { body: 'See you there' } });
     await t.call('DELETE', `/meetings/${meeting}/book`, { as: ADMIN });
     await t.call('POST', `/meetings/${meeting}/book`, { as: ADMIN, body: { isbn: PHM } });
-    await t.call('POST', `/meetings/${meeting}/complete`, { as: ADMIN, body: { nextLeaderEmail: ALICE } });
+    await t.call('POST', `/meetings/${meeting}/complete`, { as: ADMIN, body: { nextLeaderId: idOf(ALICE) } });
 
     const labels = Object.fromEntries(
       (await log()).events.map((e: { action: string; label?: string }) => [e.action, e.label]),

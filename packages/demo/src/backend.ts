@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import {
   createSession,
   createStacksApp,
+  fixtureUserId,
   MemoryStore,
   SESSION_COOKIE,
   type AppDeps,
@@ -17,6 +18,8 @@ import type { AppManifest } from '@stacks/manifest';
 import { createClient, type Client, type Navigator } from '@stacks/web';
 
 export interface Persona {
+  /** Platform user id; defaults to `fixtureUserId(email)` (what seed data should use). */
+  id?: string;
   email: string;
   name: string;
   /** One of the manifest's role ids. */
@@ -33,10 +36,10 @@ export interface DemoOptions<D extends AppDeps> {
   /** People to try the app as; the first is used when "Sign in" is pressed. Usually one per role. */
   personas: Persona[];
   /** People waiting for approval, shown on the app's access page. */
-  pending?: { email: string; name: string }[];
+  pending?: { id?: string; email: string; name: string }[];
   /** Sample data, written on first load (and after a reset). */
   seed?: (deps: D) => Promise<void>;
-  /** Where changes are kept between visits; set false to keep nothing. Default `stacks-demo:<slug>`. */
+  /** Where changes are kept between visits; set false to keep nothing. Default `stacks-demo:<slug>:v2` (v2: user ids; earlier saves are ignored). */
   storageKey?: string | false;
 }
 
@@ -49,15 +52,15 @@ class DemoPlatform implements PlatformClient {
   async recordAudit(event: AuditEvent): Promise<void> {
     this.audit.push(event);
   }
-  readonly notifications: { email: string; text: string; link?: string }[] = [];
+  readonly notifications: { userId: string; text: string; link?: string }[] = [];
   constructor(
     private readonly self: { slug: string; name: string },
     private readonly roles: { id: string; label: string; canManageAccess?: boolean }[],
     /** Shared with the demo: role changes here change who each persona signs in as. */
-    private readonly personas: Persona[],
-    private pendingPeople: { email: string; name: string }[],
+    private readonly personas: (Persona & { id: string })[],
+    private pendingPeople: { id: string; email: string; name: string }[],
   ) {}
-  private blockedPeople: { email: string; name: string }[] = [];
+  private blockedPeople: { id: string; email: string; name: string }[] = [];
   /** Set by the demo when someone signs in, so the menu shows their role. */
   current: Persona | null = null;
   async account(): Promise<AccountData> {
@@ -75,25 +78,25 @@ class DemoPlatform implements PlatformClient {
   }
   async access(): Promise<AppAccess> {
     return {
-      members: this.personas.filter((p) => p.role && p.role !== 'BLOCKED').map((p) => ({ email: p.email, name: p.name, role: p.role, ...(p.pictureUrl ? { pictureUrl: p.pictureUrl } : {}) })),
+      members: this.personas.filter((p) => p.role && p.role !== 'BLOCKED').map((p) => ({ id: p.id, email: p.email, name: p.name, role: p.role, ...(p.pictureUrl ? { pictureUrl: p.pictureUrl } : {}) })),
       pending: this.pendingPeople.map((p) => ({ ...p, role: 'PENDING', requestedAt: '2026-11-01T12:00:00.000Z' })),
       blocked: [
-        ...this.personas.filter((p) => p.role === 'BLOCKED').map((p) => ({ email: p.email, name: p.name, role: 'BLOCKED' })),
+        ...this.personas.filter((p) => p.role === 'BLOCKED').map((p) => ({ id: p.id, email: p.email, name: p.name, role: 'BLOCKED' })),
         ...this.blockedPeople.map((p) => ({ ...p, role: 'BLOCKED' })),
       ],
     };
   }
-  async setAccess(_actor: string, email: string, role: string | null): Promise<void> {
-    const waiting = this.pendingPeople.find((p) => p.email === email) ?? this.blockedPeople.find((p) => p.email === email);
-    this.pendingPeople = this.pendingPeople.filter((p) => p.email !== email);
-    this.blockedPeople = this.blockedPeople.filter((p) => p.email !== email);
-    const persona = this.personas.find((p) => p.email === email);
+  async setAccess(_actor: string, userId: string, role: string | null): Promise<void> {
+    const waiting = this.pendingPeople.find((p) => p.id === userId) ?? this.blockedPeople.find((p) => p.id === userId);
+    this.pendingPeople = this.pendingPeople.filter((p) => p.id !== userId);
+    this.blockedPeople = this.blockedPeople.filter((p) => p.id !== userId);
+    const persona = this.personas.find((p) => p.id === userId);
     if (persona) persona.role = role ?? '';
     else if (waiting && role === 'BLOCKED') this.blockedPeople.push(waiting);
     else if (waiting && role) this.personas.push({ ...waiting, role, blurb: 'just approved' });
   }
-  async notify(email: string, text: string, link?: string): Promise<void> {
-    this.notifications.push({ email, text, link });
+  async notify(userId: string, text: string, link?: string): Promise<void> {
+    this.notifications.push({ userId, text, link });
   }
 }
 
@@ -136,11 +139,11 @@ function save(key: string | false, store: MemoryStore): void {
  * replaced by persona sign-in. Lets anyone try the whole app with no AWS or Google.
  */
 export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): Demo {
-  const personas: Persona[] = opts.personas.map((p) => ({ ...p }));
-  const key = opts.storageKey === undefined ? `stacks-demo:${opts.manifest.slug}` : opts.storageKey;
+  const personas = opts.personas.map((p) => ({ ...p, id: p.id ?? fixtureUserId(p.email) }));
+  const key = opts.storageKey === undefined ? `stacks-demo:${opts.manifest.slug}:v2` : opts.storageKey;
   const saved = load(key);
   const store = new MemoryStore(saved ?? []);
-  const demoPlatform = new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, opts.manifest.roles, personas, opts.pending ?? []);
+  const demoPlatform = new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, opts.manifest.roles, personas, (opts.pending ?? []).map((p) => ({ ...p, id: p.id ?? fixtureUserId(p.email) })));
   const base: AppDeps = {
     store,
     platform: demoPlatform,
@@ -154,7 +157,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   for (const p of personas) if (!roles.has(p.role)) throw new Error(`Demo persona ${p.email} has role "${p.role}", which the manifest does not declare`);
 
   let sessionToken: string | null = null;
-  let persona: Persona | null = null;
+  let persona: (Persona & { id: string }) | null = null;
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((l) => l());
 
@@ -193,7 +196,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     persona = personas.find((p) => p.email === email && !!p.role) ?? null;
     demoPlatform.current = persona;
     sessionToken = persona
-      ? await createSession(deps, { email: persona.email, name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
+      ? await createSession(deps, { id: persona.id, email: persona.email, name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
       : null;
     save(key, store);
     notify();
