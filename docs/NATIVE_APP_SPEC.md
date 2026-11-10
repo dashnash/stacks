@@ -126,7 +126,7 @@ import only `@stacks/native`, never `native/`.
 | Concern | Rule |
 | --- | --- |
 | Start page | `https://auth.<domain>/`, or the page the person was on at last launch (restored within 24 h) |
-| In-app hosts | `auth.<domain>` and any `<slug>.<domain>` in the catalog (fetched from the Platform API at launch, cached). These open in the web view |
+| In-app hosts | `auth.<domain>`, the bare domain and any `*.<domain>`, except another environment's root under it (production skips `*.test.<domain>`). A new app works in the app the moment it deploys. `/native/config` is fetched at launch for the update check |
 | Other links | Open in `SFSafariViewController` (Google, GitHub, external sites); `mailto:`/`tel:`/`sms:` go to the system |
 | Identity | User agent gains `DashyHQ/<version> StacksNative/<protocol>` so pages can tell they're in the shell; `window.stacksNative` is injected at document start |
 | Chrome | Full-bleed web view, safe-area aware, no native tab bar. The account menu stays the only navigation (the platform's rule), so iPad Split View, Stage Manager and rotation just work |
@@ -454,7 +454,7 @@ Gate: every existing user signs in with Google and sees the same data and roles;
 
 **N2 — Shell and native Google sign-in**, in three PRs
 - [x] **N2a** (web side): `native` settings in `stacks.config.json`; apple-app-site-association on every host (CloudFront routers); `azp` allowlist for the iOS app's Google tokens; `GET /native/config`; `native/protocol/v1.json`; `@stacks/native` (client, web fallbacks, fake); the portal signs in, links accounts and signs out through the bridge in the app
-- [ ] **N2b**: `native/ios` (XcodeGen), web view shell, URL policy, offline screen, pull-to-refresh, share, universal links, bridge with origin checks; `ios.yml` unsigned PR build and tests on macOS
+- [x] **N2b**: `native/ios`: `Core` (Foundation-only Swift package: link rules, bridge router with origin checks, protocol types tested against `v1.json`), `App` (WKWebView shell, offline screen, pull-to-refresh, last page, update notice, share, native Google sign-in, universal links), XcodeGen `project.yml`, build settings generated from `stacks.config.json`; `ios.yml`: Core tests on Linux, unsigned simulator builds of both environments on macOS
 - [ ] **N2c**: signed uploads of both apps to TestFlight internal; `docs/IOS_SETUP.md` written while doing the setup
 
 Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
@@ -490,7 +490,7 @@ Defaulted as written above; change any by editing this spec.
 - [x] **Email to apps**: none by default; Book Club doesn't need member emails.
 - [x] **Account merge**: self-serve from Settings (aliases, see Identity v2).
 - [x] **Developer Program**: paid individual membership already active; nothing blocks TestFlight.
-- [ ] **SwiftUI `WebView`/`WebPage` vs `WKWebView`**: use the SwiftUI API only if it exposes reply message handlers, the UI delegate's permission hooks and the navigation policy; otherwise wrap `WKWebView`. Decide in N2.
+- [x] **SwiftUI `WebView`/`WebPage` vs `WKWebView`**: `WKWebView` (wrapped for SwiftUI): it has the reply message handlers, navigation and UI delegates the shell needs today.
 - [ ] **Individual → organization account**: if you ever move to an LLC, do it before the public App Store release to avoid the Sign in with Apple transfer.
 - [ ] **Web Push later**: reuse the device registry for desktop/Android browsers?
 - [ ] **Per-app branded apps later**: keep `native/ios` able to build a single-slug variant from a manifest flag, untested until wanted.

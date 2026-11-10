@@ -1,0 +1,85 @@
+# DashyHQ, the Stacks iOS app. Generate the Xcode project with:
+#   brew install xcodegen && xcodegen generate --spec native/ios/project.yml
+# Domains, bundle IDs and Google clients come from Config/*.xcconfig, which
+# scripts/ios-xcconfig.mjs writes from stacks.config.json (never edit them by hand).
+name: DashyHQ
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configs:
+  Debug: debug
+  Staging: release
+  Production: release
+configFiles:
+  Debug: Config/Staging.xcconfig
+  Staging: Config/Staging.xcconfig
+  Production: Config/Production.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CURRENT_PROJECT_VERSION: "1" # CI sets the build number
+    CODE_SIGN_STYLE: Automatic
+packages:
+  StacksShellCore:
+    path: Core
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
+targets:
+  DashyHQ:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes: ["Info.plist", "DashyHQ.entitlements"]
+    dependencies:
+      - package: StacksShellCore
+      - package: GoogleSignIn
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: $(APP_DISPLAY_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        ITSAppUsesNonExemptEncryption: false
+        StacksRootDomain: $(STACKS_ROOT_DOMAIN)
+        StacksOtherRoots: $(STACKS_OTHER_ROOTS)
+        GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
+        GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
+        CFBundleURLTypes:
+          - CFBundleURLName: google-sign-in
+            CFBundleURLSchemes: [$(GOOGLE_REVERSED_CLIENT_ID)]
+    entitlements:
+      path: App/DashyHQ.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:auth.$(STACKS_ROOT_DOMAIN)
+          - applinks:*.$(STACKS_ROOT_DOMAIN)
+schemes:
+  DashyHQ:
+    build:
+      targets:
+        DashyHQ: all
+    run:
+      config: Debug
+    archive:
+      config: Production
+  DashyHQ Test:
+    build:
+      targets:
+        DashyHQ: all
+    run:
+      config: Staging
+    archive:
+      config: Staging

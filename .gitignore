@@ -7,3 +7,9 @@ coverage/
 .DS_Store
 .env*
 apps/*/.stacks/screenshots/
+# iOS: the Xcode project and its plist/entitlements are generated from native/ios/project.yml
+native/ios/*.xcodeproj/
+native/ios/App/Info.plist
+native/ios/App/DashyHQ.entitlements
+native/ios/Core/.build/
+native/ios/build/
