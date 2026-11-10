@@ -21,7 +21,7 @@ import { GetParametersByPathCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { composeMigrations, migrateSdkItems, type Item, type ItemMigration } from '@stacks/api';
 import { migrateComments } from '@stacks/comments';
 import { parseManifest } from '@stacks/manifest';
-import { migrateApp, migratePlatform, type Report, type Table } from './migrate';
+import { migrateApp, migratePlatform, platformTableProblem, type Report, type Table } from './migrate';
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
@@ -38,6 +38,8 @@ const env = arg('env') ?? fail('--env staging|production is required');
 if (env !== 'staging' && env !== 'production') fail('--env must be staging or production');
 const tag = env === 'production' ? 'prod' : 'test';
 const platformTable = arg('platform-table') ?? fail(`--platform-table is required (the TableName output of stacks-${tag}-platform)`);
+const tableProblem = platformTableProblem(env as 'staging' | 'production', platformTable);
+if (tableProblem) fail(tableProblem);
 const onlyApps = all('app');
 const dryRun = args.includes('--dry-run');
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');

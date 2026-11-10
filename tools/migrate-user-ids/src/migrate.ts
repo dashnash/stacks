@@ -26,6 +26,17 @@ interface RunOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * Refuse a platform table from another environment: `--env` picks the app tables, so a mismatch
+ * would rewrite one environment's apps with the other's user ids. CDK names it `stacks-<tag>-platform-…`.
+ */
+export function platformTableProblem(env: 'staging' | 'production', table: string): string | null {
+  const tag = env === 'production' ? 'prod' : 'test';
+  return table.startsWith(`stacks-${tag}-platform-`)
+    ? null
+    : `--platform-table ${table} is not ${env}'s platform table (expected stacks-${tag}-platform-…). Check --env.`;
+}
+
 const isEmail = (s: unknown): s is string => typeof s === 'string' && s.includes('@');
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore, type Item } from '@stacks/api';
 import { createPlatformHarness } from '../../../platform/api/tests/helpers';
-import { formerUserId, migrateApp, migratePlatform, type Table } from '../src/migrate';
+import { formerUserId, migrateApp, migratePlatform, platformTableProblem, type Table } from '../src/migrate';
 import { migrate as bookClub } from '../../../apps/mofobookklub/api/migrations/user-ids';
 
 const tableOf = (store: MemoryStore): Table => ({
@@ -76,6 +76,15 @@ describe('platform migration', () => {
     expect(idFor('Ann@test.dev')).toBe('u_mig1');
     expect(idFor('gone@test.dev')).toBe(formerUserId('gone@test.dev'));
     expect(idFor('gone@test.dev')).toMatch(/^u_x[0-9a-f]{23}$/);
+  });
+});
+
+describe('environment check', () => {
+  it("refuses another environment's platform table", () => {
+    expect(platformTableProblem('production', 'stacks-prod-platform-TableCD117FA1-PUFKS1YH9OTL')).toBeNull();
+    expect(platformTableProblem('staging', 'stacks-test-platform-TableCD117FA1-XN11DNZUKKF3')).toBeNull();
+    expect(platformTableProblem('production', 'stacks-test-platform-TableCD117FA1-XN11DNZUKKF3')).toMatch(/not production's platform table/);
+    expect(platformTableProblem('staging', 'stacks-prod-platform-TableCD117FA1-PUFKS1YH9OTL')).toMatch(/expected stacks-test-platform/);
   });
 });
 
