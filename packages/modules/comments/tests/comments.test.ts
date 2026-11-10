@@ -59,6 +59,18 @@ describe('comments module', () => {
     expect(await commentCounts(t.store, [{ kind: 'note', id: 'n1' }])).toEqual([1]);
   });
 
+  it("treats a merged account's old comments as the person's: their name, and they can edit them", async () => {
+    const t = setup();
+    const old = await t.call('POST', '/threads/note/n1', { as: 'ann.old@x.dev', body: { body: 'From my old account' } });
+    // Ann merged her old account into ann@x.dev: the platform lists her once, with the old id as a former id.
+    t.platform.members = t.platform.members.map((m) => (m.id === testUserId('ann@x.dev') ? { ...m, formerIds: [testUserId('ann.old@x.dev')] } : m));
+    const { forgetMembers } = await import('@stacks/api');
+    forgetMembers(t.deps);
+    const thread = await t.call('GET', '/threads/note/n1', { as: 'ann@x.dev' });
+    expect(thread.body.comments[0]).toMatchObject({ author: { id: testUserId('ann@x.dev'), name: 'Ann' }, canEdit: true });
+    expect((await t.call('PATCH', `/threads/note/n1/comments/${old.body.comment.id}`, { as: 'ann@x.dev', body: { body: 'Still mine' } })).status).toBe(200);
+  });
+
   it('credits people who lost access as "Former member"', async () => {
     const t = setup();
     await t.call('POST', '/threads/note/n1', { as: 'ann@x.dev', body: { body: 'Hi' } });

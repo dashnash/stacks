@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Avatar, ErrorNote } from '@stacks/web';
 import { usePortal } from '../portal';
 import { BackToApp } from './BackToApp';
+import { SignInMethods } from './SignInMethods';
 
 export function Profile({ from }: { from?: string }) {
   const { api, me, refresh } = usePortal();
@@ -42,6 +43,7 @@ export function Profile({ from }: { from?: string }) {
         {saved && <p role="status">Saved. Every app shows your new name within a minute.</p>}
         <ErrorNote error={error} className="error" />
       </form>
+      <SignInMethods />
     </section>
   );
 }

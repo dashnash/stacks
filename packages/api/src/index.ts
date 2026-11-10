@@ -22,7 +22,7 @@ export type { RouteResult } from './http';
 export type { AppConfig, AppDeps, StacksUser, Viewer } from './model';
 export { HttpPlatformClient, PlatformError } from './platform';
 export type { AccountData, AppAccess, AppMember, PlatformClient } from './platform';
-export { appMembers, forgetMembers, getPeople } from './people';
+export { appMembers, forgetMembers, getPeople, isUser, userIds } from './people';
 export type { Person } from './people';
 export { Router } from './router';
 export type { HttpMethod, RequestContext } from './router';

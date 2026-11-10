@@ -31,11 +31,19 @@ const stripUser = (item: UserItem): PlatformUser => {
   return user as PlatformUser;
 };
 
-export async function getUser(deps: PlatformDeps, id: string): Promise<PlatformUser | null> {
+/** The stored record for an id, as it is (a merged account is an alias with `mergedInto`). */
+export async function getUserRecord(deps: PlatformDeps, id: string): Promise<PlatformUser | null> {
   if (!id) return null;
   const k = keys.user(id);
   const item = await deps.store.get<UserItem>(k.PK, k.SK);
   return item ? stripUser(item) : null;
+}
+
+/** The person behind an id, following merges (an alias resolves to the account it was merged into). */
+export async function getUser(deps: PlatformDeps, id: string): Promise<PlatformUser | null> {
+  let user = await getUserRecord(deps, id);
+  for (let hops = 0; user?.mergedInto && hops < 10; hops++) user = await getUserRecord(deps, user.mergedInto);
+  return user?.mergedInto ? null : user;
 }
 
 /** The id of whoever has this email (primary or linked), or null. */
@@ -80,15 +88,29 @@ export async function ensureUserForEmail(deps: PlatformDeps, email: string): Pro
   return (await getUserByEmail(deps, email)) ?? createUser(deps, { email, name: email.split('@')[0]! });
 }
 
-async function linkIdentity(deps: PlatformDeps, user: PlatformUser, provider: string, identity: GoogleIdentity): Promise<void> {
+/** An identity item for a user (with the GSI that lists a user's sign-in methods). */
+export const identityItem = (userId: string, provider: string, sub: string, email: string, linkedAt: string): IdentityItem => ({
+  ...keys.identity(provider, sub),
+  GSI1PK: keys.userIdentities(userId),
+  GSI1SK: `${provider}#${sub}`,
+  userId,
+  provider,
+  sub,
+  email: email.toLowerCase(),
+  linkedAt,
+});
+
+export async function linkIdentity(deps: PlatformDeps, user: PlatformUser, provider: string, identity: GoogleIdentity): Promise<void> {
   try {
-    await deps.store.put(
-      { ...keys.identity(provider, identity.sub), userId: user.id, provider, sub: identity.sub, email: identity.email, linkedAt: deps.now().toISOString() },
-      { ifNotExists: true },
-    );
+    await deps.store.put(identityItem(user.id, provider, identity.sub, identity.email, deps.now().toISOString()), { ifNotExists: true });
   } catch (err) {
     if (!(err instanceof ConditionFailedError)) throw err; // a concurrent sign-in linked it first
   }
+}
+
+/** A user's sign-in methods, oldest first. */
+export async function listIdentities(deps: PlatformDeps, userId: string): Promise<IdentityItem[]> {
+  return (await deps.store.queryGsi1<IdentityItem>(keys.userIdentities(userId))).sort((a, b) => a.linkedAt.localeCompare(b.linkedAt));
 }
 
 /** Move a user's primary email (their Google email changed), unless someone else already has the new one. */
@@ -113,11 +135,22 @@ export async function userForIdentity(deps: PlatformDeps, identity: GoogleIdenti
   const k = keys.identity(provider, identity.sub);
   const linked = await deps.store.get<IdentityItem>(k.PK, k.SK);
   let user = linked ? await getUser(deps, linked.userId) : null;
+  if (user && linked && (linked.userId !== user.id || !linked.GSI1PK)) {
+    // Written before identities were listed, or still pointing at a merged-away account: tidy it.
+    await deps.store.put(identityItem(user.id, provider, identity.sub, linked.email ?? email, linked.linkedAt ?? deps.now().toISOString()));
+  }
   if (!user) {
     user = (await getUserByEmail(deps, email)) ?? (await createUser(deps, { email, name: identity.name, picture: identity.picture }));
     await linkIdentity(deps, user, provider, { ...identity, email });
   }
+  // Only the primary identity's name, photo and email shape the profile; linked ones just sign in.
+  // An account from before primaries were recorded claims one on sign-in, unless it already has
+  // linked identities and this one isn't the account's own email (that one stays a linked sign-in).
+  const thisIdentity = `${provider}#${identity.sub}`;
+  const single = !user.mergedFrom?.length && !user.emails?.length;
   let next = user;
+  if (!next.primaryIdentity && (email === next.email || single)) next = { ...next, primaryIdentity: thisIdentity };
+  if (next.primaryIdentity !== thisIdentity) return next;
   if (next.email !== email) next = await moveEmail(deps, next, email);
   if (next.name !== identity.name || next.pictureUrl !== identity.picture) {
     next = { ...next, name: identity.name, ...(identity.picture ? { pictureUrl: identity.picture } : {}) };
@@ -133,6 +166,8 @@ export const appView = (u: PlatformUser, manifest: Pick<AppManifest, 'needsEmail
   ...(manifest.needsEmail ? { email: u.email } : {}),
   name: shownName(u),
   ...(u.pictureUrl ? { pictureUrl: u.pictureUrl } : {}),
+  // Ids of accounts merged into this one: apps treat posts by them as this person's.
+  ...(u.mergedFrom?.length ? { formerIds: u.mergedFrom } : {}),
 });
 
 /* ---------- Master sessions (the portal's own, on auth.<domain>) ---------- */

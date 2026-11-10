@@ -26,6 +26,8 @@ export interface AppMember {
   /** Only for apps whose manifest has `needsEmail`. */
   email?: string;
   name: string;
+  /** Ids of accounts merged into this one (see `StacksUser.formerIds`). */
+  formerIds?: string[];
   pictureUrl?: string;
   /** A manifest role id; "PENDING" in `pending`; "BLOCKED" in `blocked`. */
   role: string;

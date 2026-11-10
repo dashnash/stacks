@@ -1,4 +1,4 @@
-import { badRequest, forbidden, getPeople, notFound, renameEmailField, strip, type AppDeps, type AppRoutes, type Item, type ItemMigration, type Person, type Store, type Viewer } from '@stacks/api';
+import { badRequest, forbidden, getPeople, isUser, notFound, renameEmailField, strip, type AppDeps, type AppRoutes, type Item, type ItemMigration, type Person, type Store, type Viewer } from '@stacks/api';
 
 /**
  * Threaded comments on anything an app has (the `comments` module), generalized from Book Club.
@@ -112,8 +112,8 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       deleted: !!c.deleted,
       body: c.deleted ? '' : c.body,
       author: c.deleted ? null : (people.get(c.authorId) ?? null),
-      canEdit: !c.deleted && c.authorId === v.user.id,
-      canDelete: !c.deleted && (c.authorId === v.user.id || canModerate(v)),
+      canEdit: !c.deleted && isUser(v.user, c.authorId),
+      canDelete: !c.deleted && (isUser(v.user, c.authorId) || canModerate(v)),
     }));
   }
 
@@ -148,7 +148,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       async (req, v) => {
         const t = await target(req.params, v.deps);
         const comment = await requireComment(v.deps, t, req.params.commentId!);
-        if (comment.authorId !== v.user.id) throw forbidden('You can only edit your own comments');
+        if (!isUser(v.user, comment.authorId)) throw forbidden('You can only edit your own comments');
         const updated: Comment = { ...comment, body: requireBody(req.body), editedAt: v.deps.now().toISOString() };
         await v.deps.store.put({ ...commentKey(t, updated.id), ...updated });
         const [out] = await view(v, [updated]);
@@ -162,7 +162,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
       async (req, v) => {
         const t = await target(req.params, v.deps);
         const comment = await requireComment(v.deps, t, req.params.commentId!);
-        if (comment.authorId !== v.user.id && !canModerate(v)) throw forbidden('You can only delete your own comments');
+        if (!isUser(v.user, comment.authorId) && !canModerate(v)) throw forbidden('You can only delete your own comments');
         // A comment with replies is blanked, not removed, so the conversation under it stays put.
         const hasReplies = (await listComments(v.deps.store, t)).some((c) => c.parentId === comment.id);
         if (hasReplies) await v.deps.store.put({ ...commentKey(t, comment.id), ...comment, body: '', deleted: true });
@@ -171,7 +171,7 @@ export function commentRoutes<D extends AppDeps>(api: AppRoutes<D>, opts: Commen
           await v.deps.store.delete(PK, SK);
         }
         await recount(v.deps.store, t);
-        return { body: { ok: true }, audit: { label: t.label, author: comment.authorId, text: comment.body, byModerator: comment.authorId !== v.user.id } };
+        return { body: { ok: true }, audit: { label: t.label, author: comment.authorId, text: comment.body, byModerator: !isUser(v.user, comment.authorId) } };
       },
       { audit: 'comment.delete' },
     );

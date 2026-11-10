@@ -221,10 +221,13 @@ and then:
 - **Grants**, per app: a role beats pending or none; between two roles the one listed earlier in the
   manifest's `roles` wins (roles are listed strongest first, as every manifest does today); **`BLOCKED`
   on either side wins**, so a merge can't escape a block. Pending requests are kept once.
-- **App data isn't rewritten.** Apps keep B's ID wherever they stored it; `getPeople`, `appMembers`
-  and session reads resolve aliases, so B's old posts show as A. Apps that want a clean table
-  can listen for `user.merged` (a webhook to the app's API, `{ from: B, into: A }`) and rewrite at
-  their own pace. The comments module does this.
+- **App data isn't rewritten.** Apps keep B's ID wherever they stored it. The platform gives A's
+  `formerIds` (`[B, …]`) with A on sign-in and in member lists; `getPeople` resolves them, so B's old
+  posts show as A, and apps compare stored ids with `isUser(user, id)` (comments and Book Club do), so
+  A can still edit B's old comments, lead B's meeting and take back B's vote. A `user.merged` webhook
+  for apps that want to rewrite their tables is deferred until one needs it.
+- **Profile.** Each account has a primary identity (`primaryIdentity`): only its Google name, photo
+  and email update the profile. Linked identities just sign in.
 - B's sessions and devices end; inbox items move to A. Audit `user.merge` (both IDs) in the platform
   feed and in each app where B had a grant.
 - Limits: you can't merge into or out of a platform admin from Settings (super-admin only), you
@@ -440,7 +443,8 @@ Each phase ends with a gate. N1 is pure platform work and can start before any i
 - [x] **N1a**: user IDs, Google identities by `sub`, email index; platform, SDK, comments module and all three apps on IDs; `tools/migrate-user-ids` + per-app migrations; maintenance mode
 - [x] N1a cut-over on staging, then production (`docs/USER_IDS_CUTOVER.md`), 2026-11-10
 - [x] **N1b**: apps see no email by default (`needsEmail` in the manifest); Book Club's admin page shows display names, not emails
-- [ ] **N1c**: Settings › Sign-in methods with self-serve merge (aliases, grant rules, `user.merged` webhook)
+- [x] **N1c**: Settings › Sign-in methods with self-serve merge (aliases with `formerIds`, grant rules, primary identity)
+- [ ] Later: platform-admin merge in the grid; `user.merged` webhook for apps that want to rewrite their data
 
 Gate: every existing user signs in with Google and sees the same data and roles; tests cover matching, linking and merging (incl. block-wins and alias resolution).
 

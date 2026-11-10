@@ -34,3 +34,13 @@ describe('user-id migrations', () => {
     expect(fixtureUserId('Ann.Lee@demo.dev')).toBe('u_ann_lee_demo_dev');
   });
 });
+
+describe('merged people', () => {
+  it('isUser and userIds cover the ids of merged accounts', async () => {
+    const { isUser, userIds } = await import('../src/people');
+    const ann = { id: 'u_ann', formerIds: ['u_old'] };
+    expect([isUser(ann, 'u_ann'), isUser(ann, 'u_old'), isUser(ann, 'u_bo'), isUser(ann, undefined)]).toEqual([true, true, false, false]);
+    expect(userIds(ann)).toEqual(['u_ann', 'u_old']);
+    expect(userIds({ id: 'u_bo' })).toEqual(['u_bo']);
+  });
+});

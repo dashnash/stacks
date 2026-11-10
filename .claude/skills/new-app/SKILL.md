@@ -94,7 +94,7 @@ Then replace the starter notes feature (`templates/app/README.md` lists what to 
   (`.public`, `.member`, `.role`, `.approver`) rather than checking roles by hand; validate input with
   the SDK helpers; add `{ audit: '<thing>.<verb>' }` to every change. Design keys for the single table
   (`PK`/`SK`, `GSI1PK`/`GSI1SK`) around how screens read data. Store people by `v.user.id`, never their
-  email; show names with `getPeople(deps, ids)`. Apps don't get emails (`needsEmail` is a platform
+  email; show names with `getPeople(deps, ids)`; check "is this mine?" with `isUser(v.user, storedId)`. Apps don't get emails (`needsEmail` is a platform
   decision: don't add it in an app task). Public routes never return emails.
 - **Demo data** (`api/demo-data.ts`): keep one persona per role (top role first); seed realistic,
   friendly sample data so every screen has something on it. Dates relative to `deps.now()`, with

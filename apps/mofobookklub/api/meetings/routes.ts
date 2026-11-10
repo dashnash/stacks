@@ -1,3 +1,4 @@
+import { isUser, userIds } from '@stacks/api';
 import { backfillCovers, ensureHiResCover, getBook, getBooks, resolveBook } from '../books/repo.js';
 import type { Deps } from '../utils/deps.js';
 import type { Handler } from '../utils/handler.js';
@@ -37,7 +38,7 @@ import {
 
 /** The leader runs their meeting; admins can always step in. */
 function canManage(user: User, meeting: Meeting): boolean {
-  return isAdmin(user) || user.id === meeting.leaderId;
+  return isAdmin(user) || isUser(user, meeting.leaderId);
 }
 
 function requireManager(user: User, meeting: Meeting): void {
@@ -110,7 +111,7 @@ export const getNextMeeting: Handler = async (_req, user, deps) => {
     body: {
       meeting: null,
       nextLeader: nextLeaderId ? person(await getUser(deps, nextLeaderId), nextLeaderId) : null,
-      canCreateNext: isAdmin(user) || nextLeaderId === user.id,
+      canCreateNext: isAdmin(user) || isUser(user, nextLeaderId),
     },
   };
 };
@@ -159,10 +160,10 @@ export const createMeeting: Handler = async (req, user, deps) => {
     const requested = optionalString(req.body, 'leaderId');
     if (requested) leaderId = (await requireApprovedUser(deps, requested, 'leaderId')).id;
   } else {
-    if ((await designatedNextLeader(deps)) !== user.id) {
+    if (!isUser(user, await designatedNextLeader(deps))) {
       throw forbidden('Only the member the last leader handed off to (or an admin) can create the next meeting');
     }
-    if (req.body.leaderId !== undefined && req.body.leaderId !== user.id) {
+    if (req.body.leaderId !== undefined && !isUser(user, String(req.body.leaderId))) {
       throw forbidden('Only admins can assign someone else as leader');
     }
   }
@@ -276,9 +277,9 @@ function nominationCard(n: Nomination, user: User, votes: { userId: string }[], 
     id: n.id,
     createdAt: n.createdAt,
     nominatedBy,
-    canWithdraw: n.nominatedById === user.id || isAdmin(user),
+    canWithdraw: isUser(user, n.nominatedById) || isAdmin(user),
     votes: votes.length,
-    myVote: votes.some((v) => v.userId === user.id),
+    myVote: votes.some((v) => isUser(user, v.userId)),
   };
 }
 
@@ -351,7 +352,7 @@ export const nominate: Handler = async (req, user, deps) => {
 export const withdrawNomination: Handler = async (req, user, deps) => {
   const nomination = await getNomination(deps, req.params.id!);
   if (!nomination) throw notFound('Nomination not found');
-  if (nomination.nominatedById !== user.id && !isAdmin(user)) {
+  if (!isUser(user, nomination.nominatedById) && !isAdmin(user)) {
     throw forbidden('You can only withdraw your own nominations');
   }
   await deleteNomination(deps, nomination.id);
@@ -380,13 +381,18 @@ export const voteForNomination: Handler = async (req, user, deps) => {
     userId: user.id,
     createdAt: deps.now().toISOString(),
   };
-  await deps.store.put({ ...keys.nominationVote(nomination.id, user.id), ...vote });
+  // Already voted from an account they have since merged into this one: that vote stands.
+  const earlier = await Promise.all(userIds(user).slice(1).map((id) => deps.store.get(keys.nominationVote(nomination.id, id).PK, keys.nominationVote(nomination.id, id).SK)));
+  if (!earlier.some(Boolean)) await deps.store.put({ ...keys.nominationVote(nomination.id, user.id), ...vote });
   return { body: { ok: true }, audit: { label: (await getBook(deps, nomination.bookIsbn))?.title } };
 };
 
 export const removeVote: Handler = async (req, user, deps) => {
-  const { PK, SK } = keys.nominationVote(req.params.id!, user.id);
-  await deps.store.delete(PK, SK);
+  // Their vote may be under an account they merged into this one.
+  for (const id of userIds(user)) {
+    const { PK, SK } = keys.nominationVote(req.params.id!, id);
+    await deps.store.delete(PK, SK);
+  }
   const nomination = await getNomination(deps, req.params.id!);
   const book = nomination && (await getBook(deps, nomination.bookIsbn));
   return { body: { ok: true }, audit: book ? { label: book.title } : {} };

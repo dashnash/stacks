@@ -14,6 +14,15 @@ export interface PlatformUser {
   pictureUrl?: string;
   createdAt: string;
   favorites?: string[];
+  /** The sign-in identity (`google#<sub>`) whose name, photo and email the profile follows. Others are linked. */
+  primaryIdentity?: string;
+  /** Other emails linked to this account (their `EMAIL#` items point here). */
+  emails?: string[];
+  /** Ids of accounts merged into this one: apps resolve them to this person (`formerIds`). */
+  mergedFrom?: string[];
+  /** Set on an account merged into another: it is only an alias from then on. */
+  mergedInto?: string;
+  mergedAt?: string;
   /** Slugs, most recent first (at most 8). */
   recent?: string[];
 }
@@ -138,6 +147,10 @@ export const keys = {
   email: (email: string) => ({ PK: `EMAIL#${email.toLowerCase()}`, SK: 'EMAIL' }),
   /** Unique lookup from a sign-in identity (`google`, later `apple`) to its user. */
   identity: (provider: string, sub: string) => ({ PK: `IDENTITY#${provider}#${sub}`, SK: 'IDENTITY' }),
+  /** GSI1 on identity items: a user's sign-in methods. */
+  userIdentities: (userId: string) => `USERIDENTITIES#${userId}`,
+  /** A single-use, short-lived offer to merge two accounts, keyed by the ticket's hash. */
+  mergeTicket: (hash: string) => ({ PK: `MERGE#${hash}`, SK: 'MERGE' }),
   app: (slug: string) => ({ PK: `APP#${slug}`, SK: 'APP' }),
   grant: (slug: string, userId: string) => ({ PK: `APP#${slug}`, SK: `GRANT#${userId}`, GSI1PK: `USERGRANTS#${userId}`, GSI1SK: slug }),
   notification: (userId: string, at: string, id: string) => ({ PK: `NOTIF#${userId}`, SK: `${at}#${id}` }),

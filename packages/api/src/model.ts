@@ -11,6 +11,11 @@ export interface StacksUser {
   id: string;
   /** Only for apps whose manifest has `needsEmail` (it may be a relay address). Never a key. */
   email?: string;
+  /**
+   * Ids of accounts this person merged into this one. Data an app stored under them is theirs: compare
+   * with `isUser(user, storedId)`, not `===`.
+   */
+  formerIds?: string[];
   /** The display name from their global profile (never their full Google name). */
   name: string;
   pictureUrl?: string;

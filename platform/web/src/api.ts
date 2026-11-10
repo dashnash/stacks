@@ -52,6 +52,24 @@ export interface AuditEvent {
   details?: Record<string, unknown>;
 }
 
+export interface SignInMethod {
+  provider: string;
+  sub: string;
+  email: string;
+  linkedAt: string;
+  /** The one whose name, photo and email are the profile; it can't be removed. */
+  primary: boolean;
+}
+
+export interface MergePlan {
+  other: { name: string; email: string };
+  apps: { slug: string; name: string; yours: string | null; theirs: string | null; result: string | null; resultLabel: string | null }[];
+  /** Why the merge can't happen from Settings; empty when it can. */
+  problems: string[];
+}
+
+export type LinkResult = { linked: true } | { linked: false; ticket: string; plan: MergePlan };
+
 /** The Platform API, typed. */
 export function createPortalApi(client: Client = createClient()) {
   return {
@@ -60,6 +78,10 @@ export function createPortalApi(client: Client = createClient()) {
     me: () => client.get<Me>('/me'),
     signInWithGoogle: (credential: string) => client.post<{ user: Me['user'] }>('/auth/google', { credential }),
     signOut: () => client.post('/auth/logout'),
+    signInMethods: () => client.get<{ identities: SignInMethod[]; emails: string[] }>('/me/identities'),
+    linkGoogle: (credential: string) => client.post<LinkResult>('/me/identities/google', { credential }),
+    unlink: (m: Pick<SignInMethod, 'provider' | 'sub'>) => client.del(`/me/identities/${encodeURIComponent(m.provider)}/${encodeURIComponent(m.sub)}`),
+    merge: (ticket: string) => client.post<{ user: Me['user'] }>('/me/merge', { ticket }),
     updateProfile: (displayName: string | null) => client.patch<{ user: Me['user'] }>('/me', { displayName }),
     catalog: () => client.get<{ apps: CatalogApp[]; recent: string[] }>('/catalog'),
     publicCatalog: () => client.get<{ apps: CatalogApp[] }>('/public/catalog'),
