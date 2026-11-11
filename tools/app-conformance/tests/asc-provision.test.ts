@@ -108,7 +108,14 @@ describe('App Store Connect provisioning', () => {
       ['com.dashyhq.stacks', 'DashyHQ', 'IOS'],
       ['com.dashyhq.stacks.test', 'DashyHQ Test', 'IOS'],
     ]);
-    expect(asc.of('caps').map((c) => c.attributes.capabilityType)).toEqual(['ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS', 'ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS']);
+    expect(asc.of('caps').map((c) => c.attributes.capabilityType)).toEqual([
+      'ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH',
+      'ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH',
+    ]);
+    // Sign in with Apple: each app is its own primary App ID.
+    expect(asc.of('caps').find((c) => c.attributes.capabilityType === 'APPLE_ID_AUTH')!.attributes.settings).toEqual([
+      { key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] },
+    ]);
     expect(log.filter((l) => l.startsWith('!'))).toHaveLength(2);
   });
 

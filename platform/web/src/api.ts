@@ -83,12 +83,14 @@ export type LinkResult = { linked: true } | { linked: false; ticket: string; pla
 export function createPortalApi(client: Client = createClient()) {
   return {
     client,
-    config: () => client.get<{ googleClientId: string; rootDomain: string }>('/config'),
+    config: () => client.get<{ googleClientId: string; rootDomain: string; appleServicesId: string | null }>('/config'),
     me: () => client.get<Me>('/me'),
     signInWithGoogle: (credential: string) => client.post<{ user: Me['user'] }>('/auth/google', { credential }),
+    signInWithApple: (credential: string, name?: string) => client.post<{ user: Me['user'] }>('/auth/apple', { credential, ...(name ? { name } : {}) }),
     signOut: () => client.post('/auth/logout'),
     signInMethods: () => client.get<{ identities: SignInMethod[]; emails: string[] }>('/me/identities'),
     linkGoogle: (credential: string) => client.post<LinkResult>('/me/identities/google', { credential }),
+    linkApple: (credential: string, name?: string) => client.post<LinkResult>('/me/identities/apple', { credential, ...(name ? { name } : {}) }),
     unlink: (m: Pick<SignInMethod, 'provider' | 'sub'>) => client.del(`/me/identities/${encodeURIComponent(m.provider)}/${encodeURIComponent(m.sub)}`),
     merge: (ticket: string) => client.post<{ user: Me['user'] }>('/me/merge', { ticket }),
     updateProfile: (displayName: string | null) => client.patch<{ user: Me['user'] }>('/me', { displayName }),

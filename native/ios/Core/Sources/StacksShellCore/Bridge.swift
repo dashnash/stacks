@@ -13,6 +13,7 @@ public enum BridgeProtocol {
     /// Every call this app version understands, and who may make it.
     public static let calls: [String: Origins] = [
         "app.info": .any,
+        "auth.apple": .auth,
         "auth.google": .auth,
         "auth.signedOut": .auth,
         "badge.set": .auth,

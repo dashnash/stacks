@@ -14,7 +14,7 @@ const info = await native.call('app.info'); // { version, build, platform, proto
 
 - Calls throw `NativeError` with `code`: `unsupported` (not in the app, or an older app), `forbidden`
   (not allowed from this page), `cancelled` (the person backed out), `failed`.
-- `auth.google`, `auth.signedOut`, `push.*` and `badge.set` are for the portal only: the app refuses
+- `auth.google`, `auth.apple`, `auth.signedOut`, `push.*` and `badge.set` are for the portal only: the app refuses
   them from apps. Apps get push for free: whatever they send with `deps.platform.notify` reaches
   people's phones (the portal registers the device; people mute apps in Settings).
 - Hardware (haptics, motion, camera, …) arrives in later phases and will be declared in the manifest.

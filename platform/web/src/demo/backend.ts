@@ -82,6 +82,12 @@ export function createDemoPortal() {
       if (!person) throw unauthorized('Unknown demo person');
       return { sub: `demo-${person.email}`, email: person.email, name: person.name };
     },
+    // Tests' pretend Apple: `apple:<sub>[:<email>]` (no name in it, like Apple's token).
+    verifyApple: async (credential) => {
+      const [scheme, sub, email] = credential.split(':');
+      if (scheme !== 'apple' || !sub) throw unauthorized('Unknown demo Apple ID');
+      return { sub, email: email ?? '', name: '' };
+    },
     now: () => new Date(),
     newId: () => `d${++id}`,
   };

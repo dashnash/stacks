@@ -8,7 +8,7 @@ const protocol = JSON.parse(readFileSync(join(__dirname, '../../../native/protoc
 describe('the protocol file', () => {
   it('matches what this package speaks', () => {
     expect(protocol.protocol).toBe(PROTOCOL);
-    const names: (keyof Calls)[] = ['app.info', 'auth.google', 'auth.signedOut', 'badge.set', 'push.register', 'push.saveDevice', 'push.status', 'share'];
+    const names: (keyof Calls)[] = ['app.info', 'auth.apple', 'auth.google', 'auth.signedOut', 'badge.set', 'push.register', 'push.saveDevice', 'push.status', 'share'];
     expect(Object.keys(protocol.calls).sort()).toEqual([...names].sort());
     expect(protocol.global.example.calls.sort()).toEqual([...names].sort());
     expect(protocol.errorCodes).toEqual(['unsupported', 'forbidden', 'cancelled', 'failed']);

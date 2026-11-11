@@ -18,6 +18,7 @@ Connect key goes straight into GitHub.
 | TestFlight groups that get every build, with you as tester | the **iOS provision** workflow | Apple | No |
 | Two iOS OAuth clients | you | `stacks.config.json` → `native.googleIosClientIds` | No |
 | APNs key (`.p8` + Key ID), for push | you | SSM SecureStrings, from your Mac (step 9) | **Yes** |
+| Two Services IDs, for Sign in with Apple on the web | you | `stacks.config.json` → `appleServicesId` (step 10) | No |
 
 ## 1. Your Team ID (not secret)
 
@@ -159,6 +160,35 @@ job itself.
 Check: in DashyHQ Test, the home page offers **Turn on notifications**; allow it, then ask for access
 to a private app from another account. The approver's phone shows the request; tapping it opens
 the access page.
+
+## 10. Sign in with Apple on the web (once; not secret)
+
+In the iOS apps, Sign in with Apple works as soon as a build with it is in TestFlight (the release
+job turns the capability on for both bundle IDs). Browsers need an Apple **Services ID** per
+environment:
+
+1. [Certificates, Identifiers & Profiles → Identifiers](https://developer.apple.com/account/resources/identifiers/list)
+   → **+** → **Services IDs** → **Continue**, twice:
+
+| Description | Identifier |
+| --- | --- |
+| DashyHQ Test (web) | `com.dashyhq.stacks.test.web` |
+| DashyHQ (web) | `com.dashyhq.stacks.web` |
+
+2. Open each one → tick **Sign in with Apple** → **Configure**:
+
+| Services ID | Primary App ID | Domains and Subdomains | Return URLs |
+| --- | --- | --- | --- |
+| `com.dashyhq.stacks.test.web` | `com.dashyhq.stacks.test` | `auth.test.iamdashnash.com` | `https://auth.test.iamdashnash.com/` |
+| `com.dashyhq.stacks.web` | `com.dashyhq.stacks` | `auth.iamdashnash.com` | `https://auth.iamdashnash.com/` |
+
+   **Next** → **Done** → **Continue** → **Save**.
+3. In `stacks.config.json`, set `"appleServicesId"` in each environment (a small PR; a Claude
+   session can do it). The portal then shows **Continue with Apple** in browsers too.
+
+No key or secret is involved: the portal receives Apple's identity token directly (popup) and the
+platform checks it against Apple's public keys. People who choose **Hide My Email** get an
+`@privaterelay.appleid.com` address; the platform never emails anyone, so nothing more is needed.
 
 ## Later
 

@@ -149,6 +149,8 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 /* Settings › Sign-in methods */
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list > li { margin: 0; }
+.apple-button { background: #000; color: #fff; border-color: #000; margin-top: 12px; }
+@media (prefers-color-scheme: dark) { .apple-button { background: #fff; color: #000; border-color: #fff; } }
 .plain-fieldset { border: 0; padding: 0; margin: 0; }
 .row-gap.tight { margin: 0; gap: 8px; }
 .push-prompt { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }

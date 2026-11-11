@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { getNative, NativeError } from '@stacks/native';
 import { ErrorNote, useAsync } from '@stacks/web';
 import type { MergePlan } from '../api';
+import { appleAvailable, signInWithApple } from '../apple';
 import { loadGoogle, usePortal } from '../portal';
+
+const PROVIDERS: Record<string, string> = { google: 'Google', apple: 'Apple' };
 
 /**
  * Settings › Sign-in methods: the Google accounts that sign in to this Stacks account. Linking one
@@ -11,18 +14,19 @@ import { loadGoogle, usePortal } from '../portal';
 export function SignInMethods() {
   const { api, me, refresh, signInMethod } = usePortal();
   const methods = useAsync(() => api.signInMethods(), [api]);
+  const config = useAsync(() => (signInMethod.kind === 'google' ? api.config() : Promise.resolve(null)), [api, signInMethod.kind]);
   const [offer, setOffer] = useState<{ ticket: string; plan: MergePlan } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const link = async (credential: string) => {
+  const link = async (credential: string, provider: 'google' | 'apple' = 'google', name?: string) => {
     setError(null);
     setNotice(null);
     try {
-      const res = await api.linkGoogle(credential);
+      const res = provider === 'apple' ? await api.linkApple(credential, name) : await api.linkGoogle(credential);
       if (res.linked) {
-        setNotice('Linked. You can sign in with that Google account too.');
+        setNotice(provider === 'apple' ? 'Linked. You can sign in with your Apple ID too.' : 'Linked. You can sign in with that Google account too.');
         await methods.reload();
       } else setOffer({ ticket: res.ticket, plan: res.plan });
     } catch (err) {
@@ -54,7 +58,7 @@ export function SignInMethods() {
         {(methods.data?.identities ?? []).map((m) => (
           <li key={`${m.provider}:${m.sub}`} className="row-gap">
             <span>
-              <strong>Google</strong> · {m.email}
+              <strong>{PROVIDERS[m.provider] ?? m.provider}</strong> · {m.email}
               {m.primary && <span className="muted small"> · main (your name and photo come from it)</span>}
             </span>
             {!m.primary && (
@@ -80,7 +84,20 @@ export function SignInMethods() {
         <MergeOffer plan={offer.plan} busy={busy} onMerge={merge} onCancel={() => setOffer(null)} />
       ) : (
         <div className="stack">
-          <p className="muted small">Link another Google account to sign in with it too. If it already has its own account here, you can merge the two.</p>
+          <p className="muted small">Link another Google account or your Apple ID to sign in with it too. If it already has its own account here, you can merge the two.</p>
+          {signInMethod.kind === 'google' && appleAvailable(config.data?.appleServicesId) && !(methods.data?.identities ?? []).some((m) => m.provider === 'apple') && (
+            <button
+              type="button"
+              className="button small secondary"
+              onClick={() =>
+                signInWithApple(config.data?.appleServicesId)
+                  .then((got) => (got ? link(got.credential, 'apple', got.name) : undefined))
+                  .catch((err: Error) => setError(err.message))
+              }
+            >
+              Link your Apple ID
+            </button>
+          )}
           {signInMethod.kind === 'google' && getNative().has('auth.google') ? (
             <button
               type="button"
@@ -121,7 +138,7 @@ function MergeOffer({ plan, busy, onMerge, onCancel }: { plan: MergePlan; busy: 
   const blocked = plan.problems.length > 0;
   return (
     <div className="card stack" role="region" aria-label="Merge accounts">
-      <h3>That Google account already has its own account</h3>
+      <h3>That sign-in already has its own account</h3>
       <p>
         <strong>{plan.other.name}</strong> ({plan.other.email}). Merge it into this one? Its apps, roles, inbox and sign-in move here, and your
         name and photo stay. <strong>This can't be undone.</strong>

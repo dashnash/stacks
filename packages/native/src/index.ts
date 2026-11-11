@@ -36,6 +36,8 @@ export interface Calls {
   /** `commit`: the git commit CI built the app from ("" for a local build; absent in older apps). */
   'app.info': { args: Record<string, never>; result: { version: string; build: string; commit?: string; platform: string; protocol: number } };
   'auth.google': { args: Record<string, never>; result: { credential: string } };
+  /** Portal only: Apple's identity token, and the name Apple shared (first sign-in only, else ""). */
+  'auth.apple': { args: Record<string, never>; result: { credential: string; name: string } };
   'auth.signedOut': { args: Record<string, never>; result: Record<string, never> };
   share: { args: ShareData; result: { completed: boolean } };
   /** Portal only: may this device show notifications, and its platform device id (null until registered). */

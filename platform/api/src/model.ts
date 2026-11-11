@@ -159,6 +159,8 @@ export interface PlatformConfig {
   minShellVersion?: string;
   /** The iOS app's bundle ID (the APNs topic); devices of other apps are refused. */
   iosBundleId?: string;
+  /** Sign in with Apple on the web: the Services ID the portal's Apple JS uses (unset: no web button). */
+  appleServicesId?: string;
 }
 
 export interface PlatformDeps {
@@ -167,6 +169,8 @@ export interface PlatformDeps {
   registry: AppRegistry;
   appSessions: AppSessionRevoker;
   verifyGoogle(credential: string): Promise<GoogleIdentity>;
+  /** Sign in with Apple (unset where it isn't set up: the routes answer 401). The name is not in the token. */
+  verifyApple?(credential: string): Promise<{ sub: string; email: string; name: string }>;
   /** Push to the iOS app; without it (tests, before setup) notifications only fill the inbox. */
   push?: PushSender;
   now(): Date;

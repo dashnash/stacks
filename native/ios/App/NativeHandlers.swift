@@ -38,6 +38,13 @@ enum NativeHandlers {
 
         // Signing out ends every session and the platform forgets this person's devices: forget
         // the Google session, this device's key and the badge here too.
+        // The system's Sign in with Apple sheet (Face ID, usually one tap). The token is addressed to
+        // this app's bundle ID, which the portal's POST /auth/apple accepts.
+        router.register("auth.apple") { @MainActor [weak shell] _ in
+            guard let shell else { throw BridgeError(.failed, "The app is closing") }
+            return try await AppleSignIn.run(anchor: shell.webView.window)
+        }
+
         router.register("auth.signedOut") { @MainActor [weak shell] _ in
             GIDSignIn.sharedInstance.signOut()
             DeviceKeychain.clear()

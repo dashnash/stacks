@@ -149,4 +149,27 @@ describe('the portal inside the iOS app', () => {
     renderInApp({ 'app.info': () => ({ version: '1.0.0', build: '1', commit: '', platform: 'ios', protocol: 1 }) });
     expect(await screen.findByText('App 1.0.0 (1) · local')).toBeInTheDocument();
   });
+
+  it('signs in with Apple through the app, naming a new account from what Apple shared', async () => {
+    renderInApp({ 'auth.google': () => ({ credential: 'demo:sam@demo.stacks' }), 'auth.apple': () => ({ credential: 'apple:a-new:k3q9@privaterelay.appleid.com', name: 'Robin Park' }) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue with Apple' }));
+    expect(await screen.findByRole('button', { name: /Account menu for Robin/ })).toBeInTheDocument();
+  });
+
+  it('links an Apple ID in Settings, and stops offering it once linked', async () => {
+    renderInApp({ 'auth.google': () => ({ credential: 'demo:sam@demo.stacks' }), 'auth.apple': () => ({ credential: 'apple:a-sam:sam.relay@privaterelay.appleid.com', name: '' }) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
+    await screen.findByRole('button', { name: /Account menu for Sam/ });
+    window.location.hash = '#/profile';
+    await userEvent.click(await screen.findByRole('button', { name: 'Link your Apple ID' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('You can sign in with your Apple ID too.');
+    expect(await screen.findByRole('list', { name: 'Sign-in methods' })).toHaveTextContent('Apple · sam.relay@privaterelay.appleid.com');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Link your Apple ID' })).not.toBeInTheDocument());
+  });
+
+  it('offers no Apple button where it is not available (no app support, no Services ID)', async () => {
+    renderInApp({ 'auth.google': () => ({ credential: 'demo:sam@demo.stacks' }) });
+    await screen.findByRole('button', { name: 'Continue with Google' });
+    expect(screen.queryByRole('button', { name: 'Continue with Apple' })).not.toBeInTheDocument();
+  });
 });

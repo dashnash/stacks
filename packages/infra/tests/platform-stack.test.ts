@@ -65,6 +65,13 @@ describe('PlatformStack', () => {
     expect(policies).toContain('"dynamodb:LeadingKeys":["SESSION#*","USERSESSIONS#*"]');
   });
 
+  it('tells the Lambda the web Services ID for Sign in with Apple, and lets the portal load Apple JS', () => {
+    const t = synth({ ...env, appleServicesId: 'com.dashyhq.stacks.test.web' });
+    t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ APPLE_SERVICES_ID: 'com.dashyhq.stacks.test.web' }) } });
+    expect(PORTAL_CSP).toContain('https://appleid.cdn-apple.com');
+    expect(PORTAL_CSP).toMatch(/frame-src[^;]*https:\/\/appleid\.apple\.com/);
+  });
+
   it('lets the Lambda read the APNs key from its own secrets path, decrypting only through SSM', () => {
     const t = synth({ ...env, native: { appleTeamId: '47ZUZ59AHR', iosBundleId: 'com.dashyhq.stacks.test', googleIosClientIds: [], minShellVersion: '1.0.0' } });
     t.hasResourceProperties('AWS::Lambda::Function', {

@@ -84,6 +84,8 @@ const q = (s) => encodeURIComponent(s);
 export const CAPABILITIES = [
   ['ASSOCIATED_DOMAINS', 'Associated Domains'],
   ['PUSH_NOTIFICATIONS', 'Push Notifications'],
+  // Each app is its own primary App ID for Sign in with Apple.
+  ['APPLE_ID_AUTH', 'Sign in with Apple', [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }]],
 ];
 
 async function ensureBundleId(api, app, log) {
@@ -95,11 +97,15 @@ async function ensureBundleId(api, app, log) {
     log(`+ registered bundle ID ${app.bundleId}`);
   }
   const caps = (await api('GET', `/v1/bundleIds/${bundle.id}/bundleIdCapabilities`)).data ?? [];
-  for (const [type, label] of CAPABILITIES) {
+  for (const [type, label, settings] of CAPABILITIES) {
     if (caps.some((c) => c.attributes?.capabilityType === type)) log(`= ${label} is on for ${app.bundleId}`);
     else {
       await api('POST', '/v1/bundleIdCapabilities', {
-        data: { type: 'bundleIdCapabilities', attributes: { capabilityType: type }, relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } } } },
+        data: {
+          type: 'bundleIdCapabilities',
+          attributes: { capabilityType: type, ...(settings ? { settings } : {}) },
+          relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } } },
+        },
       });
       log(`+ turned on ${label} for ${app.bundleId}`);
     }

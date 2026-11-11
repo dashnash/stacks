@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getNative, NativeError } from '@stacks/native';
-import { ErrorNote } from '@stacks/web';
+import { ErrorNote, useAsync } from '@stacks/web';
+import { appleAvailable, signInWithApple } from '../apple';
 import { loadGoogle, safeNext, usePortal } from '../portal';
 
 /** Step 4 of the handshake: sign in, then continue to `next` (back into /authorize) or the catalog. */
@@ -11,6 +12,20 @@ export function SignIn({ next }: { next?: string }) {
   const target = safeNext(next);
   // Inside the iOS app Google's web button can't run (Google blocks embedded browsers): the app signs in natively.
   const inApp = getNative().has('auth.google');
+  const config = useAsync(() => (signInMethod.kind === 'google' ? api.config() : Promise.resolve(null)), [api, signInMethod.kind]);
+  const showApple = signInMethod.kind === 'google' && appleAvailable(config.data?.appleServicesId);
+
+  const apple = async () => {
+    setError(null);
+    try {
+      const got = await signInWithApple(config.data?.appleServicesId);
+      if (!got) return;
+      await api.signInWithApple(got.credential, got.name);
+      await finish();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   const finish = async () => {
     if (target) {
@@ -69,14 +84,22 @@ export function SignIn({ next }: { next?: string }) {
   return (
     <section className="card narrow">
       <h1>Sign in</h1>
-      <p className="muted">{target ? 'Sign in once to open the app. Every other app on this platform will know you too.' : 'One Google sign-in for every app here. No new password.'}</p>
+      <p className="muted">
+        {target ? 'Sign in once to open the app. Every other app on this platform will know you too.' : `One ${showApple ? 'Google or Apple' : 'Google'} sign-in for every app here. No new password.`}
+      </p>
       {signInMethod.kind === 'google' && inApp ? (
         <button type="button" className="button" onClick={() => void signInInApp()}>
           Continue with Google
         </button>
       ) : signInMethod.kind === 'google' ? (
         <div ref={button} className="google-button" />
-      ) : (
+      ) : null}
+      {showApple && (
+        <button type="button" className="button apple-button" onClick={() => void apple()}>
+          Continue with Apple
+        </button>
+      )}
+      {signInMethod.kind === 'google' ? null : (
         <div className="stack">
           <p className="muted small">Demo: choose who to be.</p>
           {signInMethod.personas.map((p) => (

@@ -46,7 +46,7 @@ import {
   userForIdentity,
   userIdForEmail,
 } from './core';
-import { linkGoogle, mergeWithTicket, unlinkIdentity } from './merge';
+import { linkGoogle, linkProvider, mergeWithTicket, unlinkIdentity } from './merge';
 import { badges, deviceView, handlePushAction, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
@@ -63,6 +63,16 @@ export function createPlatformApp(deps: PlatformDeps) {
     if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
   });
   const portalUrl = (hash = '/') => `${deps.config.authOrigin}/#${hash}`;
+
+  /** `{ credential, name? }` from the page, verified with Apple; the name only counts on a first sign-in. */
+  async function verifyApple(body: Record<string, unknown>) {
+    const credential = body.credential;
+    if (typeof credential !== 'string' || !credential) throw badRequest('"credential" is required');
+    if (!deps.verifyApple) throw unauthorized('Sign in with Apple is not set up here');
+    const identity = await deps.verifyApple(credential);
+    const name = typeof body.name === 'string' ? body.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    return { ...identity, name: identity.name || name };
+  }
 
   const csrf = (req: RequestContext) => {
     if (req.method !== 'GET' && req.headers[CSRF_HEADER] !== '1') throw forbidden('Missing request header', 'CSRF');
@@ -157,7 +167,9 @@ export function createPlatformApp(deps: PlatformDeps) {
 
   router
     .add('GET', '/health', async () => ({ body: { ok: true, platform: true } }))
-    .add('GET', '/config', async () => ({ body: { googleClientId: deps.config.googleClientId, rootDomain: deps.config.rootDomain } }))
+    .add('GET', '/config', async () => ({
+      body: { googleClientId: deps.config.googleClientId, rootDomain: deps.config.rootDomain, appleServicesId: deps.config.appleServicesId ?? null },
+    }))
     // For the iOS app (docs/NATIVE_APP_SPEC.md): which hosts open inside it, and the oldest app
     // version the web still supports. Public and cacheable; works during maintenance.
     .add('GET', '/native/config', async () => ({
@@ -178,6 +190,16 @@ export function createPlatformApp(deps: PlatformDeps) {
       const user = await userForIdentity(deps, await deps.verifyGoogle(credential));
       const token = await createPortalSession(deps, user);
       await audit(deps, user, 'platform', { action: 'auth.login' });
+      return { body: { user: meView(deps, user) }, cookies: [cookie(PORTAL_COOKIE, token, PORTAL_IDLE_DAYS * 86_400)] };
+    })
+    // Sign in with Apple: Apple JS on the portal (web) or the iOS app's native sheet. Apple puts no
+    // name in the token, and gives one only on the very first sign-in: the page passes it along.
+    .add('POST', '/auth/apple', async (req) => {
+      csrf(req);
+      const identity = await verifyApple(req.body);
+      const user = await userForIdentity(deps, identity, 'apple');
+      const token = await createPortalSession(deps, user);
+      await audit(deps, user, 'platform', { action: 'auth.login', details: { provider: 'apple' } });
       return { body: { user: meView(deps, user) }, cookies: [cookie(PORTAL_COOKIE, token, PORTAL_IDLE_DAYS * 86_400)] };
     })
     .add('POST', '/auth/logout', async (req) => {
@@ -352,6 +374,11 @@ export function createPlatformApp(deps: PlatformDeps) {
         if (typeof credential !== 'string' || !credential) throw badRequest('"credential" is required');
         return { body: await linkGoogle(deps, user, await deps.verifyGoogle(credential)) };
       }),
+    )
+    .add(
+      'POST',
+      '/me/identities/apple',
+      signedIn(async (req, user) => ({ body: await linkProvider(deps, user, 'apple', await verifyApple(req.body)) })),
     )
     .add(
       'DELETE',

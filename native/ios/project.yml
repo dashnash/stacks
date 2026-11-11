@@ -90,6 +90,7 @@ targets:
       path: App/DashyHQ.entitlements
       properties:
         aps-environment: $(STACKS_APS_ENVIRONMENT)
+        com.apple.developer.applesignin: [Default]
         com.apple.developer.associated-domains:
           - applinks:auth.$(STACKS_ROOT_DOMAIN)
           - applinks:*.$(STACKS_ROOT_DOMAIN)
