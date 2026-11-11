@@ -28,7 +28,7 @@ permissions:
 jobs:
   build:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
       - name: Check inputs
         env:
@@ -61,7 +61,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     environment: staging
     permissions:
       contents: read
