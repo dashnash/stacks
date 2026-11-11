@@ -34,7 +34,7 @@ permissions:
 jobs:
   core:
     name: Shell logic (Swift on Linux)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -295,7 +295,7 @@ jobs:
     # TestFlight build numbers can only be numbers, so the commit goes in each build's "What to
     # Test" note. Apple lists a build a few minutes after the upload: wait for it here, on Linux,
     # rather than on the (10x) macOS runner.
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 30
     environment: ios-release
     steps:

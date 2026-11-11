@@ -115,3 +115,18 @@ To remove one: `aws ssm delete-parameter --name <same name> --profile admin --re
 Keys are used from the app's server, so restrict them by **API** only: website (HTTP referrer)
 restrictions make every call fail, and Lambda has no fixed IP. If a provider rejects a key, the app's
 logs say why (e.g. `API_KEY_HTTP_REFERRER_BLOCKED`).
+
+## 8. Self-hosted Linux runners (optional)
+
+Every Linux job runs on `runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}`.
+With the repository variable `LINUX_RUNNER` unset, jobs use GitHub-hosted `ubuntu-latest`. Set it
+(Settings → Secrets and variables → Actions → Variables) to `["self-hosted","linux","homelab-stacks"]`
+to run them on the owner's own hardware: two ephemeral runners managed as code in the homelab repo
+(`roles/github_runner`, runbook `docs/runbooks/github-runner.md` there). Each job gets a fresh
+runner and its own Docker daemon, and job traffic can reach the internet but not the home network.
+The production deploy runs there too; its AWS access is still the GitHub OIDC role, unchanged.
+
+The iOS app build jobs (`macos-26`) always stay on GitHub-hosted runners.
+
+To fall back (runners down, or to compare), delete the variable or set it empty: no PR needed.
+Jobs already queued for the self-hosted label keep waiting, so cancel and re-run them.
