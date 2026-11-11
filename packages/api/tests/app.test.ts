@@ -42,7 +42,7 @@ describe('sign-in handshake (app side)', () => {
     expect(t.platform.audit.map((e) => e.action)).toEqual(['auth.login']);
   });
 
-  it('refuses a callback whose state does not match the browser that started it', async () => {
+  it('refuses a callback whose state does not match the browser that started it, sending it home rather than to an error', async () => {
     const t = harness();
     const start = await t.call('GET', '/auth/login');
     const code = t.platform.issueCode(userFor('ed@test.dev'), 'EDITOR');
@@ -50,8 +50,18 @@ describe('sign-in handshake (app side)', () => {
       query: { code, state: 'forged' },
       cookies: { '__Host-stacks-login': cookieValue(start.cookies, '__Host-stacks-login')! },
     });
-    expect(res.status).toBe(400);
-    expect((await t.call('GET', '/auth/callback', { query: { code, state: 'x' } })).status).toBe(400);
+    expect(res.status).toBe(302);
+    expect(res.headers.Location).toBe('/');
+    expect(cookieValue(res.cookies, '__Host-stacks-session')).toBeUndefined(); // not signed in
+    // Started in another browser (no login cookie here): same.
+    const elsewhere = await t.call('GET', '/auth/callback', { query: { code, state: 'x' } });
+    expect([elsewhere.status, elsewhere.headers.Location]).toEqual([302, '/']);
+    // The code was never spent: the browser that started it can still finish.
+    const ok = await t.call('GET', '/auth/callback', {
+      query: { code, state: start.headers.Location ? new URL(start.headers.Location).searchParams.get('state')! : '' },
+      cookies: { '__Host-stacks-login': cookieValue(start.cookies, '__Host-stacks-login')! },
+    });
+    expect(cookieValue(ok.cookies, '__Host-stacks-session')).toBeTruthy();
   });
 
   it('sends people whose access is pending back to the public view', async () => {

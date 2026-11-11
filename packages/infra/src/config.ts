@@ -51,6 +51,9 @@ export function appleAppSiteAssociation(env: EnvConfig): string | null {
     { '/': '/authorize', exclude: true },
     { '/': '/logout', exclude: true },
     { '/': '/.well-known/*', exclude: true },
+    // The portal's sign-in page (`/#/signin?next=/authorize…`) belongs to the browser that started
+    // the sign-in: its state cookie is there, so finishing in the app could only fail.
+    { '/': '/', '#': '/signin*', exclude: true },
     { '/': '*' },
   ];
   return JSON.stringify({ applinks: { details: [{ appIDs: [`${team}.${bundle}`], components }] } });
