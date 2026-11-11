@@ -10,7 +10,7 @@ share sheet, universal links, and later push and device features. Spec: `docs/NA
 | `project.yml` | XcodeGen spec; the `.xcodeproj` is generated, not committed |
 | `Config/*.xcconfig` | Per-environment settings, **generated** from `stacks.config.json` by `node scripts/ios-xcconfig.mjs` (CI fails if stale) |
 | `VERSION` | The marketing version; CI sets the build number |
-| `App/Assets.xcassets` | The app icon (a generated placeholder: replace `AppIcon-1024.png`, 1024×1024, no transparency) |
+| `App/Assets.xcassets` | The app icon (a generated placeholder: replace `AppIcon-1024.png`, 1024×1024, no transparency) and the staging app's `AppIcon-Test` (the same with a yellow TEST band along the bottom; remake it if the icon changes) |
 | `../protocol/v1.json` | The bridge contract, shared with `@stacks/native` |
 
 ## On a Mac
