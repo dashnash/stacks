@@ -23,8 +23,8 @@ export const REALTIME_NAMESPACE = 'app';
 /** The tag server publishes carry (clients never use it). */
 export const SERVER_SENDER = 'server';
 
-/** One channel segment: what AppSync allows (letters, digits, `-`), up to 50 characters. */
-const SEGMENT = /^[A-Za-z0-9-]{1,50}$/;
+/** One channel segment as AppSync allows it: letters, digits and `-`, up to 50, not starting or ending with `-`. */
+const SEGMENT = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?$/;
 /** AppSync allows 5 segments including the namespace. */
 const MAX_SEGMENTS = 4;
 

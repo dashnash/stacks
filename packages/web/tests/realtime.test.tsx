@@ -141,6 +141,11 @@ describe('RealtimeHub', () => {
     server.broadcast('/app/counter/main', { n: 3 });
     await flush();
     expect(w.events).toEqual([{ n: 3 }]);
+    // The documented shape: `event` is a list of JSON strings.
+    const [sub] = ws.of('subscribe');
+    ws.reply({ type: 'data', id: sub.id, event: [JSON.stringify({ d: { n: 4 }, f: 'server', i: 'a' }), JSON.stringify({ d: { n: 5 }, f: 'server', i: 'b' })] });
+    await flush();
+    expect(w.events).toEqual([{ n: 3 }, { n: 4 }, { n: 5 }]);
   });
 
   it("drops this tab's own publishes by default, but not other tabs'", async () => {

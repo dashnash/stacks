@@ -303,6 +303,11 @@ export class RealtimeHub {
   private deliver(subId: string | undefined, raw: unknown): void {
     const channel = this.channelFor(subId) ?? [...this.replacing].find(([, old]) => old === subId)?.[0];
     if (!channel) return;
+    // AppSync documents `event` as a list of JSON strings; it has also been seen as one string.
+    for (const one of Array.isArray(raw) ? raw : [raw]) this.deliverOne(channel, one);
+  }
+
+  private deliverOne(channel: string, raw: unknown): void {
     let env: { d?: unknown; f?: string; i?: string };
     try {
       env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as typeof env;

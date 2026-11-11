@@ -74,6 +74,10 @@ describe('POST /realtime/token', () => {
     expect((await token(t, { subscribe: many.slice(0, 15), publish: many.slice(0, 6) })).status).toBe(400);
     expect((await token(t, { subscribe: ['room/1'] }, null)).status).toBe(401);
     expect((await token(t, { subscribe: ['room/*'] })).status).toBe(400);
+    expect((await token(t, { subscribe: ['room/-x'] })).status).toBe(400);
+    expect((await token(t, { subscribe: ['room/x-'] })).status).toBe(400);
+    expect((await token(t, { subscribe: ['room/' + 'a'.repeat(51)] })).status).toBe(400);
+    expect((await token(t, { subscribe: ['room/a-b'] })).status).toBe(200);
     expect((await token(t, { subscribe: 'room/1' })).status).toBe(400);
     expect((await token(t, {})).status).toBe(400);
     for (const res of [await token(t, { subscribe: ['nope/1'] }), await token(t, { publish: ['list/42'] })]) expect(res.status).toBe(403);

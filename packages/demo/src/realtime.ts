@@ -143,7 +143,8 @@ class DemoSocket implements SocketLike {
   }
 
   deliver(channel: string, event: string): void {
-    for (const [id, c] of this.subs) if (c === channel) this.reply({ type: 'data', id, event });
+    // As AppSync documents it: `event` is a list of JSON strings.
+    for (const [id, c] of this.subs) if (c === channel) this.reply({ type: 'data', id, event: [event] });
   }
 
   private reply(msg: unknown): void {
