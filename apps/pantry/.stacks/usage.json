@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "step": "interview",
+      "at": "2026-11-11T23:01:19.119Z",
+      "filesChanged": 23,
+      "note": "spec from issue #43"
+    },
+    {
+      "step": "scaffold",
+      "at": "2026-11-11T23:01:19.436Z",
+      "minutes": 0,
+      "filesChanged": 24
+    },
+    {
+      "step": "build",
+      "at": "2026-11-11T23:12:35.116Z",
+      "minutes": 11.3,
+      "filesChanged": 31
+    },
+    {
+      "step": "verify",
+      "at": "2026-11-11T23:17:22.803Z",
+      "minutes": 4.8,
+      "filesChanged": 32,
+      "note": "verify-app green; extra Playwright shots for swipe/undo/autocomplete/dark/live"
+    }
+  ]
+}

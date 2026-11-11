@@ -1,0 +1,18 @@
+{
+  "slug": "pantry",
+  "name": "Pantry",
+  "tagline": "The household grocery list.",
+  "description": "A shared grocery list for the household: every member sees every list, adds, checks off and removes items with quick swipes, gets suggestions from what the list has had before, and sees changes from other phones live.",
+  "category": "Home",
+  "visibility": "private",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "MEMBER", "label": "Member" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "MEMBER",
+  "publicRoutes": ["/"],
+  "modules": ["notifications", "realtime"],
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}
