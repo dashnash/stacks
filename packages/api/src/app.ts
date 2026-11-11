@@ -1,10 +1,11 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { canManageAccess, type AppManifest } from '@stacks/manifest';
+import { canManageAccess, hasModule, type AppManifest } from '@stacks/manifest';
 import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
 import { badRequest, forbidden, HttpError, maintenance, MAINTENANCE_OPEN_PATHS, unauthorized, type RouteResult } from './http';
 import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
+import { ChannelRegistry, parseTokenRequest, realtimeOff, signRealtimeToken, TOKEN_TTL_SECONDS, type RealtimeChannels, type RealtimeTokenResponse } from './realtime';
 import type { AppDeps, Viewer } from './model';
 import { Router, type HttpMethod, type RequestContext } from './router';
 import { clearCookie, cookie, createSession, endSession, readSession, SESSION_COOKIE, sessionCookie } from './session';
@@ -46,6 +47,11 @@ export interface AppRoutes<D extends AppDeps> {
   role(roles: string[], method: HttpMethod, path: string, handler: SignedInHandler<D>, opts?: RouteOptions): AppRoutes<D>;
   /** Only roles the manifest marks `canManageAccess`. */
   approver(method: HttpMethod, path: string, handler: SignedInHandler<D>, opts?: RouteOptions): AppRoutes<D>;
+  /**
+   * Realtime channels (manifest module `realtime`). Every channel a browser may use is declared
+   * here with guards; anything else is refused: `api.realtime.channel('room/*', { subscribe: (v, id) => true, publish: (v) => true })`.
+   */
+  realtime: RealtimeChannels<Viewer<D>>;
 }
 
 export interface StacksAppOptions<D extends AppDeps> {
@@ -71,6 +77,10 @@ export function safeReturnPath(value: unknown): string {
  */
 export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   const { manifest, deps } = opts;
+  const realtimeOn = hasModule(manifest, 'realtime');
+  // Callers that predate the module (or leave it out) get the "turn it on" stand-in.
+  (deps as AppDeps).realtime ??= realtimeOff(manifest.slug);
+  const channels = new ChannelRegistry<Viewer<D>>();
   const knownRoles = new Set(manifest.roles.map((r) => r.id));
   const router = new Router().before((_method, path) => {
     if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
@@ -157,6 +167,13 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
         ),
       );
       return api;
+    },
+    realtime: {
+      channel(pattern, guards) {
+        if (!realtimeOn) throw new Error(`realtime.channel("${pattern}"): add "realtime" to "modules" in ${manifest.slug}'s app.manifest.json`);
+        channels.channel(pattern, guards);
+        return api.realtime;
+      },
     },
   };
 
@@ -316,6 +333,26 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     return { body: await listAudit(v.deps, { before: req.query.before, actor: req.query.actor, action: req.query.action, limit }) };
   });
+
+  // Realtime: a short-lived token for exactly the channels asked for, each checked against the
+  // app's declarations. The Event API's authorizer then allows only those channels.
+  if (realtimeOn) {
+    api.member('POST', '/realtime/token', async (req, v) => {
+      const request = parseTokenRequest(req.body);
+      await channels.check(v, request);
+      const connection = await v.deps.realtime.connection();
+      const exp = Math.floor(v.deps.now().getTime() / 1000) + TOKEN_TTL_SECONDS;
+      const token = await signRealtimeToken(connection.key, { v: 1, u: v.user.id, s: request.subscribe, p: request.publish, exp });
+      const body: RealtimeTokenResponse = {
+        token,
+        expiresAt: new Date(exp * 1000).toISOString(),
+        endpoint: connection.endpoint,
+        host: connection.host,
+        namespace: connection.namespace,
+      };
+      return { body };
+    });
+  }
 
   opts.routes(api);
 

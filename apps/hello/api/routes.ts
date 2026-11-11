@@ -36,6 +36,26 @@ async function tellEveryone(deps: AppDeps, greeting: Greeting): Promise<void> {
   }
 }
 
+/** The Live panel: the server publishes the shared counter here; only it may. */
+export const COUNTER_CHANNEL = 'counter/main';
+/** The Live panel's lobby: members wave to each other here (client publishes). */
+export const LOBBY_CHANNEL = 'room/lobby';
+export interface CounterEvent {
+  n: number;
+}
+/** What a wave carries. Sent by browsers, so the UI checks it before showing it. */
+export interface Wave {
+  name: string;
+}
+
+interface CounterItem extends Item {
+  n: number;
+}
+
+async function counter(deps: AppDeps): Promise<number> {
+  return (await deps.store.get<CounterItem>('COUNTER', 'main'))?.n ?? 0;
+}
+
 async function latest(deps: AppDeps, limit: number): Promise<Greeting[]> {
   // SK is "<iso time>#<id>", so the partition reads oldest first.
   const items = await deps.store.query<GreetingItem>(PK);
@@ -44,7 +64,22 @@ async function latest(deps: AppDeps, limit: number): Promise<Greeting[]> {
 
 /** Hello Board's API. The same routes run in Lambda, in tests and in the browser demo. */
 export function routes(api: AppRoutes<AppDeps>) {
+  // Realtime channels: every member may listen; only the server publishes the counter, and any
+  // member may wave in a room. Anything else is refused when a browser asks for a token.
+  api.realtime
+    .channel('counter/*', { subscribe: (v) => !!v.role, publish: false })
+    .channel('room/*', { subscribe: (v) => !!v.role, publish: (v) => !!v.role });
+
   api
+    .member('GET', '/counter', async (_req, v) => ({ body: { n: await counter(v.deps) } }))
+    // Read-then-write: two clicks in the same instant can count once. Fine for a shared toy counter.
+    .member('POST', '/counter', async (_req, v) => {
+      const n = (await counter(v.deps)) + 1;
+      await v.deps.store.put({ PK: 'COUNTER', SK: 'main', n });
+      // A hint to every open tab; they refetch on reconnect, so a missed event is no harm.
+      await v.deps.realtime.publish(COUNTER_CHANNEL, { n } satisfies CounterEvent).catch((err) => console.error('Hello: counter publish failed', err));
+      return { body: { n } };
+    })
     // Public footprint: the latest greetings, first names only, no emails.
     .public('GET', '/public/greetings', async (_req, ctx) => ({
       body: { greetings: (await latest(ctx.deps, 10)).map(({ id, text, authorName, createdAt }) => ({ id, text, authorName, createdAt })) },

@@ -58,6 +58,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Testing | In-browser demo mode for previews; one shared staging platform deployable from a Claude session via CI |
 | Book Club | Migrates as app #1 with its data; current members and roles pre-loaded into the grid; members sign in once more |
 | Audience | Different groups per app, up to a few dozen users at first |
+| Realtime (#51, 2026-11-11) | `realtime` module: one AppSync Event API per app that turns it on (managed fan-out, no idle cost, ~$1 per million events). Server and client publish, channels declared with guards, short-lived HMAC tokens checked by a Lambda authorizer. Game input goes over WebRTC data channels (#44); realtime only carries their setup |
 
 ## Architecture
 
@@ -253,6 +254,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | `notifications` | `notify(user, message, link)` into the platform's notification center | new (Tier 1 backend) |
 | `scheduledJobs` | EventBridge schedules declared in the manifest invoke named handlers | new |
 | `email` | SES sending from `no-reply@<domain>` with templates; off by default, needs SES production access | new |
+| `realtime` | Live events to open browsers (and the iOS app's web view): the API publishes (`deps.realtime.publish`), pages listen with `useChannel` and may publish on channels whose guards allow it. Every channel pattern is declared with guards in the API; `POST /api/realtime/token` mints a 15-minute HMAC token for exactly the channels asked for, which the Event API's Lambda authorizer checks on every connect, subscribe and publish. At most once, 4 KB per event, resync on every reconnect. Signaling and lobby for WebRTC games (#44), not their data | new (#51): one AppSync Events API per app |
 
 Runtime AI inference is deliberately out of v1; it can be added later as a platform-proxied module with per-app budgets.
 
@@ -470,6 +472,7 @@ Phase 3 build notes:
 - [x] `templates/app/` and `tools/new-app` (`npm run new-app -- <slug>`)
 - [x] The skill (`.claude/skills/new-app`): interview, scaffold, build, verify (`npm run verify-app`), stage, ship; per-step usage log (`npm run app-usage`)
 - [ ] Remaining modules: uploads, scheduled jobs (email deferred until an app needs it, with SES production access)
+- [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
 - [ ] Eval run on the 4 reference apps, usage logged
 
 Gate: a non-technical user builds one app end to end in a single Claude Code session and it is live on staging.

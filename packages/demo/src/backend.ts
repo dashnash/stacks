@@ -4,6 +4,7 @@ import {
   createStacksApp,
   fixtureUserId,
   MemoryStore,
+  realtimeOff,
   SESSION_COOKIE,
   type AppDeps,
   type AppRoutes,
@@ -14,8 +15,9 @@ import {
   type AppAccess,
   type StacksUser,
 } from '@stacks/api';
-import type { AppManifest } from '@stacks/manifest';
+import { hasModule, type AppManifest } from '@stacks/manifest';
 import { createClient, type Client, type Navigator } from '@stacks/web';
+import { DemoRealtimeBus } from './realtime';
 
 export interface Persona {
   /** Platform user id; defaults to `fixtureUserId(email)` (what seed data should use). */
@@ -121,6 +123,8 @@ export interface Demo {
   subscribe(listener: () => void): () => void;
   /** Wait until seeding has finished. */
   ready: Promise<void>;
+  /** The in-browser Event API (apps with the `realtime` module), or null. */
+  realtime: DemoRealtimeBus | null;
 }
 
 function load(key: string | false): Item[] | null {
@@ -151,6 +155,18 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const key = opts.storageKey === undefined ? `stacks-demo:${opts.manifest.slug}:v2` : opts.storageKey;
   const saved = load(key);
   const store = new MemoryStore(saved ?? []);
+  // Another demo tab of this app changed something and said so live: take its saved data (but keep
+  // this tab's sessions), so both tabs show the same thing.
+  const reloadShared = () => {
+    const shared = load(key);
+    if (!shared) return;
+    const isSession = (pk: string) => pk.startsWith('SESSION#') || pk.startsWith('USERSESSIONS#');
+    const mine = [...store.items.entries()].filter(([, item]) => isSession(item.PK));
+    store.items.clear();
+    for (const [k, item] of new MemoryStore(shared).items) store.items.set(k, item);
+    for (const [k, item] of mine) store.items.set(k, item);
+  };
+  const realtime = hasModule(opts.manifest, 'realtime') ? new DemoRealtimeBus(opts.manifest.slug, reloadShared) : null;
   const demoPlatform = new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, opts.manifest.roles, personas, (opts.pending ?? []).map((p) => ({ ...p, id: p.id ?? fixtureUserId(p.email) })));
   const base: AppDeps = {
     store,
@@ -158,6 +174,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     config: { appOrigin: globalThis.location?.origin ?? 'https://demo.local', authOrigin: 'https://auth.demo.local' },
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),
+    realtime: realtime ?? realtimeOff(opts.manifest.slug),
   };
   demoPlatform.needsEmail = !!opts.manifest.needsEmail;
   const deps = opts.extend ? opts.extend(base) : (base as D);
@@ -222,7 +239,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   };
 
   return {
-    client: createClient({ fetch: demoFetch as typeof fetch }),
+    client: createClient({ fetch: demoFetch as typeof fetch, ...(realtime ? { webSocket: realtime.open } : {}) }),
     navigator,
     personas,
     current: () => persona,
@@ -239,5 +256,6 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
       return () => listeners.delete(l);
     },
     ready,
+    realtime,
   };
 }

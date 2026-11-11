@@ -1,4 +1,4 @@
-export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
+export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
 export type { AppStackProps } from './app-stack';
 export { CiStack, STAGING_EXEC_POLICY_NAME } from './ci-stack';
 export type { CiStackProps } from './ci-stack';

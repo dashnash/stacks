@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTestHarness, memberFor, testUserId } from '@stacks/testing';
 import { manifest } from '../api/manifest';
 import { routes } from '../api/routes';
@@ -51,5 +51,31 @@ describe('Hello Board API', () => {
     const res = await t.call('POST', '/greetings', { as: { email: 'max@x.dev', name: 'Max' }, body: { text: 'still here' } });
     expect(res.status).toBe(201);
     expect((await t.call('GET', '/public/greetings')).body.greetings[0].text).toBe('still here');
+  });
+
+  it('counts the shared counter and publishes each new value on counter/main', async () => {
+    const t = harness();
+    expect((await t.call('GET', '/counter', { as: 'max@x.dev' })).body).toEqual({ n: 0 });
+    expect((await t.call('POST', '/counter', { as: 'max@x.dev' })).body).toEqual({ n: 1 });
+    expect((await t.call('POST', '/counter', { as: 'ann@x.dev' })).body).toEqual({ n: 2 });
+    expect(t.realtime.on('counter/main')).toEqual([{ n: 1 }, { n: 2 }]);
+    expect((await t.call('POST', '/counter')).status).toBe(401);
+  });
+
+  it('hands members realtime tokens for the counter and lobby, and refuses the rest', async () => {
+    const t = harness();
+    const ok = await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { subscribe: ['counter/main', 'room/lobby'], publish: ['room/lobby'] } });
+    expect(ok.status).toBe(200);
+    expect((await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { publish: ['counter/main'] } })).body.code).toBe('REALTIME_SUBSCRIBE_ONLY');
+    expect((await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { subscribe: ['greetings/all'] } })).body.code).toBe('REALTIME_UNDECLARED');
+    expect((await t.call('POST', '/realtime/token', { body: { subscribe: ['counter/main'] } })).status).toBe(401);
+  });
+
+  it('still counts when publishing fails', async () => {
+    const t = harness();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    t.realtime.publish = async () => Promise.reject(new Error('AppSync down'));
+    expect((await t.call('POST', '/counter', { as: 'max@x.dev' })).body).toEqual({ n: 1 });
+    error.mockRestore();
   });
 });

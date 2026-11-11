@@ -4,11 +4,13 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import type { AppManifest } from '@stacks/manifest';
+import { hasModule, type AppManifest } from '@stacks/manifest';
 import { createStacksApp, type AppRoutes } from './app';
 import { DynamoStore } from './dynamo-store';
 import type { AppDeps } from './model';
 import { HttpPlatformClient } from './platform';
+import { realtimeOff, type Realtime } from './realtime';
+import { appSyncRealtime, realtimeKeyReader } from './realtime-aws';
 
 function env(name: string): string {
   const value = process.env[name];
@@ -37,8 +39,21 @@ export function defaultDeps(manifest: AppManifest): AppDeps {
     }),
     now: () => new Date(),
     newId: () => randomUUID(),
+    realtime: defaultRealtime(manifest),
     ...(manifest.secrets?.length ? { secret: appSecrets(manifest) } : {}),
   };
+}
+
+/** The app's Event API, as `AppStack` wires it (`STACKS_REALTIME_*`), or the "turn it on" stand-in. */
+function defaultRealtime(manifest: AppManifest): Realtime {
+  if (!hasModule(manifest, 'realtime')) return realtimeOff(manifest.slug);
+  return appSyncRealtime({
+    httpHost: env('STACKS_REALTIME_HTTP_HOST'),
+    realtimeHost: env('STACKS_REALTIME_WS_HOST'),
+    namespace: process.env.STACKS_REALTIME_NAMESPACE || undefined,
+    region: process.env.AWS_REGION ?? 'us-east-1',
+    key: realtimeKeyReader({ secretId: env('STACKS_REALTIME_KEY_ARN') }),
+  });
 }
 
 const SECRET_TTL_MS = 5 * 60_000;
@@ -88,6 +103,8 @@ export function createLambdaHandler<D extends AppDeps = AppDeps>(opts: {
 }
 
 export { DynamoStore } from './dynamo-store';
+export { appSyncRealtime, realtimeKeyReader, signRequest } from './realtime-aws';
+export type { AwsCredentials } from './realtime-aws';
 
 /** The app's private content bucket (the `contentPacks` module). */
 export interface ContentStore {

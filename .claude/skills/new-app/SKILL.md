@@ -53,11 +53,12 @@ Ask, one at a time, and stop asking once you have enough (usually 6-8 questions)
 6. What should someone who isn't signed in see? → the landing page; `publicRoutes`.
 7. How should it look and feel (three words, or a site you like)? → `BRIEF.md`.
 8. Only if it fits: discussion threads (`comments`), notifications to members (`notifications`),
-   files bundled with the app (`contentPacks`), or a third-party service that needs an API key
-   (`secrets`, names only).
+   files bundled with the app (`contentPacks`), things that update live for everyone with the app
+   open (`realtime`), or a third-party service that needs an API key (`secrets`, names only).
 
 Their Google email goes in `owners` (they become the top role). Modules available now: `comments`,
-`notifications`, `contentPacks`, plus `secrets`. **Not built yet** (needs a platform change first):
+`notifications`, `contentPacks`, `realtime` (live updates: `useChannel` in `@stacks/web`, channels
+declared in the API), plus `secrets`. **Not built yet** (needs a platform change first):
 `votes`, `uploads` (people adding photos/files), `scheduledJobs` (anything on a timer), `email`.
 Images from other sites need their origins in `csp.imgSrc`; calls to other APIs from the browser
 need `csp.connectSrc` (https origins, max 10).

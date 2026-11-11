@@ -39,4 +39,17 @@ function App() {
 - **Build info (required):** put `<BuildVersion />` somewhere on every screen, usually the footer: it
   shows "Build 1a2b3c4" linking to the commit (CI sets `VITE_STACKS_BUILD_SHA`/`VITE_STACKS_REPO_URL`;
   local builds say "Build dev"). Takes `className`/`style`. `tools/app-conformance` checks for it.
+- **Realtime** (manifest module `realtime`; channels declared in the API, see `@stacks/api`):
+  ```tsx
+  const { status, publish } = useChannel<Wave>('room/lobby', (w) => toast(`${w.name} waved`), {
+    publish: true,                 // ask for publish rights (the channel's guard decides)
+    onResync: () => void reload(), // every (re)connect: refetch, events may have been missed
+  });
+  // status: 'connecting' | 'live' | 'offline' (signed out or refused: offline)
+  await publish({ name });         // ≤ 4 KB JSON; rejects unless live
+  ```
+  One shared WebSocket per tab for every channel on the page; tokens refresh before they expire;
+  reconnects with jittered backoff; closes after the page is hidden 30 s and reconnects (with a
+  resync) when it's visible again. Your own publishes don't come back unless `echo: true`. Event
+  data from other browsers is untrusted: check its shape before showing it.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

@@ -14,7 +14,7 @@ const DIRECTIVE_NAMES: Record<CspDirective, string> = {
  * The platform's default policy (from Book Club's, without Google sign-in: apps never talk to
  * Google) plus the manifest's additions. The portal bar script is allowed from the auth origin.
  */
-export function buildCsp(manifest: AppManifest, opts: { authOrigin: string }): string {
+export function buildCsp(manifest: AppManifest, opts: { authOrigin: string; connectSrc?: string[] }): string {
   const base: Record<string, string[]> = {
     'default-src': ["'self'"],
     'script-src': ["'self'", opts.authOrigin],
@@ -22,7 +22,8 @@ export function buildCsp(manifest: AppManifest, opts: { authOrigin: string }): s
     'font-src': ["'self'"],
     'img-src': ["'self'", 'data:', 'blob:', 'https://lh3.googleusercontent.com'],
     // The platform: silent sign-in asks it from the page.
-    'connect-src': ["'self'", opts.authOrigin],
+    // Plus the app's own realtime WebSocket host (the `realtime` module).
+    'connect-src': ["'self'", opts.authOrigin, ...(opts.connectSrc ?? [])],
     'frame-src': ["'none'"],
     'media-src': ["'self'"],
     'object-src': ["'none'"],

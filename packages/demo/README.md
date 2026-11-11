@@ -16,6 +16,10 @@ createRoot(el).render(<DemoApp demo={demo}><App /></DemoApp>);
 - Changes persist in localStorage (default key `stacks-demo:<slug>:v2`; `storageKey: false` to disable).
 - `demo.signInAs(email | null)`, `demo.reset()` for scripted checks; `demo.html?as=<email>` opens the
   demo signed in as that persona (`<DemoApp startAs>` overrides); `window.__stacksDemo.personas` lists them.
+- **Realtime** (module `realtime`): an in-browser Event API that speaks the real protocol, so
+  `useChannel` works unchanged; tokens come from the app's real token route, so guards apply. Open
+  two demo tabs as different personas (`?as=`) to see events cross between them (`BroadcastChannel`;
+  the receiving tab also reloads the shared demo data). `demo.realtime` is the bus (or null).
 - The persona switcher and Reset live in the account menu ("Demo: try the app as").
 - Every app exports `App` and `demoOptions()` from `web/src/demo/setup.ts`; the demo entry and
   `tools/app-conformance` both use it.

@@ -97,6 +97,32 @@ An admin stores each value once per environment (see `docs/SETUP.md`, "App secre
 that aren't set show as `missingSecrets` on `GET /api/health`. In tests:
 `createTestHarness({ manifest, routes, secrets: { MAPS_API_KEY: 'x' } })`.
 
+## Realtime (manifest module `realtime`)
+
+Live events to open pages over the app's own AppSync Event API. Declare **every** channel a browser
+may use, with guards (same `v` as routes, plus what the `*` matched); undeclared channels are refused.
+
+```ts
+api.realtime
+  .channel('list/*', { subscribe: (v, listId) => canSee(v, listId), publish: false })  // server-only
+  .channel('room/*', { subscribe: (v) => !!v.role, publish: (v) => !!v.role });          // clients too
+
+await v.deps.realtime.publish(`list/${id}`, { changed: itemId });   // any JSON, ≤ 4 KB
+await v.deps.realtime.publish('room/lobby', [a, b, c]);             // an array = one event each
+```
+
+- Channels: 1-4 segments of `[A-Za-z0-9-]` (`counter/main`, `room/abc-1`); patterns use `*` for one segment.
+- `POST /api/realtime/token { subscribe: [], publish: [] }` (built in, members only, ≤ 20 channels):
+  checks each channel's guard and returns `{ token, expiresAt, endpoint, host, namespace }` (15 min).
+  `useChannel` in `@stacks/web` calls it; apps never do.
+- **At most once, hints only**: clients refetch on every (re)connect (`onResync`). Send ids and small
+  changes, not data that exists nowhere else; writes still go through normal routes.
+- Without the module, `deps.realtime.publish` rejects with "add realtime to modules".
+- Cost: AppSync Events has no idle cost and charges about $1 per million events (connection minutes
+  are extra but tiny at household scale). There is no per-app cap yet.
+- AWS side: `@stacks/api/realtime-authorizer` is the Event API's Lambda authorizer (`AppStack` wires
+  it). Tests: `t.realtime` (`FakeRealtime`) records publishes; see `@stacks/testing`.
+
 Other: `recordAudit(deps, user, { action, label, details })` (events carry `actorId`), `listAudit`, `endUserSessions(deps, userId)`.
 
 **Maintenance**: while `maintenance` is on in `stacks.config.json`, every route but `/health` answers

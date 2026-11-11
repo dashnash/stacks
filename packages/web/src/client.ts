@@ -18,6 +18,18 @@ export interface ClientOptions {
   /** Called on 401, so the app can show its signed-out view. */
   onUnauthorized?: () => void;
   fetch?: typeof fetch;
+  /** How realtime opens its WebSocket (the demo passes an in-browser bus). Defaults to `new WebSocket`. */
+  webSocket?: (url: string, protocols: string[]) => SocketLike;
+}
+
+/** The part of a WebSocket the realtime hub uses. */
+export interface SocketLike {
+  send(data: string): void;
+  close(): void;
+  onopen: ((ev: unknown) => void) | null;
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  onclose: ((ev: unknown) => void) | null;
+  onerror: ((ev: unknown) => void) | null;
 }
 
 export type Request = <T = unknown>(method: string, path: string, body?: unknown) => Promise<T>;
@@ -67,6 +79,8 @@ export function createClient(opts: ClientOptions = {}) {
     del: <T = unknown,>(path: string) => request<T>('DELETE', path),
     session: () => request<Session>('GET', '/auth/session'),
     logout: () => request<{ ok: true; platformLogoutUrl: string }>('POST', '/auth/logout'),
+    /** For realtime: open its socket (a real WebSocket, or the demo's bus). */
+    openSocket: (url: string, protocols: string[]): SocketLike => (opts.webSocket ? opts.webSocket(url, protocols) : (new WebSocket(url, protocols) as unknown as SocketLike)),
   };
 }
 
