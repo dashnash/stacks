@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { codeChallenge, MemoryStore, randomToken, unauthorized, type Item } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
 import { createPlatformApp } from '../src/app';
-import type { PlatformDeps, RegisteredApp } from '../src/model';
+import type { Device, PlatformDeps, PushMessage, RegisteredApp } from '../src/model';
 
 export const privateApp: AppManifest = {
   slug: 'club',
@@ -65,15 +65,31 @@ export function toRes(raw: unknown): Res {
 }
 
 /** The platform in memory: fake Google (`test:<email>:<Full Name>`), a fixed registry, a recording revoker. */
-export function createPlatformHarness(opts: { apps?: AppManifest[]; admins?: string[]; revoke?: (slug: string, email: string) => Promise<void> } = {}) {
+export function createPlatformHarness(
+  opts: { apps?: AppManifest[]; admins?: string[]; revoke?: (slug: string, email: string) => Promise<void>; pushResult?: (token: string) => 'ok' | 'gone' | 'failed' } = {},
+) {
   const store = new MemoryStore();
   const revoked: string[] = [];
+  /** Every push "sent", by device token. */
+  const pushes: { token: string; device: Pick<Device, 'token' | 'env' | 'bundleId'>; message: PushMessage }[] = [];
   let clock = Date.parse('2026-03-01T00:00:00Z');
   let id = 0;
   const apps: RegisteredApp[] = (opts.apps ?? [privateApp, publicApp]).map((manifest) => ({ manifest, credential: async () => `cred-${manifest.slug}` }));
   const deps: PlatformDeps = {
     store,
-    config: { rootDomain: 'stacks.test', authOrigin: 'https://auth.stacks.test', googleClientId: 'gid', platformAdmins: opts.admins ?? ['root@test.dev'] },
+    config: {
+      rootDomain: 'stacks.test',
+      authOrigin: 'https://auth.stacks.test',
+      googleClientId: 'gid',
+      platformAdmins: opts.admins ?? ['root@test.dev'],
+      iosBundleId: 'com.dashyhq.stacks.test',
+    },
+    push: {
+      send: async (device, message) => {
+        pushes.push({ token: device.token, device, message });
+        return opts.pushResult?.(device.token) ?? 'ok';
+      },
+    },
     registry: { list: async () => apps },
     appSessions: {
       // Recorded by email so tests read naturally; apps are told the user id.
@@ -142,5 +158,10 @@ export function createPlatformHarness(opts: { apps?: AppManifest[]; admins?: str
     return call('PUT', `/admin/access/${slug}/${await idOf(email)}`, o);
   }
 
-  return { app, deps, store, revoked, signIn, call, authorize, advance, idOf, setRole };
+  /** Register a phone for someone, as the portal does with what the app hands it. */
+  async function addDevice(email: string, token: string, extra: Record<string, unknown> = {}): Promise<Res> {
+    return call('POST', '/devices', { as: email, body: { token, env: 'production', bundleId: 'com.dashyhq.stacks.test', deviceName: `${email}'s iPhone`, ...extra } });
+  }
+
+  return { app, deps, store, revoked, pushes, signIn, call, authorize, advance, idOf, setRole, addDevice };
 }

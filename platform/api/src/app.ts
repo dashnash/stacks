@@ -47,6 +47,7 @@ import {
   userIdForEmail,
 } from './core';
 import { linkGoogle, mergeWithTicket, unlinkIdentity } from './merge';
+import { badges, deviceView, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
 const CSRF_HEADER = 'x-stacks-request';
@@ -413,6 +414,50 @@ export function createPlatformApp(deps: PlatformDeps) {
       }),
     )
     .add('GET', '/notifications', signedIn(async (_req, user) => ({ body: { notifications: await listNotifications(deps, user.id) } })))
+
+    /* ---------- Push: this person's devices (the iOS app) and Settings › Notifications ---------- */
+    // The app hands the portal page its APNs token; the page registers it with its own session.
+    .add(
+      'POST',
+      '/devices',
+      signedIn(async (req, user) => {
+        const { device, secret } = await registerDevice(deps, user, req.body);
+        // The app refreshes its registration on every launch; only a new device is worth a line.
+        if (device.createdAt === device.lastSeenAt) await audit(deps, user, 'platform', { action: 'device.register', label: device.deviceName, details: { deviceId: device.id, env: device.env } });
+        return { body: { device: deviceView(device), secret } };
+      }),
+    )
+    .add('GET', '/devices', signedIn(async (_req, user) => ({ body: { devices: (await listDevices(deps, user.id)).map(deviceView) } })))
+    .add(
+      'DELETE',
+      '/devices/:id',
+      signedIn(async (req, user) => {
+        await removeDevice(deps, user.id, req.params.id!);
+        await audit(deps, user, 'platform', { action: 'device.remove', details: { deviceId: req.params.id } });
+        return { body: { ok: true } };
+      }),
+    )
+    .add('GET', '/me/notification-settings', signedIn(async (_req, user) => ({ body: { apps: await notificationSettings(deps, user) } })))
+    .add(
+      'PUT',
+      '/me/muted/:slug',
+      signedIn(async (req, user) => {
+        const slug = req.params.slug!;
+        await getApp(deps, slug);
+        const mutedApps = [...new Set([...(user.mutedApps ?? []), slug])];
+        await saveUser(deps, { ...user, mutedApps });
+        return { body: { mutedApps } };
+      }),
+    )
+    .add(
+      'DELETE',
+      '/me/muted/:slug',
+      signedIn(async (req, user) => {
+        const mutedApps = (user.mutedApps ?? []).filter((s) => s !== req.params.slug);
+        await saveUser(deps, { ...user, mutedApps });
+        return { body: { mutedApps } };
+      }),
+    )
     .add(
       'POST',
       '/notifications/read',
@@ -516,19 +561,6 @@ function meView(deps: PlatformDeps, u: PlatformUser) {
     pictureUrl: u.pictureUrl ?? null,
     isPlatformAdmin: isPlatformAdmin(deps, u),
   };
-}
-
-/** Unread notifications, and requests waiting on this person. */
-async function badges(deps: PlatformDeps, user: PlatformUser): Promise<{ unread: number; pendingRequests: number; managesApps: number }> {
-  const unread = (await listNotifications(deps, user.id)).filter((n) => !n.read).length;
-  let pendingRequests = 0;
-  let managesApps = 0;
-  for (const a of await listApps(deps)) {
-    if (!(await managesApp(deps, user, a.manifest)).manages) continue;
-    managesApps++;
-    pendingRequests += (await grantsForApp(deps, a.manifest.slug)).filter((g) => g.role === PENDING).length;
-  }
-  return { unread, pendingRequests, managesApps };
 }
 
 /** Compare secrets without leaking their contents through timing. */

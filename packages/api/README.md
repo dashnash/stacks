@@ -51,7 +51,7 @@ Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#�
 import { appMembers, getPeople } from '@stacks/api';
 const members = await appMembers(deps);                  // [{ id, name, pictureUrl?, role, email? }], cached 30 s
 const people = await getPeople(deps, userIds);           // Map id -> { id, name, pictureUrl? } (merged ids resolve; "Former member" if gone)
-await deps.platform.notify(userId, 'Your pick won', url); // into their platform inbox (members only)
+await deps.platform.notify(userId, 'Your pick won', url); // their platform inbox, and their phones (members only)
 ```
 
 ## Built-in routes

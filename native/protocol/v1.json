@@ -3,38 +3,124 @@
   "protocol": 1,
   "global": {
     "name": "stacksNative",
-    "example": { "protocol": 1, "platform": "ios", "version": "1.0.0", "calls": ["app.info", "auth.google", "auth.signedOut", "share"] }
+    "example": {
+      "protocol": 1,
+      "platform": "ios",
+      "version": "1.0.0",
+      "calls": [
+        "app.info",
+        "auth.google",
+        "auth.signedOut",
+        "badge.set",
+        "push.register",
+        "push.saveDevice",
+        "push.status",
+        "share"
+      ]
+    }
   },
   "envelope": {
-    "request": { "v": 1, "name": "share", "args": { "url": "https://hello.iamdashnash.com/" } },
-    "ok": { "ok": true, "result": { "completed": true } },
-    "error": { "ok": false, "error": { "code": "cancelled", "message": "Share was cancelled" } }
+    "request": {
+      "v": 1,
+      "name": "share",
+      "args": {
+        "url": "https://hello.iamdashnash.com/"
+      }
+    },
+    "ok": {
+      "ok": true,
+      "result": {
+        "completed": true
+      }
+    },
+    "error": {
+      "ok": false,
+      "error": {
+        "code": "cancelled",
+        "message": "Share was cancelled"
+      }
+    }
   },
-  "errorCodes": ["unsupported", "forbidden", "cancelled", "failed"],
+  "errorCodes": [
+    "unsupported",
+    "forbidden",
+    "cancelled",
+    "failed"
+  ],
   "calls": {
     "app.info": {
       "doc": "The app's version, build and platform.",
       "origins": "any",
       "args": {},
-      "result": { "version": "1.0.0", "build": "42", "platform": "ios", "protocol": 1 }
+      "result": {
+        "version": "1.0.0",
+        "build": "42",
+        "platform": "ios",
+        "protocol": 1
+      }
     },
     "auth.google": {
       "doc": "Native Google sign-in. The ID token is addressed to the web client (serverClientID). Only the portal's own page may ask.",
       "origins": "auth",
       "args": {},
-      "result": { "credential": "eyJhbGciOiJSUzI1NiJ9.e30.sig" }
+      "result": {
+        "credential": "eyJhbGciOiJSUzI1NiJ9.e30.sig"
+      }
     },
     "auth.signedOut": {
-      "doc": "The person signed out everywhere: the app forgets its Google session (and, from N3, this device's push registration).",
+      "doc": "The person signed out everywhere: the app forgets its Google session and this device's push registration, and clears the badge.",
       "origins": "auth",
       "args": {},
       "result": {}
     },
+    "badge.set": {
+      "doc": "Sets the app icon's number (unread notifications plus requests waiting), so it's right while the app is open.",
+      "origins": "auth",
+      "args": {
+        "count": 3
+      },
+      "result": {}
+    },
+    "push.register": {
+      "doc": "Asks for permission (the system prompt, the first time) and returns the APNs token for the portal to register with POST /devices. `cancelled` when the person says no; `env` is sandbox for Xcode builds.",
+      "origins": "auth",
+      "args": {},
+      "result": {
+        "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "env": "production",
+        "bundleId": "com.dashyhq.stacks",
+        "deviceName": "Dash's iPhone"
+      }
+    },
+    "push.saveDevice": {
+      "doc": "Keeps the platform's device id and secret in the Keychain (the secret answers lock-screen actions, N3b).",
+      "origins": "auth",
+      "args": {
+        "id": "5f2c8e1a-0d3b-4c55-9a43-2f6f1d7b8e90",
+        "secret": "sdv_3q2-7wE"
+      },
+      "result": {}
+    },
+    "push.status": {
+      "doc": "Whether this device may show notifications, and the device id the platform gave it (null until registered).",
+      "origins": "auth",
+      "args": {},
+      "result": {
+        "permission": "granted",
+        "deviceId": "5f2c8e1a-0d3b-4c55-9a43-2f6f1d7b8e90"
+      }
+    },
     "share": {
       "doc": "The system share sheet.",
       "origins": "any",
-      "args": { "url": "https://hello.iamdashnash.com/", "text": "Come say hi", "title": "Hello Board" },
-      "result": { "completed": true }
+      "args": {
+        "url": "https://hello.iamdashnash.com/",
+        "text": "Come say hi",
+        "title": "Hello Board"
+      },
+      "result": {
+        "completed": true
+      }
     }
   }
 }

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { getNative } from '@stacks/native';
 import { ApiError, isMaintenance, MaintenanceNotice } from '@stacks/web';
 import type { Me, PortalApi } from './api';
+import { syncWithApp } from './push';
 
 /** How people sign in: Google in production; named personas in the demo. */
 export type SignInMethod = { kind: 'google' } | { kind: 'personas'; personas: { email: string; name: string; blurb?: string }[] };
@@ -40,6 +41,18 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
     void refresh();
   }, [refresh]);
 
+  // In the iOS app: the icon's number follows the counts, and a device that already allows
+  // notifications re-registers once per load (tokens change). Never prompts.
+  const [synced, setSynced] = useState(false);
+  useEffect(() => {
+    if (!me) return;
+    const app = getNative();
+    if (!synced) {
+      setSynced(true);
+      void syncWithApp(api, me);
+    } else if (app.has('badge.set')) void app.call('badge.set', { count: me.unread + me.pendingRequests }).catch(() => undefined);
+  }, [api, me, synced]);
+
   const value = useMemo<PortalContextValue>(
     () => ({
       api,
@@ -49,10 +62,11 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
       refresh,
       signOut: async () => {
         await api.signOut();
-        // In the iOS app, it forgets its Google session too (and, later, this device's push registration).
+        // In the iOS app, it forgets its Google session and this device's push registration too.
         const app = getNative();
         if (app.has('auth.signedOut')) await app.call('auth.signedOut').catch(() => undefined);
         setMe(null);
+        setSynced(false);
         setStatus('signedOut');
         window.location.hash = '#/?signedOut=1';
       },

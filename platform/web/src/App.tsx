@@ -6,6 +6,7 @@ import { AuditLog } from './views/AuditLog';
 import { Catalog } from './views/Catalog';
 import { Notifications } from './views/Notifications';
 import { Profile } from './views/Profile';
+import { PushPrompt } from './views/PushPrompt';
 import { SignIn } from './views/SignIn';
 
 function useHash() {
@@ -73,7 +74,13 @@ export function App() {
   else if (path === '/notifications') view = status === 'signedIn' ? <Notifications from={query.from} /> : <SignIn />;
   else if (path === '/admin/access') view = status === 'signedIn' ? <AccessGrid initialApp={query.app} /> : <SignIn />;
   else if (path === '/admin/audit') view = status === 'signedIn' ? <AuditLog initialApp={query.app} /> : <SignIn />;
-  else view = <Catalog signedOutNotice={query.signedOut === '1'} />;
+  else
+    view = (
+      <>
+        <PushPrompt />
+        <Catalog signedOutNotice={query.signedOut === '1'} />
+      </>
+    );
   return (
     <div className="shell">
       <Header />

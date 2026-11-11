@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Avatar, ErrorNote } from '@stacks/web';
 import { usePortal } from '../portal';
 import { BackToApp } from './BackToApp';
+import { NotificationSettings } from './NotificationSettings';
 import { SignInMethods } from './SignInMethods';
 
 export function Profile({ from }: { from?: string }) {
@@ -44,6 +45,7 @@ export function Profile({ from }: { from?: string }) {
         <ErrorNote error={error} className="error" />
       </form>
       <SignInMethods />
+      <NotificationSettings />
     </section>
   );
 }

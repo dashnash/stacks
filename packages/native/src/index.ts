@@ -37,6 +37,25 @@ export interface Calls {
   'auth.google': { args: Record<string, never>; result: { credential: string } };
   'auth.signedOut': { args: Record<string, never>; result: Record<string, never> };
   share: { args: ShareData; result: { completed: boolean } };
+  /** Portal only: may this device show notifications, and its platform device id (null until registered). */
+  'push.status': { args: Record<string, never>; result: { permission: PushPermission; deviceId: string | null } };
+  /** Portal only: asks for permission (once) and returns the APNs token to register with `POST /devices`. */
+  'push.register': { args: Record<string, never>; result: PushRegistration };
+  /** Portal only: the app keeps the device id and secret `POST /devices` returned (Keychain). */
+  'push.saveDevice': { args: { id: string; secret: string }; result: Record<string, never> };
+  /** Portal only: the app icon's number. */
+  'badge.set': { args: { count: number }; result: Record<string, never> };
+}
+
+export type PushPermission = 'granted' | 'denied' | 'notDetermined';
+
+export interface PushRegistration {
+  /** APNs device token, hex. */
+  token: string;
+  /** `sandbox` for builds run from Xcode, `production` for TestFlight and the App Store. */
+  env: 'sandbox' | 'production';
+  bundleId: string;
+  deviceName: string;
 }
 
 export interface ShareData {

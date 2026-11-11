@@ -149,6 +149,9 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 /* Settings › Sign-in methods */
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list > li { margin: 0; }
+.plain-fieldset { border: 0; padding: 0; margin: 0; }
+.row-gap.tight { margin: 0; gap: 8px; }
+.push-prompt { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .merge-table { border-collapse: collapse; width: 100%; }
 .merge-table th, .merge-table td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); }
 .merge-table thead th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }

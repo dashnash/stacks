@@ -68,6 +68,15 @@ export interface MergePlan {
   problems: string[];
 }
 
+/** A phone or tablet with the iOS app that gets this person's notifications. */
+export interface Device {
+  id: string;
+  deviceName: string;
+  env: 'sandbox' | 'production';
+  createdAt: string;
+  lastSeenAt: string;
+}
+
 export type LinkResult = { linked: true } | { linked: false; ticket: string; plan: MergePlan };
 
 /** The Platform API, typed. */
@@ -89,6 +98,11 @@ export function createPortalApi(client: Client = createClient()) {
     setFavorite: (slug: string, on: boolean) => (on ? client.put(`/me/favorites/${encodeURIComponent(slug)}`, {}) : client.del(`/me/favorites/${encodeURIComponent(slug)}`)),
     notifications: () => client.get<{ notifications: Notification[] }>('/notifications'),
     markRead: () => client.post('/notifications/read'),
+    devices: () => client.get<{ devices: Device[] }>('/devices'),
+    registerDevice: (d: { token: string; env: string; bundleId: string; deviceName: string }) => client.post<{ device: Device; secret: string }>('/devices', d),
+    removeDevice: (id: string) => client.del(`/devices/${encodeURIComponent(id)}`),
+    notificationSettings: () => client.get<{ apps: { slug: string; name: string; muted: boolean }[] }>('/me/notification-settings'),
+    setMuted: (slug: string, muted: boolean) => (muted ? client.put(`/me/muted/${encodeURIComponent(slug)}`, {}) : client.del(`/me/muted/${encodeURIComponent(slug)}`)),
     grid: () => client.get<Grid>('/admin/access'),
     setRole: (slug: string, userId: string, role: string | null) => client.put(`/admin/access/${encodeURIComponent(slug)}/${encodeURIComponent(userId)}`, { role }),
     audit: (q: { app?: string; actor?: string; action?: string; before?: string }) => {

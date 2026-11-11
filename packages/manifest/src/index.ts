@@ -83,7 +83,8 @@ export function secretParameterName(envTag: 'prod' | 'test', slug: string, name:
 }
 
 /** Subdomains the platform uses itself. */
-export const RESERVED_SLUGS = new Set(['auth', 'apps', 'api', 'www', 'portal', 'admin', 'static', 'test', 'mail', 'status']);
+// 'platform' too: /stacks/<env>/secrets/platform/ holds the platform's own secrets (the APNs key).
+export const RESERVED_SLUGS = new Set(['auth', 'apps', 'api', 'www', 'portal', 'admin', 'static', 'test', 'mail', 'status', 'platform']);
 
 const SLUG = /^[a-z][a-z0-9-]{1,28}[a-z0-9]$/;
 const ROLE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;

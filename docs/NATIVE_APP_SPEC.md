@@ -273,14 +273,22 @@ channel for it.
 
 **Devices**
 
-- After sign-in, the portal offers "Turn on notifications" at a sensible moment, never at launch.
-  It calls `stacksNative.push.register()`: the shell requests permission, gets the APNs token and
-  returns `{ token, env, deviceName, bundleId }`, which the portal page `POST`s to `/devices` with
-  its own session. The response includes a device secret that the page hands back to the shell for
-  the Keychain.
-- `DEVICE#<deviceId>` under the user: token, APNs environment (`sandbox` for Xcode builds,
-  `production` for TestFlight/App Store), bundle ID, last seen, secret hash. Settings lists devices
-  with a Remove button. APNs `410 Unregistered` deletes the device.
+- After sign-in, the portal's home page offers "Turn on notifications" (never at launch, never
+  again after "Not now"; Settings › Notifications can always turn them on). It calls the bridge's
+  `push.register`: the shell requests permission, gets the APNs token and returns
+  `{ token, env, deviceName, bundleId }`, which the portal page `POST`s to `/devices` with its own
+  session. The response includes a device secret that the page hands back with `push.saveDevice`
+  for the Keychain. On every later portal load in the app, a device that already allows
+  notifications registers again silently (tokens change; same device, new secret), and `badge.set`
+  keeps the icon's number right while the app is open. `push.status` says whether this device is
+  allowed and registered.
+- `DEVICE#<deviceId>` items (GSI1 `USERDEVICES#<userId>`, so N3b can find a device by id): token,
+  APNs environment (`sandbox` for Xcode builds, `production` for TestFlight/App Store), bundle ID
+  (must be the environment's `native.iosBundleId`), name, last seen, secret hash. `PUSHTOKEN#<hash>`
+  makes a token unique: a phone that signs in as someone else moves to them. Settings ›
+  Notifications lists devices with a Remove button. APNs `410`, `BadDeviceToken` and
+  `DeviceTokenNotForTopic` delete the device. Signing out (everywhere, as always) and a merge delete
+  all the person's devices; the shell then forgets its device key and clears the badge.
 
 **Sending**
 
@@ -294,9 +302,10 @@ channel for it.
   anywhere, so the icon clears everywhere.
 - **Per-app mute** (the "notification preferences" the platform spec deferred): Settings ›
   Notifications lists the person's apps with a toggle. Muted apps still fill the inbox.
-- APNs is called from the Platform API Lambda over HTTP/2 with token auth (`.p8` key, Key ID and
-  Team ID in SSM SecureStrings under `/stacks/<env>/secrets/platform/`, stored by Dash from their Mac,
-  never in git or GitHub). Sends are best-effort and never fail the `notify()` call. Failures are
+- APNs is called from the Platform API Lambda over HTTP/2 with token auth (`.p8` key and Key ID in
+  SSM SecureStrings `APNS_KEY` and `APNS_KEY_ID` under `/stacks/<env>/secrets/platform/`, stored by
+  Dash from their Mac, never in git or GitHub; the Team ID comes from `native.appleTeamId`). The
+  slug `platform` is reserved so no app can read that path. Without the key, nothing is pushed. Sends are best-effort and never fail the `notify()` call. Failures are
   logged and counted.
 
 **Approve / Deny from the lock screen**
@@ -462,12 +471,12 @@ Gate: every existing user signs in with Google and sees the same data and roles;
 - [x] **N2a** (web side): `native` settings in `stacks.config.json`; apple-app-site-association on every host (CloudFront routers); `azp` allowlist for the iOS app's Google tokens; `GET /native/config`; `native/protocol/v1.json`; `@stacks/native` (client, web fallbacks, fake); the portal signs in, links accounts and signs out through the bridge in the app
 - [x] **N2b**: `native/ios`: `Core` (Foundation-only Swift package: link rules, bridge router with origin checks, protocol types tested against `v1.json`), `App` (WKWebView shell, offline screen, pull-to-refresh, last page, update notice, share, native Google sign-in, universal links), XcodeGen `project.yml`, build settings generated from `stacks.config.json`; `ios.yml`: Core tests on Linux, unsigned simulator builds of both environments on macOS
 - [x] **N2c**: `ios.yml` signs and uploads both apps to TestFlight from `main` (manual signing with a certificate and App Store profiles made each run through an App Store Connect API key in the `ios-release` environment; skips until set up; monthly rebuild); app icon; `docs/IOS_SETUP.md`; `ios-provision.yml` (by hand, on `main`) registers the bundle IDs with Associated Domains and sets up each app's automatic internal TestFlight group and tester through the App Store Connect API (`scripts/asc-provision.mjs`). App records stay manual: Apple has no API to create them
-- [ ] The setup itself (`docs/IOS_SETUP.md`), then the gate on a real device
+- [x] The setup itself (`docs/IOS_SETUP.md`), then the gate on a real device (passed 2026-11-11)
 
 Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
 
 **N3 — Push**
-- [ ] Devices API, APNs sender, absolute links, badge sync, per-app mute in Settings
+- [x] **N3a**: devices API, APNs sender, absolute links, badge sync, per-app mute in Settings; bridge `push.status`, `push.register`, `push.saveDevice`, `badge.set`; Push Notifications on both bundle IDs; APNs key step in `docs/IOS_SETUP.md`
 - [ ] Approve/Deny actions with action tokens and device secrets
 
 Gate: a request on a private app reaches the approver's lock screen, Approve works from there, and the requester's phone gets "You now have access" with the badge correct on both.

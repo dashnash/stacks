@@ -25,6 +25,8 @@ export interface PlatformUser {
   mergedAt?: string;
   /** Slugs, most recent first (at most 8). */
   recent?: string[];
+  /** Apps whose notifications don't reach this person's devices (they still fill the inbox). */
+  mutedApps?: string[];
 }
 
 /** The name apps and other people see: the chosen display name, else the first word of the Google name. */
@@ -67,6 +69,38 @@ export interface Notification {
   link?: string;
   app?: string;
   read: boolean;
+}
+
+/** A phone or tablet that gets this person's notifications (the iOS app, docs/NATIVE_APP_SPEC.md). */
+export interface Device {
+  id: string;
+  userId: string;
+  /** The APNs device token (hex). */
+  token: string;
+  /** `sandbox` for builds run from Xcode, `production` for TestFlight and the App Store. */
+  env: 'sandbox' | 'production';
+  bundleId: string;
+  deviceName: string;
+  createdAt: string;
+  lastSeenAt: string;
+  /** SHA-256 of the device secret the app keeps (for acting on notifications, N3b). */
+  secretHash: string;
+}
+
+/** What a push says; the sender adds the device's token and topic. */
+export interface PushMessage {
+  /** Omitted for a badge-only update. */
+  alert?: { title: string; body: string };
+  badge: number;
+  /** Absolute URL the app opens when the notification is tapped. */
+  url?: string;
+  /** Groups notifications per app on the lock screen. */
+  threadId?: string;
+}
+
+/** Delivers to Apple. `gone`: the token is no longer valid (APNs 410 or BadDeviceToken). */
+export interface PushSender {
+  send(device: Pick<Device, 'token' | 'env' | 'bundleId'>, message: PushMessage): Promise<'ok' | 'gone' | 'failed'>;
 }
 
 export interface PlatformAuditEvent {
@@ -119,6 +153,8 @@ export interface PlatformConfig {
   maintenance?: boolean;
   /** The iOS app: the oldest version the web still supports (default 1.0.0). */
   minShellVersion?: string;
+  /** The iOS app's bundle ID (the APNs topic); devices of other apps are refused. */
+  iosBundleId?: string;
 }
 
 export interface PlatformDeps {
@@ -127,6 +163,8 @@ export interface PlatformDeps {
   registry: AppRegistry;
   appSessions: AppSessionRevoker;
   verifyGoogle(credential: string): Promise<GoogleIdentity>;
+  /** Push to the iOS app; without it (tests, before setup) notifications only fill the inbox. */
+  push?: PushSender;
   now(): Date;
   newId(): string;
 }
@@ -156,6 +194,10 @@ export const keys = {
   app: (slug: string) => ({ PK: `APP#${slug}`, SK: 'APP' }),
   grant: (slug: string, userId: string) => ({ PK: `APP#${slug}`, SK: `GRANT#${userId}`, GSI1PK: `USERGRANTS#${userId}`, GSI1SK: slug }),
   notification: (userId: string, at: string, id: string) => ({ PK: `NOTIF#${userId}`, SK: `${at}#${id}` }),
+  /** A device, findable by id (acting on a notification) and, through GSI1, by its person. */
+  device: (id: string, userId: string) => ({ PK: `DEVICE#${id}`, SK: 'DEVICE', GSI1PK: `USERDEVICES#${userId}`, GSI1SK: id }),
+  /** Unique lookup from an APNs token to the device that has it (a phone signs in as someone else). */
+  pushToken: (tokenHash: string) => ({ PK: `PUSHTOKEN#${tokenHash}`, SK: 'PUSHTOKEN' }),
 };
 
 export type EmailItem = Item & { userId: string };
@@ -165,3 +207,4 @@ export type UserItem = Item & PlatformUser;
 export type GrantItem = Item & Grant;
 export type AppItem = Item & AppRecord;
 export type NotificationItem = Item & Notification;
+export type DeviceItem = Item & Device;

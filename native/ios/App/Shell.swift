@@ -18,6 +18,7 @@ final class Shell: NSObject, ObservableObject {
     let settings: ShellSettings
     let webView: WKWebView
     let router: BridgeRouter
+    let push: PushRegistrar
 
     /// Why the last page didn't load (shown as "Can't reach Stacks" with a retry), or nil.
     @Published var loadError: String?
@@ -31,6 +32,7 @@ final class Shell: NSObject, ObservableObject {
 
     init(settings: ShellSettings) {
         self.settings = settings
+        push = PushRegistrar(environment: settings.pushEnvironment)
         router = BridgeRouter(authHost: settings.policy.authHost, isOurHost: settings.policy.isOurHost)
 
         let config = WKWebViewConfiguration()
