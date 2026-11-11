@@ -49,11 +49,48 @@ public struct NavigationPolicy: Equatable {
     }
 
     /// Reopen the last page if it was one of ours and seen in the last day; else the portal.
+    /// Sign-in plumbing is never reopened (it only works once, mid-sign-in).
     public func launchURL(lastURL: URL?, savedAt: Date?, now: Date = Date()) -> URL {
-        if let url = lastURL, let at = savedAt, now.timeIntervalSince(at) < 24 * 3600, url.scheme == "https", let host = url.host, isOurHost(host) {
+        if let url = lastURL, let at = savedAt, now.timeIntervalSince(at) < 24 * 3600, url.scheme == "https", let host = url.host, isOurHost(host), !isSignInPlumbing(url) {
             return url
         }
         return startURL
+    }
+
+    /// Pages that only make sense mid-sign-in, in the browser that started it: an app's
+    /// `/api/...` (the sign-in callback), the portal's `/authorize` and `/logout`, and the portal's
+    /// sign-in page (`/#/signin?next=...`). Never remembered, never opened as a hand-off.
+    public func isSignInPlumbing(_ url: URL) -> Bool {
+        let path = url.path
+        if path == "/api" || path.hasPrefix("/api/") || path == "/authorize" || path == "/logout" { return true }
+        if url.host?.lowercased() == authHost, let fragment = url.fragment, fragment.hasPrefix("/signin") { return true }
+        return false
+    }
+
+    /// A link handed to the app (a universal link, a notification). Sign-in plumbing started in a
+    /// browser can't finish here (its state cookie is in that browser), so open the app it was for
+    /// instead: it signs in silently with the app's own session. Anything else opens as it is.
+    public func handoffURL(_ url: URL) -> URL {
+        guard isSignInPlumbing(url) else { return url }
+        if let slug = Self.appSlug(signingInTo: url, authHost: authHost), let app = URL(string: "https://\(slug).\(rootDomain)/") { return app }
+        if let host = url.host?.lowercased(), host != authHost, isOurHost(host), let app = URL(string: "https://\(host)/") { return app }
+        return startURL
+    }
+
+    /// The app a sign-in was for: `/authorize?app=<slug>`, or the portal's `#/signin?next=/authorize?app=<slug>...`.
+    static func appSlug(signingInTo url: URL, authHost: String) -> String? {
+        var authorize: URLComponents?
+        if url.path == "/authorize" {
+            authorize = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        } else if url.host?.lowercased() == authHost, let fragment = url.fragment, let q = fragment.firstIndex(of: "?") {
+            let next = URLComponents(string: String(fragment[q...]))?.queryItems?.first { $0.name == "next" }?.value
+            authorize = next.flatMap { URLComponents(string: $0) }
+            if authorize?.path != "/authorize" { authorize = nil }
+        }
+        guard let slug = authorize?.queryItems?.first(where: { $0.name == "app" })?.value,
+              slug.range(of: "^[a-z0-9][a-z0-9-]{0,39}$", options: .regularExpression) != nil
+        else { return nil }
+        return slug
     }
 }
 

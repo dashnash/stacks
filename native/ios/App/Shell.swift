@@ -64,7 +64,9 @@ final class Shell: NSObject, ObservableObject {
     }
 
     /// Open a link from outside (a universal link, a notification): ours load here, others in Safari.
-    func open(_ url: URL) {
+    func open(_ link: URL) {
+        // A sign-in started in a browser can't finish here: open the app it was for instead.
+        let url = settings.policy.handoffURL(link)
         switch settings.policy.decide(url) {
         case .inApp: webView.load(URLRequest(url: url))
         case .safari: present(SFSafariViewController(url: url))
@@ -108,7 +110,7 @@ final class Shell: NSObject, ObservableObject {
     }
 
     private func remember(_ url: URL) {
-        guard url.scheme == "https", let host = url.host, settings.policy.isOurHost(host) else { return }
+        guard url.scheme == "https", let host = url.host, settings.policy.isOurHost(host), !settings.policy.isSignInPlumbing(url) else { return }
         UserDefaults.standard.set(url, forKey: Self.lastURLKey)
         UserDefaults.standard.set(Date(), forKey: Self.lastURLAtKey)
     }

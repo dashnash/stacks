@@ -20,6 +20,10 @@ describe('apple-app-site-association', () => {
       expect(doc.applinks.details[0].appIDs).toEqual(['ABCDE12345.com.dashyhq.stacks']);
       expect(doc.applinks.details[0].components.at(-1)).toEqual({ '/': '*' });
       expect(doc.applinks.details[0].components).toContainEqual({ '/': '/api/*', exclude: true });
+      // A sign-in started in Safari or Chrome stays there (the app opening it can only fail).
+      const signIn = doc.applinks.details[0].components.findIndex((c: { '#'?: string }) => c['#'] === '/signin*');
+      expect(doc.applinks.details[0].components[signIn]).toEqual({ '/': '/', '#': '/signin*', exclude: true });
+      expect(signIn).toBeLessThan(doc.applinks.details[0].components.length - 1); // before the catch-all
     }
     // Everything else routes as before.
     expect(run(siteRouterCode(withApp), '/book/42').uri).toBe('/index.html');

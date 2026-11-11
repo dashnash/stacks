@@ -226,11 +226,11 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     })
     // Steps 8-9: swap the one-time code for the user, start an app session, go back to the deep link.
     .add('GET', '/auth/callback', async (req) => {
-      let pending: { ret?: string } = {};
+      let pending: { ret?: string; state?: string; verifier?: string } = {};
       try {
         pending = JSON.parse(atob(req.cookies[LOGIN_COOKIE] ?? '')) as typeof pending;
       } catch {
-        // missing or malformed: finishLogin refuses it
+        // missing or malformed: handled below
       }
       const clear = clearCookie(LOGIN_COOKIE);
       const ret = safeReturnPath(pending.ret);
@@ -238,6 +238,12 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
         // e.g. access_pending (a request was filed) or access_denied: the app's public view explains.
         const code = req.query.error.replace(/[^a-z_]/g, '').slice(0, 40);
         return { redirect: `/?stacks_access=${code}`, cookies: [clear] };
+      }
+      // Started in another browser, or expired (e.g. a sign-in begun in Chrome that iOS finished in
+      // the app): the code is never used, and the person lands on the app, which signs them in
+      // silently when it can, instead of on a dead-end error page.
+      if (!pending.state || !pending.verifier || req.query.state !== pending.state || !req.query.code) {
+        return { redirect: '/', cookies: [clear] };
       }
       const { token } = await finishLogin(req.cookies[LOGIN_COOKIE], req.query.state ?? '', req.query.code ?? '');
       return { redirect: ret, cookies: [clear, sessionCookie(token)] };
