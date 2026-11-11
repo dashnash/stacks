@@ -74,6 +74,11 @@ npx cdk bootstrap aws://ACCOUNT_ID/us-east-1 --qualifier stktest --toolkit-stack
 Staging deploys can now only do what `stacks-test-cfn-exec` allows: no IAM users, roles only named
 `stacks-test-*` with the boundary attached, and nothing on resources tagged `stacks:env=production`.
 
+**When `packages/infra/src/ci-stack.ts` changes** (e.g. the `realtime` module added AppSync Event
+APIs to `stacks-test-cfn-exec` and `appsync:EventConnect`/`EventPublish` to `stacks-test-boundary`),
+redeploy it from your machine with admin credentials before merging anything that needs it:
+`cd infra && npx cdk deploy -c ci=true stacks-ci`. CI never deploys this stack.
+
 ## 4. GitHub settings
 
 - **Environments** (Settings → Environments): create `staging` and `production`. For each, set

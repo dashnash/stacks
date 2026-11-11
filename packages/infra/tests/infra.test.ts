@@ -188,6 +188,29 @@ describe('CiStack', () => {
     template.hasResourceProperties('AWS::IAM::ManagedPolicy', { ManagedPolicyName: 'stacks-test-boundary' });
   });
 
+  it('lets staging deploy Event APIs and app Lambdas publish to them, and still never touch production', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new CiStack(app, 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+    template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+      ManagedPolicyName: 'stacks-test-cfn-exec',
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Sid: 'RealtimeEventApis', Effect: 'Allow', Action: 'appsync:*', Resource: '*' }),
+          Match.objectLike({ Sid: 'NeverProduction', Effect: 'Deny', Action: '*', Condition: { StringEquals: { 'aws:ResourceTag/stacks:env': 'production' } } }),
+        ]),
+      },
+    });
+    template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+      ManagedPolicyName: 'stacks-test-boundary',
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Sid: 'RealtimePublish', Effect: 'Allow', Action: ['appsync:EventConnect', 'appsync:EventPublish'] }),
+          Match.objectLike({ Sid: 'NeverProduction', Effect: 'Deny', Action: '*' }),
+        ]),
+      },
+    });
+  });
+
   it('trusts the immutable subject claim when the repo uses one', () => {
     const app = new cdk.App();
     const template = Template.fromStack(
