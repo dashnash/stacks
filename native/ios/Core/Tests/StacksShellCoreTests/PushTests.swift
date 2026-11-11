@@ -46,3 +46,11 @@ final class PushActionTests: XCTestCase {
         XCTAssertEqual(String(data: body, encoding: .utf8), #"{"action":"approve","secret":"sdv_1","token":"spa_2"}"#)
     }
 }
+
+final class BuildCommitTests: XCTestCase {
+    func testSettingsReadTheCommitCIBuiltFrom() {
+        let ci = ShellSettings(info: ["StacksRootDomain": "iamdashnash.com", "StacksGitCommit": "0123456789abcdef0123456789abcdef01234567"])
+        XCTAssertEqual(ci?.commit, "0123456789abcdef0123456789abcdef01234567")
+        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "iamdashnash.com"])?.commit, "")
+    }
+}

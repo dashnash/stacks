@@ -13,6 +13,7 @@ enum NativeHandlers {
             .object([
                 "version": .string(settings.appVersion),
                 "build": .string(settings.build),
+                "commit": .string(settings.commit),
                 "platform": .string("ios"),
                 "protocol": .number(Double(BridgeProtocol.version)),
             ])

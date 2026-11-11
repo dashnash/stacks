@@ -33,7 +33,8 @@ export class NativeError extends Error {
 
 /** The calls and their shapes (see native/protocol/v1.json). */
 export interface Calls {
-  'app.info': { args: Record<string, never>; result: { version: string; build: string; platform: string; protocol: number } };
+  /** `commit`: the git commit CI built the app from ("" for a local build; absent in older apps). */
+  'app.info': { args: Record<string, never>; result: { version: string; build: string; commit?: string; platform: string; protocol: number } };
   'auth.google': { args: Record<string, never>; result: { credential: string } };
   'auth.signedOut': { args: Record<string, never>; result: Record<string, never> };
   share: { args: ShareData; result: { completed: boolean } };

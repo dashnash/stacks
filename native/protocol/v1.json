@@ -49,12 +49,13 @@
   ],
   "calls": {
     "app.info": {
-      "doc": "The app's version, build and platform.",
+      "doc": "The app's version, build, the git commit CI built it from (\"\" for a local Xcode build; absent in builds made before this field), and platform.",
       "origins": "any",
       "args": {},
       "result": {
         "version": "1.0.0",
-        "build": "42",
+        "build": "4201",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
         "platform": "ios",
         "protocol": 1
       }

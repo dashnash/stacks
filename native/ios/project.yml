@@ -44,6 +44,8 @@ targets:
         SUPPORTS_MACCATALYST: NO
         # Builds run from Xcode push through Apple's sandbox; TestFlight and the App Store through production.
         STACKS_APS_ENVIRONMENT: development
+        # CI sets the commit it builds (shown in the portal's footer in the app); empty from Xcode.
+        STACKS_GIT_COMMIT: ""
       # Release builds sign by hand with an Apple Distribution certificate and an App Store profile
       # that CI makes for each run (DASHYHQ_PROFILE: the profile's name). Only this target: the Swift
       # packages keep the project's automatic style. Debug (run from Xcode) stays automatic.
@@ -78,6 +80,7 @@ targets:
         StacksRootDomain: $(STACKS_ROOT_DOMAIN)
         StacksOtherRoots: $(STACKS_OTHER_ROOTS)
         StacksPushEnvironment: $(STACKS_APS_ENVIRONMENT)
+        StacksGitCommit: $(STACKS_GIT_COMMIT)
         GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
         GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
         CFBundleURLTypes:

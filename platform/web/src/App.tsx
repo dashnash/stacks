@@ -2,6 +2,7 @@ import { AccountMenuView, BuildVersion, Spinner, useAsync, useHashRoute } from '
 import { Badge, parseHash, usePortal } from './portal';
 import { AccessGrid } from './views/AccessGrid';
 import { AppPage } from './views/AppPage';
+import { AppVersion } from './views/AppVersion';
 import { AuditLog } from './views/AuditLog';
 import { Catalog } from './views/Catalog';
 import { Notifications } from './views/Notifications';
@@ -59,6 +60,7 @@ function Footer() {
       <span>© {new Date().getFullYear()} Stacks</span>
       <a href="#/">All apps</a>
       <BuildVersion className="build" />
+      <AppVersion className="build" />
     </footer>
   );
 }
