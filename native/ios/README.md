@@ -30,7 +30,7 @@ Native Google sign-in answers "isn't set up in this build yet" until `googleIosC
 
 ## Releases
 
-Every merge to `main` that touches the app (and the 1st of each month) signs both apps and uploads
+Every merge to `main` that changes the app (and the 1st of every other month) signs both apps and uploads
 them to TestFlight: the **Sign and upload to TestFlight** job in `.github/workflows/ios.yml`. One-time
 setup (Apple, Google, GitHub secrets): `docs/IOS_SETUP.md`. Bump `VERSION` for a new marketing version.
 

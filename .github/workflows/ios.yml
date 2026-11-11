@@ -1,9 +1,11 @@
 name: iOS
 
 # The DashyHQ app (native/ios). Its logic is a Foundation-only Swift package, tested on Linux
-# (cheap); the app itself builds on macOS (minutes count 10x), only when the app's files change.
-# On main, both apps are signed and uploaded to TestFlight (docs/IOS_SETUP.md), and once a month
-# again so testers never hit TestFlight's 90-day expiry.
+# (cheap). macOS minutes count 10x, so macOS runs only when something that goes into the app
+# changed (the `core` job decides): one simulator build on such PRs; on main, both apps are signed
+# and uploaded to TestFlight (docs/IOS_SETUP.md); and every two months, so testers never hit
+# TestFlight's 90-day expiry. Workflow, script, test and docs changes stay on Linux; run the
+# workflow by hand on main to release anyway.
 on:
   pull_request:
     paths:
@@ -21,7 +23,7 @@ on:
       - stacks.config.json
       - .github/workflows/ios.yml
   schedule:
-    - cron: '23 9 1 * *' # monthly rebuild, before TestFlight builds expire
+    - cron: '23 9 1 */2 *' # every two months (at most 62 days apart): before TestFlight's 90-day expiry
   workflow_dispatch:
 
 concurrency:
@@ -36,8 +38,38 @@ jobs:
     name: Shell logic (Swift on Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      app: ${{ steps.changes.outputs.app }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Did anything that goes into the app change?
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The app's own sources, its build settings and project; not Core's tests or docs.
+          case "$EVENT" in
+            pull_request) range="$BASE...HEAD" ;;
+            push) range="$BEFORE..HEAD" ;;
+            *) echo "app=true" >> "$GITHUB_OUTPUT"; exit 0 ;; # schedule, by hand: always
+          esac
+          if ! changed="$(git diff --name-only "$range" 2> /dev/null)"; then
+            echo "Can't diff $range: building to be safe"
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          app="$(printf '%s\n' "$changed" | grep '^native/ios/' | grep -v '^native/ios/Core/Tests/' | grep -v '\.md$' || true)"
+          if [ -n "$app" ]; then
+            printf 'App inputs changed:\n%s\n' "$app"
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=No macOS build::Nothing that goes into the app changed (only $(printf '%s\n' "$changed" | wc -l | tr -d ' ') other file(s))."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -50,8 +82,8 @@ jobs:
   app:
     name: App (simulator build, unsigned)
     needs: core
-    # On main the release job builds (and signs) the same code, so this runs for PRs and by hand.
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # PRs that change the app only. On main the release job builds (and signs) the same code.
+    if: github.event_name == 'pull_request' && needs.core.outputs.app == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -67,30 +99,36 @@ jobs:
           sudo xcode-select -s "$xcode"
           xcodebuild -version
       - name: Generate the Xcode project
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_NO_ENV_HINTS: '1'
         run: |
           brew install xcodegen
           xcodegen generate --spec native/ios/project.yml
-      - name: Build both environments for the simulator
+      - name: Swift packages (cached)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/spm
+          key: spm-${{ hashFiles('native/ios/project.yml') }}
+      - name: Build for the simulator
+        # One environment is enough: both compile the same code (only settings and the icon
+        # differ), and the release on main builds both.
         run: |
-          for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
-            scheme="${pair%%:*}"
-            config="${pair##*:}"
-            echo "::group::$scheme ($config)"
-            xcodebuild build -quiet \
-              -project native/ios/DashyHQ.xcodeproj \
-              -scheme "$scheme" \
-              -configuration "$config" \
-              -destination 'generic/platform=iOS Simulator' \
-              -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
-              CODE_SIGNING_ALLOWED=NO \
-              STACKS_GIT_COMMIT="$GITHUB_SHA"
-            echo "::endgroup::"
-          done
+          xcodebuild build -quiet \
+            -project native/ios/DashyHQ.xcodeproj \
+            -scheme "DashyHQ Test" \
+            -configuration Staging \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            CODE_SIGNING_ALLOWED=NO \
+            STACKS_GIT_COMMIT="$GITHUB_SHA"
 
   release:
     name: Sign and upload to TestFlight
     needs: core
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # On main: when the app changed, every two months, or by hand.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.core.outputs.app == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect
@@ -153,9 +191,19 @@ jobs:
           xcodebuild -version
       - name: Generate the Xcode project
         if: steps.ready.outputs.go == 'true'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_NO_ENV_HINTS: '1'
         run: |
           brew install xcodegen
           xcodegen generate --spec native/ios/project.yml
+      - name: Swift packages (cached)
+        if: steps.ready.outputs.go == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/spm
+          key: spm-${{ hashFiles('native/ios/project.yml') }}
       - name: A signing certificate and App Store profiles for this run
         id: signing
         if: steps.ready.outputs.go == 'true'

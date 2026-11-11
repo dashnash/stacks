@@ -63,7 +63,7 @@ From the brainstorm on 2026-11-09.
 | Bridge principle | Web standards first; a native bridge call only where WebKit on iOS falls short |
 | Bridge protocol | Versioned, platform-neutral JSON messages (Android could implement them later) |
 | Dev machine | Dash has a Mac with Xcode (local simulator and device debugging); CI does signing and uploads |
-| CI | macOS runner on merge to `main` touching the shell, plus manual dispatch and a monthly rebuild; PRs touching the shell build and test unsigned |
+| CI | macOS runner only when the app itself changes (merge to `main` → TestFlight; PR → one unsigned simulator build), plus manual dispatch and a rebuild every two months; everything else (Core tests, protocol, scripts) on Linux |
 | Project file | Generated from a text spec (XcodeGen `project.yml`), so it is reviewable and editable from Linux sessions |
 
 ## Architecture
@@ -402,9 +402,9 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 
 | Trigger | What runs |
 | --- | --- |
-| PR touching `native/**`, `packages/native/**` or `ios.yml` | Unsigned simulator build, XCTest + protocol fixtures, XCUITest smoke against the portal's demo build. No secrets |
-| Push to `main` touching the same paths, or `workflow_dispatch` on `main` | Core tests, then archive, sign and upload **both** apps; each app's internal TestFlight group has automatic distribution. Skips with a notice until the setup is done |
-| Monthly schedule | The same, so a TestFlight build never reaches its 90-day expiry |
+| PR touching `native/**`, the iOS scripts, `stacks.config.json` or `ios.yml` | Core tests and protocol fixtures on Linux. Only if the app itself changed (`native/ios/`, not Core's tests or docs): one unsigned simulator build (DashyHQ Test) on macOS. No secrets |
+| Push to `main` that changes the app, or `workflow_dispatch` on `main` | Core tests, then archive, sign and upload **both** apps; each app's internal TestFlight group has automatic distribution. Skips with a notice until the setup is done. Other pushes stay on Linux |
+| Every two months (1st of odd months) | The same, so a TestFlight build never reaches its 90-day expiry |
 
 - Runner: `macos-26` with Xcode 26 (pinned with `xcode-select`). `xcodegen generate`, then
   `xcodebuild archive` with **manual signing** by a certificate made for that run: the runner
