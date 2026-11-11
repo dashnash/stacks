@@ -312,11 +312,16 @@ channel for it.
 
 - Access-request pushes use the category `ACCESS_REQUEST` with actions **Approve** (the default
   role) and **Deny**, both `.authenticationRequired` (the device must be unlocked).
-- Each push carries a single-use **action token**: HMAC-signed, bound to (app, requester, approver,
-  deviceId), valid 7 days. The shell posts it with the device secret to `POST /devices/:id/actions`,
-  without opening the web view. The platform re-checks that the approver can still manage access,
-  applies the normal grant rules and audit (`grant.approve` via `push`), and answers with a
-  follow-up notification on failure.
+- Each push carries a single-use **action token** per device (`actionToken` beside `aps`): random,
+  stored only as a hash (`PUSHACTION#<hash>`) bound to (app, requester, approver, deviceId), valid
+  7 days. (A stored token rather than an HMAC: single use is enforced, and no signing key is
+  needed.) The shell posts it with the device secret to `POST /devices/:id/actions`
+  (`{ secret, token, action: "approve" | "deny" }`, no session), without opening the web view. The
+  platform re-checks that the approver can still manage access and applies the normal grant rules:
+  Approve gives the app's default role, Deny dismisses the request; audit `grant.set` / `grant.remove`
+  with `via: "push"`. A request already handled elsewhere answers `already-handled`. A refused press
+  becomes a notification to the approver saying why; if the app can't reach the platform, it shows
+  a local "Couldn't reach Stacks" notification that opens the request.
 
 ## Native capabilities (`@stacks/native`)
 
@@ -477,7 +482,7 @@ Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with 
 
 **N3 — Push**
 - [x] **N3a**: devices API, APNs sender, absolute links, badge sync, per-app mute in Settings; bridge `push.status`, `push.register`, `push.saveDevice`, `badge.set`; Push Notifications on both bundle IDs; APNs key step in `docs/IOS_SETUP.md`
-- [ ] Approve/Deny actions with action tokens and device secrets
+- [x] **N3b**: Approve/Deny actions with action tokens and device secrets
 
 Gate: a request on a private app reaches the approver's lock screen, Approve works from there, and the requester's phone gets "You now have access" with the badge correct on both.
 

@@ -22,7 +22,7 @@ import {
   type UserItem,
 } from './model';
 // push.ts uses this module too; only functions cross, at call time, so the cycle is harmless.
-import { accessManagers, pushNotification, removeAllDevices, syncBadges } from './push';
+import { accessManagers, pushNotification, removeAllDevices, syncBadges, type PushActions } from './push';
 
 const DAY_MS = 86_400_000;
 
@@ -315,6 +315,7 @@ export async function setGrant(
   manifest: AppManifest,
   userId: string,
   role: string | null,
+  opts: { via?: 'push' } = {},
 ): Promise<Grant | null> {
   const { manages, managesApprovers } = await managesApp(deps, actor, manifest);
   if (!manages) throw forbidden('You do not manage access to this app');
@@ -350,7 +351,7 @@ export async function setGrant(
   // A request was handled: one fewer waiting on every approver's badge.
   if (from === PENDING) await syncBadges(deps, await accessManagers(deps, manifest));
   const action = role === BLOCKED ? 'grant.block' : from === BLOCKED ? 'grant.unblock' : role === null ? 'grant.remove' : 'grant.set';
-  await audit(deps, actor, manifest.slug, { action, label: shownName(target), details: { userId, from, to: role } });
+  await audit(deps, actor, manifest.slug, { action, label: shownName(target), details: { userId, from, to: role, ...(opts.via ? { via: opts.via } : {}) } });
   return next;
 }
 
@@ -375,7 +376,13 @@ export async function requestAccess(deps: PlatformDeps, user: PlatformUser, mani
   const admins = async () => (await Promise.all(deps.config.platformAdmins.map((e) => userIdForEmail(deps, e)))).filter((id): id is string => !!id);
   const recipients = approvers.length ? approvers : await admins();
   for (const id of recipients) {
-    await notify(deps, id, { text: `${shownName(user)} (${user.email}) asked for access to ${manifest.name}.`, link: `#/admin/access?app=${manifest.slug}`, app: manifest.slug });
+    await notify(
+      deps,
+      id,
+      { text: `${shownName(user)} (${user.email}) asked for access to ${manifest.name}.`, link: `#/admin/access?app=${manifest.slug}`, app: manifest.slug },
+      // Approve / Deny on the lock screen.
+      { access: { app: manifest.slug, requesterId: user.id } },
+    );
   }
   await audit(deps, user, manifest.slug, { action: 'grant.request', label: shownName(user), details: { userId: user.id } });
   return grant;
@@ -384,12 +391,12 @@ export async function requestAccess(deps: PlatformDeps, user: PlatformUser, mani
 /* ---------- Notifications ---------- */
 
 /** A new inbox item (links stored absolute, so a tapped push can open them), pushed to their devices. */
-export async function notify(deps: PlatformDeps, userId: string, n: Pick<Notification, 'text' | 'link' | 'app'>): Promise<void> {
+export async function notify(deps: PlatformDeps, userId: string, n: Pick<Notification, 'text' | 'link' | 'app'>, actions?: PushActions): Promise<void> {
   const at = deps.now().toISOString();
   const id = deps.newId();
   const link = n.link?.startsWith('#') ? `${deps.config.authOrigin}/${n.link}` : n.link;
   await deps.store.put({ ...keys.notification(userId, at, id), id, at, read: false, ...n, ...(link ? { link } : {}) });
-  await pushNotification(deps, userId, { ...n, link });
+  await pushNotification(deps, userId, { ...n, link }, actions);
 }
 
 export async function listNotifications(deps: PlatformDeps, userId: string, limit = 50): Promise<Notification[]> {

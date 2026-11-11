@@ -33,8 +33,9 @@ export function apnsPayload(m: PushMessage): Record<string, unknown> {
     aps.alert = { title: m.alert.title, body: m.alert.body };
     aps.sound = 'default';
     if (m.threadId) aps['thread-id'] = m.threadId;
+    if (m.category) aps.category = m.category;
   }
-  return { aps, ...(m.url ? { url: m.url } : {}) };
+  return { aps, ...(m.url ? { url: m.url } : {}), ...(m.actionToken ? { actionToken: m.actionToken } : {}) };
 }
 
 /** What a reply means for the device: 410, or 400 BadDeviceToken / DeviceTokenNotForTopic, means drop it. */
