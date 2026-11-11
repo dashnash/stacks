@@ -192,7 +192,11 @@ platform checks it against Apple's public keys. People who choose **Hide My Emai
 
 ## Later
 
-- Builds expire after 90 days in TestFlight; the workflow rebuilds on the 1st of every month.
+- Builds expire after 90 days in TestFlight; the workflow rebuilds every two months (the 1st of
+  odd months), and on every merge that changes the app. To release without an app change (a
+  workflow fix, say), run **Actions → iOS → Run workflow** on `main`.
+- macOS minutes count 10x against GitHub's allowance, so macOS runs only when something that goes
+  into the app changed (`native/ios/`, not Core's tests or docs). Everything else stays on Linux.
 - Nothing to rotate except the API key: revoke it on step 2's page and repeat step 3 if it leaks.
   Same for the APNs key: revoke it on step 9's page, make a new one and store it again.
   Signing certificates live one release each. If a release ever fails saying the team has no room
