@@ -42,8 +42,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
-      # Release builds sign by hand with the team's Apple Distribution certificate and an App Store
-      # profile CI makes fresh each run (DASHYHQ_PROFILE: its name). Only this target: the Swift
+      # Release builds sign by hand with an Apple Distribution certificate and an App Store profile
+      # that CI makes for each run (DASHYHQ_PROFILE: the profile's name). Only this target: the Swift
       # packages keep the project's automatic style. Debug (run from Xcode) stays automatic.
       configs:
         Staging:

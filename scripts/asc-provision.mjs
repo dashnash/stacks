@@ -12,9 +12,17 @@
  *
  * Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8 contents), optional TESTER_EMAIL.
  * `--check-apps` only checks that both app records exist (exit 3 if not): the release job's guard.
- * `--profiles <dir>` (the release job, with CERT_SERIAL and PROFILE_MAP): makes fresh App Store
- * profiles for both apps with the distribution certificate, writes them to <dir> and a
- * `{ bundleId: profileName }` map to PROFILE_MAP.
+ *
+ * Release signing (the release job): each run signs with a certificate made for that run, and the
+ * next run revokes it, so no certificate or key is ever stored. (Revoking a distribution
+ * certificate doesn't affect builds already processed; waiting for the next run gives Apple time
+ * to process this run's.)
+ * `--release-signing <request.csr> <out-dir> <profile-dir...>` revokes the previous run's
+ * certificate, has Apple issue an Apple Distribution certificate for the CSR (the key stays on the
+ * runner), makes fresh App Store profiles with it, and writes <out-dir>/certificate.cer,
+ * <out-dir>/certificate-id, <out-dir>/profiles.json (`{ bundleId: profileName }`) and the profiles
+ * into each <profile-dir>.
+ * `--revoke-certificate <id>`: a run that failed before uploading revokes its own.
  */
 import { createPrivateKey, sign } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -147,20 +155,6 @@ export async function missingApps(api, apps) {
   return missing;
 }
 
-/** Certificate serials as Apple and openssl print them differ in case and leading zeros. */
-export const normalizeSerial = (serial) => String(serial).trim().replace(/^serial=/i, '').replace(/:/g, '').toUpperCase().replace(/^0+/, '');
-
-/** The team's distribution certificate with this serial number (CI holds its private key). */
-export async function findDistributionCertificate(api, serial) {
-  const want = normalizeSerial(serial);
-  for (const type of ['DISTRIBUTION', 'IOS_DISTRIBUTION']) {
-    const certs = (await api('GET', `/v1/certificates?filter[certificateType]=${type}&limit=200`)).data ?? [];
-    const hit = certs.find((c) => normalizeSerial(c.attributes?.serialNumber ?? '') === want);
-    if (hit) return hit;
-  }
-  throw new Error(`No distribution certificate with serial ${want} in the team: make one with scripts/ios-signing-cert.mjs (docs/IOS_SETUP.md)`);
-}
-
 export const profileName = (app) => `${app.name} CI App Store`;
 
 /**
@@ -192,6 +186,56 @@ export async function freshProfiles(api, apps, certificateId, log = () => {}) {
   return out;
 }
 
+/**
+ * Certificates the CI profiles were made with: earlier runs' (normally just the last one). Only CI
+ * makes these profiles, so a certificate you made yourself (Xcode) is never touched.
+ */
+export async function leftoverCertificates(api, apps) {
+  const ids = new Set();
+  for (const app of apps) {
+    const name = profileName(app);
+    for (const prof of (await api('GET', `/v1/profiles?filter[name]=${q(name)}&limit=200`)).data ?? []) {
+      if (prof.attributes?.name !== name) continue;
+      for (const c of (await api('GET', `/v1/profiles/${prof.id}/certificates?limit=200`)).data ?? []) ids.add(c.id);
+    }
+  }
+  return [...ids];
+}
+
+/** Revoke a certificate; one already gone (revoked, expired) is fine. */
+export async function revokeCertificate(api, id) {
+  try {
+    await api('DELETE', `/v1/certificates/${id}`);
+    return true;
+  } catch (err) {
+    if (/ → 404 /.test(err.message)) return false;
+    throw err;
+  }
+}
+
+/** Apple issues an Apple Distribution certificate for the signing request. */
+export async function createDistributionCertificate(api, csrPem) {
+  try {
+    return (await api('POST', '/v1/certificates', { data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: csrPem } } })).data;
+  } catch (err) {
+    throw new Error(
+      `${err.message}\nIf the team has reached its limit of distribution certificates, revoke one you don't use at https://developer.apple.com/account/resources/certificates/list and re-run.`,
+    );
+  }
+}
+
+/** Everything a release run signs with: earlier runs' certificates revoked, a new one, fresh profiles. */
+export async function releaseSigning(api, apps, csrPem, { log = () => {}, onCertificate = () => {} } = {}) {
+  for (const id of await leftoverCertificates(api, apps)) {
+    if (await revokeCertificate(api, id)) log(`- revoked certificate ${id}, from an earlier run`);
+  }
+  const certificate = await createDistributionCertificate(api, csrPem);
+  log(`+ Apple Distribution certificate ${certificate.id} for this run (expires ${certificate.attributes?.expirationDate})`);
+  onCertificate(certificate); // before anything else can fail, so the run's cleanup can revoke it
+  const profiles = await freshProfiles(api, apps, certificate.id, log);
+  return { certificate, profiles };
+}
+
 /** Set up every app; returns whether any app record still needs creating by hand. */
 export async function provision({ api, apps, testerEmail, log = console.log }) {
   let appsMissing = 0;
@@ -214,18 +258,33 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const app of missing) console.log(`${app.name} (${app.bundleId}) has no App Store Connect app yet (docs/IOS_SETUP.md steps 4-5)`);
     process.exit(missing.length ? 3 : 0);
   }
-  // `--profiles <dir>` (the release job): fresh App Store profiles, installed where Xcode looks.
-  const at = process.argv.indexOf('--profiles');
-  if (at > 0) {
-    const dirs = process.argv.slice(at + 1).filter((a) => !a.startsWith('--'));
-    if (!dirs.length) (console.error('--profiles needs a directory'), process.exit(2));
-    const cert = await findDistributionCertificate(api, need('CERT_SERIAL'));
-    const profiles = await freshProfiles(api, appsFromConfig(config), cert.id, console.log);
-    for (const dir of dirs) {
+  const args = (flag) => {
+    const at = process.argv.indexOf(flag);
+    return at < 0 ? null : process.argv.slice(at + 1).filter((a) => !a.startsWith('--'));
+  };
+  const signing = args('--release-signing');
+  if (signing) {
+    const [csr, out, ...profileDirs] = signing;
+    if (!csr || !out || !profileDirs.length) (console.error('usage: --release-signing <request.csr> <out-dir> <profile-dir...>'), process.exit(2));
+    mkdirSync(out, { recursive: true });
+    const { profiles } = await releaseSigning(api, appsFromConfig(config), readFileSync(csr, 'utf8'), {
+      log: console.log,
+      onCertificate: (c) => {
+        writeFileSync(join(out, 'certificate-id'), c.id);
+        writeFileSync(join(out, 'certificate.cer'), Buffer.from(c.attributes.certificateContent, 'base64'));
+      },
+    });
+    writeFileSync(join(out, 'profiles.json'), JSON.stringify(Object.fromEntries(profiles.map((p) => [p.bundleId, p.name]))));
+    for (const dir of profileDirs) {
       mkdirSync(dir, { recursive: true });
       for (const p of profiles) writeFileSync(join(dir, `${p.uuid}.mobileprovision`), Buffer.from(p.content, 'base64'));
     }
-    writeFileSync(need('PROFILE_MAP'), JSON.stringify(Object.fromEntries(profiles.map((p) => [p.bundleId, p.name]))));
+    process.exit(0);
+  }
+  const revoke = args('--revoke-certificate');
+  if (revoke) {
+    if (!revoke[0]) (console.error('usage: --revoke-certificate <id>'), process.exit(2));
+    console.log((await revokeCertificate(api, revoke[0])) ? `- revoked certificate ${revoke[0]}` : `= certificate ${revoke[0]} was already gone`);
     process.exit(0);
   }
   const testerEmail = (process.env.TESTER_EMAIL ?? '').trim() || undefined;

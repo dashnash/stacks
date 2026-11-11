@@ -34,9 +34,8 @@ Every merge to `main` that touches the app (and the 1st of each month) signs bot
 them to TestFlight: the **Sign and upload to TestFlight** job in `.github/workflows/ios.yml`. One-time
 setup (Apple, Google, GitHub secrets): `docs/IOS_SETUP.md`. Bump `VERSION` for a new marketing version.
 
-Release configs (Staging, Production) sign manually with the team's Apple Distribution certificate
-(a `.p12` in the `ios-release` secrets) and an App Store profile CI makes fresh each run, named by
-`DASHYHQ_PROFILE`. Debug, the config you run from Xcode (both schemes), signs automatically for your
+Release configs (Staging, Production) sign manually with an Apple Distribution certificate and an
+App Store profile that CI makes for each run (the profile's name comes in as `DASHYHQ_PROFILE`). Debug, the config you run from Xcode (both schemes), signs automatically for your
 own device.
 
 ## Rules the code keeps

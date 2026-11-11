@@ -385,21 +385,22 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 | Monthly schedule | The same, so a TestFlight build never reaches its 90-day expiry |
 
 - Runner: `macos-26` with Xcode 26 (pinned with `xcode-select`). `xcodegen generate`, then
-  `xcodebuild archive` with **manual signing**: the team's Apple Distribution certificate (a
-  `.p12`, made by `scripts/ios-signing-cert.mjs`, yearly) goes into a temporary keychain, and
-  `scripts/asc-provision.mjs --profiles` makes a fresh App Store profile per app through the API
-  (so new capabilities are always in it). Then `-exportArchive` with `destination: upload`. Chosen
-  over Xcode's cloud-managed signing for portability (plain certificate + profile, works with any
-  tool) and because automatic signing archives with a development profile, which needs a
-  registered device. No fastlane: internal groups receive builds through
+  `xcodebuild archive` with **manual signing** by a certificate made for that run: the runner
+  makes a key and CSR, `scripts/asc-provision.mjs --release-signing` revokes the previous run's
+  certificate, has Apple issue a new Apple Distribution certificate and makes fresh App Store
+  profiles with it (so new capabilities are always in them); the key goes into a temporary
+  keychain. Nothing is stored, so nothing expires or rotates. The next run revokes the certificate,
+  not this one, so Apple can finish processing its builds; a run that fails before uploading
+  revokes its own. Chosen over Xcode's cloud-managed signing for portability (plain certificate
+  and profile, works with any tool) and because automatic signing archives with a development
+  profile, which needs a registered device. Cost: Apple emails on each certificate made or revoked. No fastlane: internal groups receive builds through
   TestFlight's automatic distribution, set once in App Store Connect.
 - Build number = `run_number × 100 + run_attempt` (a re-run uploads a new build); marketing version
   from `native/ios/VERSION`. The icon is a generated placeholder (`App/Assets.xcassets`).
-- Secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `DIST_CERT_P12`, `DIST_CERT_PASSWORD` live
-  in a GitHub environment `ios-release` that allows only `main`, like `production`. Uploads never
-  run on PR code. The API key is Admin (it registers bundle IDs and makes certificates and
-  profiles). The certificate expires yearly: the release job then fails with "No distribution
-  certificate with serial …"; run the script again and replace the two secrets.
+- Secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` live in a GitHub environment `ios-release`
+  that allows only `main`, like `production`. Uploads never run on PR code. The API key is Admin (it
+  registers bundle IDs and makes certificates and profiles). Runs on `main` are serialized
+  (`concurrency`), so one never revokes another's certificate mid-run.
 - Cost: the repo is private, so macOS minutes count at 10x against the plan's quota. Path filters
   keep web-only merges off macOS.
 - **Same rule as AWS: sessions never hold Apple credentials.** Claude sessions (Linux) edit Swift and
@@ -460,7 +461,7 @@ Gate: every existing user signs in with Google and sees the same data and roles;
 **N2 — Shell and native Google sign-in**, in three PRs
 - [x] **N2a** (web side): `native` settings in `stacks.config.json`; apple-app-site-association on every host (CloudFront routers); `azp` allowlist for the iOS app's Google tokens; `GET /native/config`; `native/protocol/v1.json`; `@stacks/native` (client, web fallbacks, fake); the portal signs in, links accounts and signs out through the bridge in the app
 - [x] **N2b**: `native/ios`: `Core` (Foundation-only Swift package: link rules, bridge router with origin checks, protocol types tested against `v1.json`), `App` (WKWebView shell, offline screen, pull-to-refresh, last page, update notice, share, native Google sign-in, universal links), XcodeGen `project.yml`, build settings generated from `stacks.config.json`; `ios.yml`: Core tests on Linux, unsigned simulator builds of both environments on macOS
-- [x] **N2c**: `ios.yml` signs and uploads both apps to TestFlight from `main` (manual signing: an Apple Distribution `.p12` and per-run App Store profiles, with an App Store Connect API key, all in the `ios-release` environment; skips until set up; monthly rebuild); app icon; `docs/IOS_SETUP.md`; `ios-provision.yml` (by hand, on `main`) registers the bundle IDs with Associated Domains and sets up each app's automatic internal TestFlight group and tester through the App Store Connect API (`scripts/asc-provision.mjs`). App records stay manual: Apple has no API to create them
+- [x] **N2c**: `ios.yml` signs and uploads both apps to TestFlight from `main` (manual signing with a certificate and App Store profiles made each run through an App Store Connect API key in the `ios-release` environment; skips until set up; monthly rebuild); app icon; `docs/IOS_SETUP.md`; `ios-provision.yml` (by hand, on `main`) registers the bundle IDs with Associated Domains and sets up each app's automatic internal TestFlight group and tester through the App Store Connect API (`scripts/asc-provision.mjs`). App records stay manual: Apple has no API to create them
 - [ ] The setup itself (`docs/IOS_SETUP.md`), then the gate on a real device
 
 Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with no second prompt, tap a Messages link to an app and land on it in the shell.
