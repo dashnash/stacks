@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTestHarness, testUserId } from '@stacks/testing';
+import { createTestHarness, memberFor, testUserId } from '@stacks/testing';
 import { manifest } from '../api/manifest';
 import { routes } from '../api/routes';
 
@@ -31,5 +31,24 @@ describe('Hello Board API', () => {
     expect((await t.call('DELETE', `/greetings/${body.greeting.id}`, { as: 'olive@x.dev', role: 'OWNER' })).status).toBe(200);
     expect((await t.call('DELETE', `/greetings/${body.greeting.id}`, { as: 'olive@x.dev', role: 'OWNER' })).status).toBe(404);
     expect(t.platform.audit.map((e) => e.action)).toEqual(['greeting.post', 'greeting.delete']);
+  });
+
+  it('tells every other member about a new greeting (inbox and phones), never the author', async () => {
+    const t = harness();
+    t.platform.members = [memberFor('max@x.dev', 'MEMBER', 'Max'), memberFor('ann@x.dev', 'MEMBER', 'Ann'), memberFor('bob@x.dev', 'MEMBER', 'Bob')];
+    await t.call('POST', '/greetings', { as: { email: 'max@x.dev', name: 'Max' }, body: { text: 'hi everyone' } });
+    expect(t.platform.notifications).toEqual([
+      { userId: testUserId('ann@x.dev'), text: 'Max: hi everyone', link: undefined },
+      { userId: testUserId('bob@x.dev'), text: 'Max: hi everyone', link: undefined },
+    ]);
+  });
+
+  it('still posts when notifying fails', async () => {
+    const t = harness();
+    t.platform.members = [memberFor('ann@x.dev', 'MEMBER', 'Ann')];
+    t.platform.notify = async () => Promise.reject(new Error('platform down'));
+    const res = await t.call('POST', '/greetings', { as: { email: 'max@x.dev', name: 'Max' }, body: { text: 'still here' } });
+    expect(res.status).toBe(201);
+    expect((await t.call('GET', '/public/greetings')).body.greetings[0].text).toBe('still here');
   });
 });
