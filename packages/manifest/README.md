@@ -9,3 +9,6 @@ Rules worth knowing: slugs are 3-30 chars `[a-z0-9-]`; `topRole` must `canManage
 need a `defaultRole` that cannot manage access; CSP additions must be https origins (max 10 per directive);
 `secrets` are at most 10 `{ name: "UPPER_CASE", description?, optional? }`, with names only (never values);
 `needsEmail: true` (off by default) gives the app people's email addresses: a platform decision, reviewed by the code owners.
+
+`modules`: `comments`, `votes`, `contentPacks`, `uploads`, `notifications`, `scheduledJobs`, `email`,
+`realtime` (live events over an AppSync Event API of the app's own; see `@stacks/api` "Realtime").

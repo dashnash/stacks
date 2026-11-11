@@ -3,7 +3,13 @@ import {
   createSession,
   createStacksApp,
   fixtureUserId,
+  envelope,
+  eventsOf,
+  isChannelName,
   MemoryStore,
+  realtimeOff,
+  REALTIME_NAMESPACE,
+  SERVER_SENDER,
   SESSION_COOKIE,
   type AppDeps,
   type AppRoutes,
@@ -12,9 +18,34 @@ import {
   type AccountData,
   type AppAccess,
   type AppMember,
+  type Realtime,
+  type RealtimeConnection,
   type StacksUser,
 } from '@stacks/api';
-import type { AppManifest } from '@stacks/manifest';
+import { hasModule, type AppManifest } from '@stacks/manifest';
+
+/**
+ * `deps.realtime` for API tests: records what the server publishes, with the same checks as the
+ * real one (channel names, the 4 KB limit). `published` has one entry per event.
+ */
+export class FakeRealtime implements Realtime {
+  readonly published: { channel: string; data: unknown }[] = [];
+  /** The key tokens are signed with here (to check them with `verifyRealtimeToken`). */
+  readonly key = 'test-realtime-key';
+  async publish(channel: string, data: unknown): Promise<void> {
+    if (!isChannelName(channel)) throw new Error(`"${channel}" is not a channel name`);
+    const events = eventsOf(data);
+    for (const d of events) envelope(d, SERVER_SENDER);
+    for (const d of events) this.published.push({ channel, data: d });
+  }
+  async connection(): Promise<RealtimeConnection> {
+    return { key: this.key, endpoint: 'wss://realtime.stacks.test/event/realtime', host: 'events.stacks.test', namespace: REALTIME_NAMESPACE };
+  }
+  /** The data published on one channel, oldest first. */
+  on(channel: string): unknown[] {
+    return this.published.filter((p) => p.channel === channel).map((p) => p.data);
+  }
+}
 
 /** A stand-in for the platform: hands out sign-in codes and collects mirrored audit events. */
 export class FakePlatform implements PlatformClient {
@@ -130,6 +161,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
 }) {
   const store = new MemoryStore();
   const platform = new FakePlatform();
+  const realtime = new FakeRealtime();
   let id = 0;
   let clock = new Date('2026-01-01T00:00:00Z').getTime();
   const base: AppDeps = {
@@ -141,6 +173,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
     },
     now: () => new Date((clock += 1000)),
     newId: () => `id${++id}`,
+    realtime: hasModule(opts.manifest, 'realtime') ? realtime : realtimeOff(opts.manifest.slug),
     ...(opts.manifest.secrets?.length ? { secret: async (name: string) => opts.secrets?.[name] } : {}),
   };
   const deps = opts.extend ? opts.extend(base) : (base as D);
@@ -183,7 +216,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
     clock += ms;
   };
 
-  return { app, call, deps, store, platform, sessionFor, advance };
+  return { app, call, deps, store, platform, realtime, sessionFor, advance };
 }
 
 /** The value a `Set-Cookie` header sets for `name`, or undefined. */

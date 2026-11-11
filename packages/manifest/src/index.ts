@@ -4,7 +4,7 @@
  * the SDK's role checks all read it through this package.
  */
 
-export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notifications', 'scheduledJobs', 'email'] as const;
+export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notifications', 'scheduledJobs', 'email', 'realtime'] as const;
 export type ModuleName = (typeof MODULES)[number];
 
 export const CSP_DIRECTIVES = ['imgSrc', 'connectSrc', 'scriptSrc', 'styleSrc', 'fontSrc', 'frameSrc', 'mediaSrc'] as const;

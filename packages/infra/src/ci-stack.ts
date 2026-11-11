@@ -89,6 +89,9 @@ export class CiStack extends cdk.Stack {
           ],
           resources: ['*'],
         }),
+        // The `realtime` module: an app's API Lambda publishes to its own AppSync Event API over
+        // HTTP (SigV4). The app stack scopes each grant to that one API.
+        new iam.PolicyStatement({ sid: 'RealtimePublish', actions: ['appsync:EventConnect', 'appsync:EventPublish'], resources: ['*'] }),
         new iam.PolicyStatement({ sid: 'NeverProduction', effect: iam.Effect.DENY, actions: ['*'], resources: ['*'], conditions: prodTagged }),
       ],
     });
@@ -107,6 +110,10 @@ export class CiStack extends cdk.Stack {
           ],
           resources: ['*'],
         }),
+        // The `realtime` module: one AppSync Event API per app that turns it on (its channel
+        // namespace, API keys and Lambda authorizer config). Production deploys with the default
+        // bootstrap policy, which already covers this.
+        new iam.PolicyStatement({ sid: 'RealtimeEventApis', actions: ['appsync:*'], resources: ['*'] }),
         new iam.PolicyStatement({
           sid: 'StagingParameters',
           actions: ['ssm:PutParameter', 'ssm:DeleteParameter', 'ssm:AddTagsToResource'],

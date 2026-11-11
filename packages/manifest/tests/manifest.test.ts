@@ -37,6 +37,11 @@ describe('validateManifest', () => {
     expect(errorsFor({ secrets: 'A_KEY' })[0]).toMatch(/must be a list/);
   });
 
+  it('knows the realtime module', () => {
+    expect(errorsFor({ modules: ['realtime'] })).toEqual([]);
+    expect(errorsFor({ modules: ['realtme'] })[0]).toMatch(/unknown module "realtme".*realtime/);
+  });
+
   it('takes needsEmail as true or false only', () => {
     expect(errorsFor({ needsEmail: true })).toEqual([]);
     expect(errorsFor({ needsEmail: 'yes' })).toEqual(['"needsEmail" must be true or false']);

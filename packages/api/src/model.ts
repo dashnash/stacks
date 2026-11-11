@@ -1,5 +1,6 @@
 import type { AppManifest } from '@stacks/manifest';
 import type { PlatformClient } from './platform';
+import type { Realtime } from './realtime';
 import type { Store } from './store';
 
 /** A signed-in person as apps see them: their id, the name they chose to show, and their avatar. */
@@ -42,6 +43,11 @@ export interface AppDeps {
    * tests pass a fake. Cached for 5 minutes per container.
    */
   secret?(name: string): Promise<string | undefined>;
+  /**
+   * Live events to open browsers (manifest module `realtime`): `await deps.realtime.publish('counter/main', { n })`.
+   * Without the module every call fails with an error saying how to turn it on.
+   */
+  realtime: Realtime;
 }
 
 /** The caller of a signed-in route. */

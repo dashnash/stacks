@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
+import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -50,6 +51,18 @@ export const SITE_ROUTER_CODE = siteRouterCode();
 export const API_RATE_LIMIT = 25;
 export const API_BURST_LIMIT = 50;
 
+/**
+ * The Event API's onPublish handler (APPSYNC_JS): drops any event over 4 KB, whoever sent it (the
+ * SDKs never send one; this stops a hand-made client). Channel access is the Lambda authorizer's.
+ */
+export const REALTIME_ON_PUBLISH_CODE = `export function onPublish(ctx) {
+  return ctx.events.filter((e) => JSON.stringify(e.payload).length <= 4096);
+}
+`;
+
+/** The app channel namespace (the SDK's REALTIME_NAMESPACE). */
+const REALTIME_NAMESPACE = 'app';
+
 export interface AppStackProps {
   manifest: AppManifest;
   envName: EnvName;
@@ -78,6 +91,8 @@ export class AppStack extends cdk.Stack {
   readonly handler: nodejs.NodejsFunction;
   readonly distribution: cloudfront.Distribution;
   readonly siteUrl: string;
+  /** The app's AppSync Event API (manifest module `realtime`). */
+  readonly eventApi?: appsync.EventApi;
 
   constructor(scope: Construct, props: AppStackProps) {
     const { manifest, envName, env } = props;
@@ -199,6 +214,66 @@ export class AppStack extends cdk.Stack {
       new cdk.CfnOutput(this, 'ContentBucketName', { value: content.bucketName });
     }
 
+    // realtime: the app's own AppSync Event API. Browsers connect with short-lived tokens from the
+    // app's POST /api/realtime/token, checked by a small Lambda authorizer (every connect,
+    // subscribe and publish, never cached); the API Lambda publishes with IAM. One namespace.
+    let realtimeHost: string | undefined;
+    let realtimeConfig: Record<string, string> = {};
+    if (hasModule(manifest, 'realtime')) {
+      const key = new secretsmanager.Secret(this, 'RealtimeKey', {
+        secretName: `stacks-${envTag(envName)}-app-${slug}-realtime-key`,
+        description: `Signs ${slug}'s realtime tokens (the API mints them, the Event API's authorizer checks them)`,
+        generateSecretString: { passwordLength: 64, excludePunctuation: true },
+      });
+      const authorizer = new nodejs.NodejsFunction(this, 'RealtimeAuthorizer', {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        architecture: lambda.Architecture.ARM_64,
+        entry: path.join(props.repoRoot, 'packages/api/src/realtime-authorizer.ts'),
+        handler: 'handler',
+        projectRoot: props.repoRoot,
+        depsLockFilePath: path.join(props.repoRoot, 'package-lock.json'),
+        memorySize: 256,
+        timeout: cdk.Duration.seconds(5),
+        logGroup: new logs.LogGroup(this, 'RealtimeAuthorizerLogs', {
+          retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+        bundling: { minify: true, sourceMap: true, target: 'node22' },
+        environment: { STACKS_REALTIME_KEY_ARN: key.secretArn, STACKS_REALTIME_NAMESPACE: REALTIME_NAMESPACE, NODE_OPTIONS: '--enable-source-maps' },
+      });
+      key.grantRead(authorizer);
+      key.grantRead(this.handler);
+
+      const eventApi = new appsync.EventApi(this, 'EventApi', {
+        apiName: `stacks-${envTag(envName)}-${slug}`,
+        authorizationConfig: {
+          authProviders: [
+            { authorizationType: appsync.AppSyncAuthorizationType.IAM },
+            // No result caching: a token names exact channels, so each request is checked on its own.
+            { authorizationType: appsync.AppSyncAuthorizationType.LAMBDA, lambdaAuthorizerConfig: { handler: authorizer, resultsCacheTtl: cdk.Duration.seconds(0) } },
+          ],
+          connectionAuthModeTypes: [appsync.AppSyncAuthorizationType.LAMBDA],
+          defaultSubscribeAuthModeTypes: [appsync.AppSyncAuthorizationType.LAMBDA],
+          defaultPublishAuthModeTypes: [appsync.AppSyncAuthorizationType.IAM, appsync.AppSyncAuthorizationType.LAMBDA],
+        },
+      });
+      const namespace = eventApi.addChannelNamespace(REALTIME_NAMESPACE, {
+        channelNamespaceName: REALTIME_NAMESPACE,
+        code: appsync.Code.fromInline(REALTIME_ON_PUBLISH_CODE),
+      });
+      // HTTP publish (SigV4) from the API Lambda: this API's namespace only.
+      namespace.grantPublish(this.handler);
+      eventApi.grantConnect(this.handler);
+      this.handler.addEnvironment('STACKS_REALTIME_HTTP_HOST', eventApi.httpDns);
+      this.handler.addEnvironment('STACKS_REALTIME_WS_HOST', eventApi.realtimeDns);
+      this.handler.addEnvironment('STACKS_REALTIME_NAMESPACE', REALTIME_NAMESPACE);
+      this.handler.addEnvironment('STACKS_REALTIME_KEY_ARN', key.secretArn);
+      realtimeHost = eventApi.realtimeDns;
+      realtimeConfig = { http: `https://${eventApi.httpDns}/event`, realtime: `wss://${eventApi.realtimeDns}/event/realtime` };
+      this.eventApi = eventApi;
+      new cdk.CfnOutput(this, 'RealtimeEndpoint', { value: realtimeConfig.realtime! });
+    }
+
     // 4. HTTP API, reached same-origin through CloudFront (no CORS). Throttled: some routes are public.
     const httpApi = new apigw.HttpApi(this, 'HttpApi');
     const stage = httpApi.defaultStage!.node.defaultChild as apigw.CfnStage;
@@ -229,7 +304,7 @@ export class AppStack extends cdk.Stack {
         responseHeadersPolicy: new cloudfront.ResponseHeadersPolicy(this, 'SiteHeaders', {
           comment: `Security headers for ${slug} (${envName})`,
           securityHeadersBehavior: {
-            contentSecurityPolicy: { contentSecurityPolicy: buildCsp(manifest, { authOrigin: auth }), override: true },
+            contentSecurityPolicy: { contentSecurityPolicy: buildCsp(manifest, { authOrigin: auth, ...(realtimeHost ? { connectSrc: [`wss://${realtimeHost}`] } : {}) }), override: true },
             strictTransportSecurity: { accessControlMaxAge: cdk.Duration.days(365), includeSubdomains: false, override: true },
             contentTypeOptions: { override: true },
             frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
@@ -277,7 +352,13 @@ export class AppStack extends cdk.Stack {
     const site = new s3deploy.BucketDeployment(this, 'DeployWeb', {
       sources: [
         s3deploy.Source.asset(webDist, { exclude: ['assets', 'assets/**'] }),
-        s3deploy.Source.jsonData('config.json', { app: slug, name: manifest.name, env: envName, authOrigin: auth }),
+        s3deploy.Source.jsonData('config.json', {
+          app: slug,
+          name: manifest.name,
+          env: envName,
+          authOrigin: auth,
+          ...(realtimeHost ? { realtime: realtimeConfig } : {}),
+        }),
       ],
       destinationBucket: webBucket,
       exclude: ['assets/*'],

@@ -1,5 +1,5 @@
 export { ApiError, createClient, CSRF_HEADER } from './client';
-export type { Client, ClientOptions, Request, Session } from './client';
+export type { Client, ClientOptions, Request, Session, SocketLike } from './client';
 export { isMaintenance, MaintenanceNotice, StacksProvider, useApi, useOptionalStacks, useStacks } from './auth';
 export type { AccessNotice, AuthStatus, Navigator, StacksContextValue } from './auth';
 export { matchRoute, useAsync, useHashRoute } from './hooks';
@@ -9,3 +9,7 @@ export { firstName, formatDateTime, formatShortDate, timeAgo } from './format';
 export { BuildVersion } from './BuildVersion';
 export { AccountMenu, AccountMenuView, DemoControlsContext, useAccountMenu } from './AccountMenu';
 export type { AccountData, AccountMenuViewProps, AccountState, DemoControls, MenuItem } from './AccountMenu';
+export { useChannel } from './useChannel';
+export type { ChannelHandle, UseChannelOptions } from './useChannel';
+export { encodeEvent, MAX_EVENT_BYTES, RealtimeHub, realtimeHub } from './realtime';
+export type { ChannelStatus, Subscription } from './realtime';

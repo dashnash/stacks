@@ -38,11 +38,11 @@ beforeAll(() => {
   fs.writeFileSync(path.join(webDist, 'assets', 'index-abc.js'), '1');
 });
 
-function synth(envName: EnvName, env = envs[envName]) {
+function synth(envName: EnvName, env = envs[envName], m: AppManifest = manifest) {
   // Skip Lambda bundling in unit tests; the synth in CI bundles for real.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new AppStack(app, {
-    manifest,
+    manifest: m,
     envName,
     env,
     region: 'us-east-1',
@@ -159,6 +159,71 @@ describe('buildCsp', () => {
   });
 });
 
+describe('AppStack realtime module', () => {
+  const live = { ...manifest, modules: ['realtime' as const] };
+
+  it('adds an Event API with IAM and Lambda auth, the authorizer, the key, a scoped publish grant and the CSP host', () => {
+    const { template, app } = synth('staging', envs.staging, live);
+    template.resourceCountIs('AWS::AppSync::Api', 1);
+    template.hasResourceProperties('AWS::AppSync::Api', {
+      Name: 'stacks-test-hello',
+      EventConfig: Match.objectLike({
+        AuthProviders: Match.arrayWith([
+          { AuthType: 'AWS_IAM' },
+          Match.objectLike({ AuthType: 'AWS_LAMBDA', LambdaAuthorizerConfig: Match.objectLike({ AuthorizerResultTtlInSeconds: 0 }) }),
+        ]),
+        ConnectionAuthModes: [{ AuthType: 'AWS_LAMBDA' }],
+        DefaultSubscribeAuthModes: [{ AuthType: 'AWS_LAMBDA' }],
+        DefaultPublishAuthModes: [{ AuthType: 'AWS_IAM' }, { AuthType: 'AWS_LAMBDA' }],
+      }),
+    });
+    template.hasResourceProperties('AWS::AppSync::ChannelNamespace', { Name: 'app', CodeHandlers: Match.stringLikeRegexp('onPublish') });
+    template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'stacks-test-app-hello-realtime-key' });
+    // The authorizer: Node 22 on arm64, its own logs, the key, and the staging boundary like every role.
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Runtime: 'nodejs22.x',
+      Architectures: ['arm64'],
+      Environment: { Variables: Match.objectLike({ STACKS_REALTIME_NAMESPACE: 'app', STACKS_REALTIME_KEY_ARN: Match.anyValue() }) },
+      LoggingConfig: Match.objectLike({ LogGroup: Match.anyValue() }),
+    });
+    template.hasResourceProperties('AWS::Lambda::Permission', { Principal: 'appsync.amazonaws.com', Action: 'lambda:InvokeFunction' });
+    for (const role of Object.values(template.findResources('AWS::IAM::Role'))) expect(role.Properties.PermissionsBoundary).toBeDefined();
+    // The API Lambda: where to publish, and appsync:EventPublish on this API's namespace only.
+    const vars = JSON.stringify(Object.values(template.findResources('AWS::Lambda::Function')).map((f) => f.Properties?.Environment?.Variables ?? {}));
+    for (const v of ['STACKS_REALTIME_HTTP_HOST', 'STACKS_REALTIME_WS_HOST', 'STACKS_REALTIME_KEY_ARN']) expect(vars).toContain(v);
+    const policies = JSON.stringify(template.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain('appsync:EventPublish');
+    expect(policies).toContain('appsync:EventConnect');
+    expect(policies).toContain('/channelNamespace/app');
+    expect(policies).not.toMatch(/"Action":"appsync:\*"/);
+    // CSP: the app's own wss host, from the Event API.
+    const csp = JSON.stringify(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'));
+    expect(csp).toContain('wss://');
+    expect(csp).toContain('Dns.Realtime');
+    // config.json gets both endpoints.
+    expect(JSON.stringify(app.synth().getStackByName('stacks-test-app-hello').template)).toContain('Dns.Http');
+    expect(checkAssemblyProblems(app)).toEqual([]);
+  });
+
+  it('adds none of it without the module', () => {
+    const { template } = synth('staging');
+    template.resourceCountIs('AWS::AppSync::Api', 0);
+    template.resourceCountIs('AWS::AppSync::ChannelNamespace', 0);
+    expect(JSON.stringify(template.toJSON())).not.toMatch(/realtime|appsync/i);
+  });
+
+  it('builds the production stack too', () => {
+    const { template } = synth('production', envs.production, live);
+    template.hasResourceProperties('AWS::AppSync::Api', { Name: 'stacks-prod-hello' });
+    template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'stacks-prod-app-hello-realtime-key' });
+  });
+});
+
+function checkAssemblyProblems(app: cdk.App): string[] {
+  const dir = app.synth().directory;
+  return checkAssembly(dir, 'stacks-test-app-hello');
+}
+
 describe('CiStack', () => {
   it('trusts each role only from its own GitHub environment and lets it assume only its bootstrap roles', () => {
     const app = new cdk.App();
@@ -186,6 +251,29 @@ describe('CiStack', () => {
       PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({ Sid: 'NeverProduction', Effect: 'Deny' })]) },
     });
     template.hasResourceProperties('AWS::IAM::ManagedPolicy', { ManagedPolicyName: 'stacks-test-boundary' });
+  });
+
+  it('lets staging deploy Event APIs and app Lambdas publish to them, and still never touch production', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new CiStack(app, 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+    template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+      ManagedPolicyName: 'stacks-test-cfn-exec',
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Sid: 'RealtimeEventApis', Effect: 'Allow', Action: 'appsync:*', Resource: '*' }),
+          Match.objectLike({ Sid: 'NeverProduction', Effect: 'Deny', Action: '*', Condition: { StringEquals: { 'aws:ResourceTag/stacks:env': 'production' } } }),
+        ]),
+      },
+    });
+    template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+      ManagedPolicyName: 'stacks-test-boundary',
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Sid: 'RealtimePublish', Effect: 'Allow', Action: ['appsync:EventConnect', 'appsync:EventPublish'] }),
+          Match.objectLike({ Sid: 'NeverProduction', Effect: 'Deny', Action: '*' }),
+        ]),
+      },
+    });
   });
 
   it('trusts the immutable subject claim when the repo uses one', () => {

@@ -7,6 +7,7 @@ import {
   type AppDeps,
   type AppRoutes,
   type PlatformClient,
+  realtimeOff,
 } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
 import { createPlatformHarness, event, privateApp, publicApp, toRes, type Res } from './helpers';
@@ -61,6 +62,7 @@ function world() {
       config: { appOrigin: `https://${slug}.stacks.test`, authOrigin: 'https://auth.stacks.test' },
       now: () => platform.deps.now(),
       newId: () => `${slug}-${++n}`,
+      realtime: realtimeOff(slug),
     };
     appDeps.set(slug, deps);
     apps.set(slug, createStacksApp({ manifest, deps, routes }));

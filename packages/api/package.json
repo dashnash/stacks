@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./lambda": "./src/lambda.ts"
+    "./lambda": "./src/lambda.ts",
+    "./realtime-authorizer": "./src/realtime-authorizer.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",
-    "@stacks/testing": "*"
+    "@stacks/testing": "*",
+    "@smithy/signature-v4": "^5.7.5"
   }
 }
