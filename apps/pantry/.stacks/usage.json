@@ -24,6 +24,18 @@
       "minutes": 4.8,
       "filesChanged": 32,
       "note": "verify-app green; extra Playwright shots for swipe/undo/autocomplete/dark/live"
+    },
+    {
+      "step": "stage",
+      "at": "2026-11-11T23:24:42.311Z",
+      "minutes": 7.3,
+      "filesChanged": 0
+    },
+    {
+      "step": "ship",
+      "at": "2026-11-11T23:24:42.623Z",
+      "minutes": 0,
+      "filesChanged": 1
     }
   ]
 }
