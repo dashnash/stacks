@@ -244,7 +244,7 @@ describe('App Store Connect provisioning', () => {
     await expect(revokeCertificate(api, 'x')).rejects.toThrow(/403/);
   });
   it('waits for each build to appear, then puts the commit in its TestFlight "What to Test" note', async () => {
-    const asc = fakeAsc({ apps: apps.map((a) => ({ bundleId: a.bundleId, name: a.name })) });
+    const asc = fakeAsc({ apps: apps.map((a: { bundleId: string; name: string }) => ({ bundleId: a.bundleId, name: a.name })) });
     const [prod, test] = asc.of('apps');
     let polls = 0;
     // Apple lists the builds a little after the upload.
