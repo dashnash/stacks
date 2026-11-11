@@ -178,13 +178,21 @@ sequenceDiagram
 ### Apple (web and iOS, new)
 
 - **iOS**: `ASAuthorizationAppleIDProvider` in the shell, the same bridge pattern as Google
-  (`stacksNative.auth.apple()` → identity token → `POST /auth/apple`).
-- **Web**: Sign in with Apple JS on the portal, with an Apple **Services ID** for `auth.<domain>`
-  (and `auth.test.<domain>`), domain verification, and a client-secret signing key in SSM.
-- `POST /auth/apple` verifies the JWT against Apple's JWKS (issuer `https://appleid.apple.com`,
-  audience = either bundle ID or the Services ID) and keys the identity by Apple's `sub`.
-- Apple sends the name and email **only on the first authorization**. The portal stores them
-  then. A hidden email arrives as a `@privaterelay.appleid.com` address.
+  (bridge `auth.apple` → `{ credential, name }` → `POST /auth/apple`). Entitlement
+  `com.apple.developer.applesignin`; the release job turns on `APPLE_ID_AUTH` for both bundle IDs
+  (each its own primary App ID).
+- **Web**: Sign in with Apple JS on the portal in popup mode, with an Apple **Services ID** per
+  environment for `auth.<domain>` (`appleServicesId` in `stacks.config.json`; unset, browsers get
+  no Apple button). The portal sends Apple's identity token straight to the platform, so there is no
+  authorization-code exchange and no client-secret key to keep.
+- `POST /auth/apple` (and `POST /me/identities/apple` to link one) verifies the JWT against Apple's
+  JWKS (issuer `https://appleid.apple.com`, audience = the bundle ID or the Services ID) and keys
+  the identity by Apple's `sub` (`IDENTITY#apple#<sub>`). Linking, merge offers and unlinking are
+  the same as for Google.
+- Apple sends the name **only on the first authorization** (the page passes it with the token;
+  later sign-ins keep the stored name) and never a photo. A hidden email arrives as a
+  `@privaterelay.appleid.com` address; an identity already known signs in even without an email,
+  a new one needs one.
 - Apple's `sub` is stable per developer **team**. Moving the app from the individual account to an
   organization later needs Apple's Sign in with Apple user-migration step (transfer identifiers).
   This is recorded as a one-way-door risk.
@@ -451,8 +459,8 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 2. App Store Connect: create the two apps, TestFlight groups, an API key for CI (→ GitHub
    environment `ios-release` secrets).
 3. APNs auth key (`.p8`) → SSM SecureStrings for staging and production (from the Mac, AWS CLI).
-4. Sign in with Apple for the web: a Services ID per environment, domain verification on
-   `auth.<domain>`, a signing key → SSM.
+4. Sign in with Apple for the web: a Services ID per environment with `auth.<domain>` and its
+   return URL (`docs/IOS_SETUP.md` step 10), then `appleServicesId` in `stacks.config.json`. No key.
 5. Google Cloud: one iOS OAuth client per bundle ID; add their IDs to `stacks.config.json`
    (`googleIosClientIds`). The web client ID stays.
 6. `stacks.config.json`, per environment (none secret): `native: { appleTeamId, iosBundleId,
@@ -487,7 +495,7 @@ Gate: install DashyHQ from TestFlight, sign in with one tap, open two apps with 
 Gate: a request on a private app reaches the approver's lock screen, Approve works from there, and the requester's phone gets "You now have access" with the badge correct on both.
 
 **N4 — Sign in with Apple**
-- [ ] `POST /auth/apple`, Apple JS on the portal, the shell's Apple button, Settings › Sign-in methods
+- [x] **N4**: `POST /auth/apple`, Apple JS on the portal, the shell's Apple sheet (`auth.apple`), Settings › Sign-in methods (link your Apple ID); `docs/IOS_SETUP.md` step 10 (Services IDs)
 
 Gate: a new person with a hidden email signs in with Apple on iPhone and on a laptop to the same account; an existing user links Apple and keeps their grants. First external TestFlight group opened.
 

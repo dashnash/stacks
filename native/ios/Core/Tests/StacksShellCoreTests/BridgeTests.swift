@@ -114,7 +114,7 @@ final class BridgeRouterTests: XCTestCase {
         let js = BridgeRouter.injectedScript(appVersion: "1.2.3")
         XCTAssertTrue(js.contains("protocol: 1"))
         XCTAssertTrue(js.contains("version: \"1.2.3\""))
-        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"push.register\",\"push.saveDevice\",\"push.status\",\"share\"])"))
+        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.apple\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"push.register\",\"push.saveDevice\",\"push.status\",\"share\"])"))
         XCTAssertTrue(js.contains("messageHandlers.stacks"))
     }
 

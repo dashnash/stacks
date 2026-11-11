@@ -88,20 +88,28 @@ export async function planMerge(deps: PlatformDeps, into: PlatformUser, from: Pl
 
 type TicketItem = Item & { into: string; from: string; provider: string; sub: string; email: string; notAfter: number; expiresAt: number };
 
+const PROVIDER_LABEL: Record<string, string> = { google: 'Google account', apple: 'Apple ID' };
+
+/** Link another Google account to `user` (see {@link linkProvider}). */
+export const linkGoogle = (deps: PlatformDeps, user: PlatformUser, identity: GoogleIdentity) => linkProvider(deps, user, 'google', identity);
+
 /**
- * Link another Google account to `user`. Returns `linked` when it was nobody's, or a merge offer (a
- * single-use ticket valid for ten minutes, plus the plan) when it already belongs to another account.
+ * Link another sign-in (a Google account, an Apple ID) to `user`. Returns `linked` when it was
+ * nobody's, or a merge offer (a single-use ticket valid for ten minutes, plus the plan) when it
+ * already belongs to another account.
  */
-export async function linkGoogle(
+export async function linkProvider(
   deps: PlatformDeps,
   user: PlatformUser,
-  identity: GoogleIdentity,
+  provider: string,
+  identity: Pick<GoogleIdentity, 'sub' | 'email' | 'name'> & { picture?: string },
 ): Promise<{ linked: true } | { linked: false; ticket: string; plan: MergePlan }> {
-  const email = identity.email.toLowerCase();
-  const k = keys.identity('google', identity.sub);
+  const email = (identity.email ?? '').toLowerCase();
+  const k = keys.identity(provider, identity.sub);
   const existing = await deps.store.get<IdentityItem>(k.PK, k.SK);
   const owner = existing ? await getUser(deps, existing.userId) : null;
-  if (owner?.id === user.id) throw conflict('That Google account is already one of your sign-in methods.');
+  if (owner?.id === user.id) throw conflict(`That ${PROVIDER_LABEL[provider] ?? 'account'} is already one of your sign-in methods.`);
+  if (!owner && !email) throw badRequest('Share an email address (it can be hidden) to link it');
   const other = owner ?? (await getUser(deps, (await userIdForEmail(deps, email)) ?? ''));
   if (other && other.id !== user.id) {
     const ticket = randomToken('stm_');
@@ -110,7 +118,7 @@ export async function linkGoogle(
       ...keys.mergeTicket(await sha256Hex(ticket)),
       into: user.id,
       from: other.id,
-      provider: 'google',
+      provider,
       sub: identity.sub,
       email,
       notAfter: now + TICKET_TTL_MS,
@@ -119,7 +127,7 @@ export async function linkGoogle(
     return { linked: false, ticket, plan: await planMerge(deps, user, other) };
   }
   // Nobody has it (or the email is already this account's): just link it.
-  await linkIdentity(deps, user, 'google', { ...identity, email });
+  await linkIdentity(deps, user, provider, { ...identity, email });
   if (other?.id !== user.id) {
     try {
       await deps.store.put({ ...keys.email(email), userId: user.id }, { ifNotExists: true });
@@ -128,7 +136,7 @@ export async function linkGoogle(
       // Someone took the address in between: the identity is still linked, the email isn't.
     }
   }
-  await audit(deps, user, 'platform', { action: 'identity.link', label: email, details: { provider: 'google' } });
+  await audit(deps, user, 'platform', { action: 'identity.link', label: email, details: { provider } });
   return { linked: true };
 }
 

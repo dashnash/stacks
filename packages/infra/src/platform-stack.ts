@@ -22,11 +22,11 @@ import { aasaRoute, authOrigin, bootstrapQualifier, envTag, ssmNames, stackName,
 /** The portal needs Google Identity Services; nothing else may load from elsewhere. */
 export const PORTAL_CSP = [
   "default-src 'self'",
-  "script-src 'self' https://accounts.google.com/gsi/client",
+  "script-src 'self' https://accounts.google.com/gsi/client https://appleid.cdn-apple.com",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
   "img-src 'self' https: data: blob:",
-  "connect-src 'self' https://accounts.google.com/gsi/",
-  'frame-src https://accounts.google.com/gsi/',
+  "connect-src 'self' https://accounts.google.com/gsi/ https://appleid.apple.com",
+  'frame-src https://accounts.google.com/gsi/ https://appleid.apple.com',
   "font-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -128,6 +128,7 @@ export class PlatformStack extends cdk.Stack {
         GOOGLE_IOS_CLIENT_IDS: (env.native?.googleIosClientIds ?? []).join(','),
         MIN_SHELL_VERSION: env.native?.minShellVersion ?? '1.0.0',
         ...(env.native ? { IOS_BUNDLE_ID: env.native.iosBundleId, APPLE_TEAM_ID: env.native.appleTeamId } : {}),
+        ...(env.appleServicesId ? { APPLE_SERVICES_ID: env.appleServicesId } : {}),
         // The APNs key (docs/IOS_SETUP.md): SecureStrings an admin puts here by hand, never in git or CI.
         PLATFORM_SECRETS_PREFIX: `/stacks/${tag}/secrets/platform/`,
         PLATFORM_ADMINS: env.platformAdmins.join(','),

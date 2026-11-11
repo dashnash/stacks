@@ -3,6 +3,7 @@ import { GetParametersCommand, SSMClient } from '@aws-sdk/client-ssm';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { DynamoStore } from '@stacks/api/lambda';
 import { createApnsSender, type ApnsKey } from './apns';
+import { createAppleVerifier } from './apple';
 import { createPlatformApp } from './app';
 import { SsmAppRegistry } from './aws';
 import { createGoogleVerifier } from './google';
@@ -26,7 +27,10 @@ const app = createPlatformApp({
     maintenance: process.env.STACKS_MAINTENANCE === '1',
     minShellVersion: process.env.MIN_SHELL_VERSION || '1.0.0',
     iosBundleId: process.env.IOS_BUNDLE_ID || undefined,
+    appleServicesId: process.env.APPLE_SERVICES_ID || undefined,
   },
+  // Tokens from the iOS app are addressed to its bundle ID; from the portal's Apple JS, to the Services ID.
+  verifyApple: (credential) => (appleVerifier ??= createAppleVerifier([process.env.IOS_BUNDLE_ID, process.env.APPLE_SERVICES_ID].filter((a): a is string => !!a)))(credential),
   push: createApnsSender({ key: apnsKey }),
   registry,
   appSessions: registry,
@@ -61,6 +65,7 @@ function apnsKey(): Promise<ApnsKey | undefined> {
   return value;
 }
 
+let appleVerifier: ReturnType<typeof createAppleVerifier> | undefined;
 let verifier: ReturnType<typeof createGoogleVerifier> | undefined;
 const iosClientIds = (process.env.GOOGLE_IOS_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const verify = (credential: string) => (verifier ??= createGoogleVerifier(env('GOOGLE_CLIENT_ID'), undefined, iosClientIds))(credential);

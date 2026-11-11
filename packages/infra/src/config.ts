@@ -24,6 +24,11 @@ export interface EnvConfig {
   maintenance?: boolean;
   /** The native iOS app for this environment (docs/NATIVE_APP_SPEC.md). Nothing here is secret. */
   native?: NativeConfig;
+  /**
+   * Sign in with Apple on the web: the Services ID configured for `auth.<rootDomain>`
+   * (docs/IOS_SETUP.md). Unset: the portal shows no Apple button in browsers (the iOS app still has one).
+   */
+  appleServicesId?: string;
 }
 
 export interface NativeConfig {

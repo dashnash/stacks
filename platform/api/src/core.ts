@@ -133,16 +133,18 @@ async function moveEmail(deps: PlatformDeps, user: PlatformUser, email: string):
  * by the verified email (linking the identity), else a new user. Name, picture and email follow Google.
  */
 export async function userForIdentity(deps: PlatformDeps, identity: GoogleIdentity, provider = 'google'): Promise<PlatformUser> {
-  const email = identity.email.toLowerCase();
+  const email = (identity.email ?? '').toLowerCase();
   const k = keys.identity(provider, identity.sub);
   const linked = await deps.store.get<IdentityItem>(k.PK, k.SK);
   let user = linked ? await getUser(deps, linked.userId) : null;
+  // Apple shares the email only when the person allows it; without one, only a known identity signs in.
+  if (!user && !email) throw badRequest('Share an email address (it can be hidden) to make an account');
   if (user && linked && (linked.userId !== user.id || !linked.GSI1PK)) {
     // Written before identities were listed, or still pointing at a merged-away account: tidy it.
     await deps.store.put(identityItem(user.id, provider, identity.sub, linked.email ?? email, linked.linkedAt ?? deps.now().toISOString()));
   }
   if (!user) {
-    user = (await getUserByEmail(deps, email)) ?? (await createUser(deps, { email, name: identity.name, picture: identity.picture }));
+    user = (await getUserByEmail(deps, email)) ?? (await createUser(deps, { email, name: identity.name || email.split('@')[0]!, picture: identity.picture }));
     await linkIdentity(deps, user, provider, { ...identity, email });
   }
   // Only the primary identity's name, photo and email shape the profile; linked ones just sign in.
@@ -153,10 +155,16 @@ export async function userForIdentity(deps: PlatformDeps, identity: GoogleIdenti
   let next = user;
   if (!next.primaryIdentity && (email === next.email || single)) next = { ...next, primaryIdentity: thisIdentity };
   if (next.primaryIdentity !== thisIdentity) return next;
-  if (next.email !== email) next = await moveEmail(deps, next, email);
-  if (next.name !== identity.name || next.pictureUrl !== identity.picture) {
-    next = { ...next, name: identity.name, ...(identity.picture ? { pictureUrl: identity.picture } : {}) };
-    if (!identity.picture) delete next.pictureUrl;
+  if (email && next.email !== email) next = await moveEmail(deps, next, email);
+  // Apple sends the name only the first time, and never a photo: keep what the profile has.
+  const name = identity.name || next.name;
+  const keepsPhoto = provider !== 'google';
+  if (next.name !== name || (!keepsPhoto && next.pictureUrl !== identity.picture)) {
+    next = { ...next, name };
+    if (!keepsPhoto) {
+      if (identity.picture) next.pictureUrl = identity.picture;
+      else delete next.pictureUrl;
+    }
   }
   if (next !== user) await saveUser(deps, next);
   return next;

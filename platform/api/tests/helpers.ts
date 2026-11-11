@@ -105,6 +105,12 @@ export function createPlatformHarness(
       if (scheme !== 'test' || !email) throw unauthorized('bad credential');
       return { sub: sub || `g-${email}`, email, name: name || email.split('@')[0]! };
     },
+    // `apple:<sub>[:<email>]`: an Apple identity token (no name in it, like Apple's).
+    verifyApple: async (credential) => {
+      const [scheme, sub, email] = credential.split(':');
+      if (scheme !== 'apple' || !sub) throw unauthorized('bad credential');
+      return { sub, email: email ?? '', name: '' };
+    },
     now: () => new Date((clock += 1000)),
     newId: () => `id${++id}`,
   };

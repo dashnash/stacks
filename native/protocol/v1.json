@@ -9,6 +9,7 @@
       "version": "1.0.0",
       "calls": [
         "app.info",
+        "auth.apple",
         "auth.google",
         "auth.signedOut",
         "badge.set",
@@ -58,6 +59,15 @@
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "platform": "ios",
         "protocol": 1
+      }
+    },
+    "auth.apple": {
+      "doc": "Native Sign in with Apple. The identity token is addressed to the app's bundle ID; `name` is what Apple shared (only on the first sign-in, else \"\"). Only the portal's own page may ask.",
+      "origins": "auth",
+      "args": {},
+      "result": {
+        "credential": "eyJraWQiOiJXNldjT0tCIn0.e30.sig",
+        "name": "Priya Rao"
       }
     },
     "auth.google": {
