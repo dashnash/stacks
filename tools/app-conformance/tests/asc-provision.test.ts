@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, freshProfiles, GROUP_NAME, leftoverCertificates, missingApps, profileName, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, createApi, freshProfiles, noteBuilds, GROUP_NAME, leftoverCertificates, missingApps, profileName, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -68,6 +68,13 @@ function fakeAsc(opts: { apps?: { bundleId: string; name: string }[]; testers?: 
     }
     if (method === 'DELETE' && (m = p!.match(/^\/v1\/profiles\/(.+)$/))) {
       rows.splice(rows.findIndex((r) => r.id === m![1]), 1);
+      return {};
+    }
+    if (method === 'GET' && p === '/v1/builds') return { data: of('builds').filter((b) => b.rel?.app === filter.app && b.attributes.version === filter.version) };
+    if (method === 'GET' && (m = p!.match(/^\/v1\/builds\/(.+)\/betaBuildLocalizations$/))) return { data: of('notes').filter((l) => l.rel?.build === m![1]) };
+    if (method === 'POST' && p === '/v1/betaBuildLocalizations') return { data: add('notes', body.data.attributes, { build: body.data.relationships.build.data.id }) };
+    if (method === 'PATCH' && (m = p!.match(/^\/v1\/betaBuildLocalizations\/(.+)$/))) {
+      Object.assign(rows.find((r) => r.id === m![1])!.attributes, body.data.attributes);
       return {};
     }
     throw new Error(`fake ASC has no ${method} ${path}`);
@@ -235,5 +242,31 @@ describe('App Store Connect provisioning', () => {
       throw new Error('DELETE /v1/certificates/x → 403 Forbidden');
     };
     await expect(revokeCertificate(api, 'x')).rejects.toThrow(/403/);
+  });
+  it('waits for each build to appear, then puts the commit in its TestFlight "What to Test" note', async () => {
+    const asc = fakeAsc({ apps: apps.map((a) => ({ bundleId: a.bundleId, name: a.name })) });
+    const [prod, test] = asc.of('apps');
+    let polls = 0;
+    // Apple lists the builds a little after the upload.
+    const sleep = async () => {
+      if (++polls === 2) for (const app of [prod!, test!]) asc.rows.push({ id: `build-${app.id}`, type: 'builds', attributes: { version: '4201' }, rel: { app: app.id } });
+    };
+    const log: string[] = [];
+    expect(await noteBuilds(asc.api, apps, 4201, 'Commit 0123abc: Push (#41)', { sleep, log: (l: string) => log.push(l) })).toEqual([]);
+    expect(asc.of('notes').map((n) => [n.rel?.build, n.attributes])).toEqual([
+      [`build-${prod!.id}`, { locale: 'en-US', whatsNew: 'Commit 0123abc: Push (#41)' }],
+      [`build-${test!.id}`, { locale: 'en-US', whatsNew: 'Commit 0123abc: Push (#41)' }],
+    ]);
+    // A re-run replaces the note rather than adding another.
+    await noteBuilds(asc.api, apps, 4201, 'Commit 4567def: Again', { sleep });
+    expect(asc.of('notes').map((n) => n.attributes.whatsNew)).toEqual(['Commit 4567def: Again', 'Commit 4567def: Again']);
+  });
+
+  it('gives up on a build that never appears, and says which', async () => {
+    const asc = fakeAsc({ apps: [{ bundleId: apps[0]!.bundleId, name: apps[0]!.name }] });
+    const log: string[] = [];
+    const missing = await noteBuilds(asc.api, [apps[0]], 9, 'x', { tries: 3, sleep: async () => {}, log: (l: string) => log.push(l) });
+    expect(missing).toEqual([apps[0]]);
+    expect(log).toEqual(["! build 9 of DashyHQ didn't appear in App Store Connect"]);
   });
 });

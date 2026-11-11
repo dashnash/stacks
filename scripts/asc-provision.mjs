@@ -24,6 +24,9 @@
  * <out-dir>/certificate-id, <out-dir>/profiles.json (`{ bundleId: profileName }`) and the profiles
  * into each <profile-dir>.
  * `--revoke-certificate <id>`: a run that failed before uploading revokes its own.
+ * `--what-to-test <build>` (after the upload, WHAT_TO_TEST): waits for that build of each app to
+ * appear in App Store Connect and sets its TestFlight "What to Test" note (the commit it was built
+ * from: TestFlight's build numbers can only be numbers).
  */
 import { createPrivateKey, sign } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -247,6 +250,43 @@ export async function releaseSigning(api, apps, csrPem, { log = () => {}, onCert
   return { certificate, profiles };
 }
 
+/** The build with this build number (CFBundleVersion) of an app, once App Store Connect lists it. */
+export async function findBuild(api, app, version) {
+  const record = ((await api('GET', `/v1/apps?filter[bundleId]=${q(app.bundleId)}`)).data ?? []).find((a) => a.attributes?.bundleId === app.bundleId);
+  if (!record) return null;
+  return ((await api('GET', `/v1/builds?filter[app]=${record.id}&filter[version]=${q(String(version))}&limit=1`)).data ?? [])[0] ?? null;
+}
+
+/** The build's TestFlight "What to Test" note (en-US), created or replaced. Apple allows 4000 characters. */
+export async function setWhatToTest(api, buildId, text, locale = 'en-US') {
+  const whatsNew = text.slice(0, 4000);
+  const existing = ((await api('GET', `/v1/builds/${buildId}/betaBuildLocalizations`)).data ?? []).find((l) => l.attributes?.locale === locale);
+  if (existing) {
+    await api('PATCH', `/v1/betaBuildLocalizations/${existing.id}`, { data: { type: 'betaBuildLocalizations', id: existing.id, attributes: { whatsNew } } });
+  } else {
+    await api('POST', '/v1/betaBuildLocalizations', {
+      data: { type: 'betaBuildLocalizations', attributes: { locale, whatsNew }, relationships: { build: { data: { type: 'builds', id: buildId } } } },
+    });
+  }
+}
+
+/** Wait (polling) for each app's build to appear, then note it; apps whose build never appears are returned. */
+export async function noteBuilds(api, apps, version, text, { tries = 40, waitMs = 30_000, log = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const missing = [];
+  for (const app of apps) {
+    let build = null;
+    for (let i = 0; i < tries && !(build = await findBuild(api, app, version)); i++) await sleep(waitMs);
+    if (!build) {
+      log(`! build ${version} of ${app.name} didn't appear in App Store Connect`);
+      missing.push(app);
+      continue;
+    }
+    await setWhatToTest(api, build.id, text);
+    log(`+ "What to Test" for ${app.name} build ${version}`);
+  }
+  return missing;
+}
+
 /** Set up every app; returns whether any app record still needs creating by hand. */
 export async function provision({ api, apps, testerEmail, log = console.log }) {
   let appsMissing = 0;
@@ -291,6 +331,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       for (const p of profiles) writeFileSync(join(dir, `${p.uuid}.mobileprovision`), Buffer.from(p.content, 'base64'));
     }
     process.exit(0);
+  }
+  const notes = args('--what-to-test');
+  if (notes) {
+    if (!notes[0]) (console.error('usage: --what-to-test <build>'), process.exit(2));
+    const missing = await noteBuilds(api, appsFromConfig(config), notes[0], need('WHAT_TO_TEST'), { log: console.log });
+    process.exit(missing.length ? 1 : 0);
   }
   const revoke = args('--revoke-certificate');
   if (revoke) {

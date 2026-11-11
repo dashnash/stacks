@@ -36,7 +36,9 @@ setup (Apple, Google, GitHub secrets): `docs/IOS_SETUP.md`. Bump `VERSION` for a
 
 CI stamps every build with the commit it was built from (`STACKS_GIT_COMMIT` → Info.plist
 `StacksGitCommit` → `app.info`); the portal's footer shows it in the app, e.g. "App 1.0.0 (4201) ·
-0123abc". Builds from Xcode say "local".
+0123abc". Builds from Xcode say "local". TestFlight's build numbers can only be numbers, so the
+**TestFlight notes** job puts the commit in each build's "What to Test" note instead
+("Commit 0123abc: <PR title> (#N)" and a link).
 
 Release configs (Staging, Production) sign manually with an Apple Distribution certificate and an
 App Store profile that CI makes for each run (the profile's name comes in as `DASHYHQ_PROFILE`). Debug, the config you run from Xcode (both schemes), signs automatically for your
