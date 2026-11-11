@@ -93,7 +93,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect
-    # key and the Apple Distribution certificate (.p12) that release builds are signed with.
+    # key. Each run makes its own signing certificate, and the next run revokes it.
     environment: ios-release
     steps:
       - uses: actions/checkout@v4
@@ -106,8 +106,6 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
-          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
         run: |
           team="$(sed -n 's/^DEVELOPMENT_TEAM = *//p' native/ios/Config/Production.xcconfig)"
           missing=""
@@ -115,8 +113,6 @@ jobs:
           [ -n "$ASC_KEY_ID" ] || missing="$missing ASC_KEY_ID"
           [ -n "$ASC_ISSUER_ID" ] || missing="$missing ASC_ISSUER_ID"
           [ -n "$ASC_KEY_P8" ] || missing="$missing ASC_KEY_P8"
-          [ -n "$DIST_CERT_P12" ] || missing="$missing DIST_CERT_P12"
-          [ -n "$DIST_CERT_PASSWORD" ] || missing="$missing DIST_CERT_PASSWORD"
           if [ -n "$missing" ]; then
             echo "::notice title=TestFlight upload skipped::Not set up yet:$missing. See docs/IOS_SETUP.md."
             echo "go=false" >> "$GITHUB_OUTPUT"
@@ -157,47 +153,45 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate --spec native/ios/project.yml
-      - name: Signing certificate into a temporary keychain
-        id: keychain
-        if: steps.ready.outputs.go == 'true'
-        env:
-          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
-          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
-        run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          pass="$(openssl rand -hex 24)"
-          p12="$RUNNER_TEMP/dist.p12"
-          printf '%s' "$DIST_CERT_P12" | base64 --decode > "$p12"
-          security create-keychain -p "$pass" "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p "$pass" "$keychain"
-          security import "$p12" -k "$keychain" -P "$DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$keychain" > /dev/null
-          # Keep the login keychain on the search list too (Xcode looks there for Apple's intermediates).
-          existing=()
-          while IFS= read -r k; do existing+=("$(echo "$k" | tr -d '" ')"); done < <(security list-keychains -d user)
-          security list-keychains -d user -s "$keychain" "${existing[@]}"
-          rm -f "$p12"
-          serial="$(security find-certificate -c "Apple Distribution" -p "$keychain" | openssl x509 -noout -serial)"
-          echo "Certificate $serial"
-          {
-            echo "keychain=$keychain"
-            echo "serial=$serial"
-          } >> "$GITHUB_OUTPUT"
-      - name: Fresh App Store profiles
+      - name: A signing certificate and App Store profiles for this run
+        id: signing
         if: steps.ready.outputs.go == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          CERT_SERIAL: ${{ steps.keychain.outputs.serial }}
-          PROFILE_MAP: ${{ runner.temp }}/profiles.json
         run: |
-          # Both places: Xcode 16+ reads the second, older tools the first.
-          node scripts/asc-provision.mjs --profiles \
+          # Nothing is stored: the key is made here, Apple issues a certificate for it, and the
+          # next run revokes it (this run's cleanup does if nothing was uploaded). /usr/bin/openssl
+          # is macOS's own, whose .p12 files `security import` always reads.
+          dir="$RUNNER_TEMP/signing"
+          mkdir -p "$dir"
+          chmod 700 "$dir"
+          /usr/bin/openssl req -new -newkey rsa:2048 -nodes -keyout "$dir/key.pem" -out "$dir/request.csr" -subj '/CN=DashyHQ CI/O=DashyHQ' 2> /dev/null
+          # Both profile places: Xcode 16+ reads the second, older tools the first.
+          node scripts/asc-provision.mjs --release-signing "$dir/request.csr" "$dir" \
             "$HOME/Library/MobileDevice/Provisioning Profiles" \
             "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
-          cat "$PROFILE_MAP"
+          /usr/bin/openssl x509 -inform DER -in "$dir/certificate.cer" -out "$dir/certificate.pem"
+          p12pass="$(/usr/bin/openssl rand -hex 24)"
+          /usr/bin/openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/certificate.pem" -out "$dir/signing.p12" -passout "pass:$p12pass"
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pass="$(/usr/bin/openssl rand -hex 24)"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$dir/signing.p12" -k "$keychain" -P "$p12pass" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$keychain" > /dev/null
+          # Keep the login keychain on the search list too (Xcode looks there for Apple's intermediates).
+          existing=()
+          while IFS= read -r k; do existing+=("$(echo "$k" | tr -d '" ')"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          rm -f "$dir/key.pem" "$dir/signing.p12"
+          cat "$dir/profiles.json"
+          {
+            echo "keychain=$keychain"
+            echo "profiles=$dir/profiles.json"
+          } >> "$GITHUB_OUTPUT"
       - name: Archive, sign and upload both apps
         if: steps.ready.outputs.go == 'true'
         env:
@@ -205,16 +199,16 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TEAM: ${{ steps.ready.outputs.team }}
           KEY: ${{ steps.ready.outputs.key }}
-          KEYCHAIN: ${{ steps.keychain.outputs.keychain }}
-          PROFILE_MAP: ${{ runner.temp }}/profiles.json
+          KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+          PROFILE_MAP: ${{ steps.signing.outputs.profiles }}
           RUN: ${{ github.run_number }}
           ATTEMPT: ${{ github.run_attempt }}
         run: |
           # Every upload needs a new build number; a re-run of the same run gets the next one.
           build=$((RUN * 100 + ATTEMPT))
           echo "Build $build"
-          # Manual signing: the Apple Distribution certificate (keychain step) and the App Store
-          # profiles just made. No device needed, and no Xcode account: the API key only uploads.
+          # Manual signing with this run's certificate and profiles. No device needed, and no Xcode
+          # account: the API key only uploads.
           upload=(-authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
             scheme="${pair%%:*}"
@@ -263,13 +257,27 @@ jobs:
               -exportOptionsPlist "$options" \
               -exportPath "$RUNNER_TEMP/export-$config" \
               "${upload[@]}"
+            touch "$RUNNER_TEMP/signing/uploaded" # Apple may still be checking it: keep the certificate
             echo "::endgroup::"
           done
           echo "### Uploaded build $build of DashyHQ and DashyHQ Test" >> "$GITHUB_STEP_SUMMARY"
           echo "TestFlight shows them after Apple finishes processing (usually 5-15 minutes)." >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the key, certificate and profiles
+      - name: Revoke an unused certificate
+        # A run that uploaded keeps its certificate until the next run revokes it, so Apple can
+        # finish processing the build; one that failed before uploading anything revokes its own.
+        if: always() && steps.ready.outputs.go == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          dir="$RUNNER_TEMP/signing"
+          if [ -f "$dir/certificate-id" ] && [ ! -f "$dir/uploaded" ]; then
+            node scripts/asc-provision.mjs --revoke-certificate "$(cat "$dir/certificate-id")"
+          fi
+      - name: Remove the key, keychain and profiles
         if: always()
         run: |
           if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true; fi
-          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/dist.p12"
+          rm -rf "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/signing"
           rm -f "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision

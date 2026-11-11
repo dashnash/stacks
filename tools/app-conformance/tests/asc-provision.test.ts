@@ -1,9 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { certificateRequest, pkcs12Args } from '../../../scripts/ios-signing-cert.mjs';
-// @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, findDistributionCertificate, freshProfiles, GROUP_NAME, missingApps, normalizeSerial, profileName, provision } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, createApi, freshProfiles, GROUP_NAME, leftoverCertificates, missingApps, profileName, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -49,7 +47,20 @@ function fakeAsc(opts: { apps?: { bundleId: string; name: string }[]; testers?: 
       for (const t of body.data) (members.get(m[1]!) ?? members.set(m[1]!, new Set()).get(m[1]!)!).add(t.id);
       return {};
     }
-    if (method === 'GET' && p === '/v1/certificates') return { data: of('certificates').filter((c) => c.attributes.certificateType === filter.certificateType) };
+    if (method === 'POST' && p === '/v1/certificates') {
+      if (of('certificates').length >= 3) throw new Error('POST /v1/certificates → 409 There is a problem with the request entity: You already have a current Distribution certificate or a pending certificate request.');
+      return { data: add('certificates', { ...body.data.attributes, certificateContent: Buffer.from('DER').toString('base64'), expirationDate: '2027-11-11' }) };
+    }
+    if (method === 'DELETE' && (m = p!.match(/^\/v1\/certificates\/(.+)$/))) {
+      const at = rows.findIndex((r) => r.type === 'certificates' && r.id === m![1]);
+      if (at < 0) throw new Error(`DELETE ${path} → 404 The specified resource does not exist`);
+      rows.splice(at, 1);
+      return {};
+    }
+    if (method === 'GET' && (m = p!.match(/^\/v1\/profiles\/(.+)\/certificates$/))) {
+      const cert = rows.find((r) => r.id === m![1])?.rel?.certificate;
+      return { data: of('certificates').filter((c) => c.id === cert) };
+    }
     if (method === 'GET' && p === '/v1/profiles') return { data: of('profiles').filter((r) => r.attributes.name === filter.name) };
     if (method === 'POST' && p === '/v1/profiles') {
       const r = body.data.relationships;
@@ -159,21 +170,6 @@ describe('App Store Connect provisioning', () => {
     expect(asc.of('betaGroups')).toHaveLength(1);
   });
 
-  it('matches certificate serials however openssl or Apple prints them', () => {
-    expect(normalizeSerial('serial=0A1B2C')).toBe('A1B2C');
-    expect(normalizeSerial('0a:1b:2c\n')).toBe('A1B2C');
-    expect(normalizeSerial('A1B2C')).toBe('A1B2C');
-  });
-
-  it('finds the distribution certificate CI holds, by serial, or says how to make one', async () => {
-    const asc = fakeAsc();
-    asc.rows.push({ id: 'dev', type: 'certificates', attributes: { certificateType: 'DEVELOPMENT', serialNumber: 'A1B2C' } });
-    asc.rows.push({ id: 'old', type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', serialNumber: '99' } });
-    asc.rows.push({ id: 'ours', type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', serialNumber: 'A1B2C' } });
-    expect((await findDistributionCertificate(asc.api, 'serial=0A1B2C')).id).toBe('ours');
-    await expect(findDistributionCertificate(asc.api, 'FFFF')).rejects.toThrow(/ios-signing-cert\.mjs/);
-  });
-
   it('replaces each app\'s CI App Store profile with a fresh one for the certificate', async () => {
     const asc = fakeAsc({ apps });
     await provision({ api: asc.api, apps, log: () => {} });
@@ -195,11 +191,39 @@ describe('App Store Connect provisioning', () => {
   it('says to run provisioning first when a bundle ID is missing', async () => {
     await expect(freshProfiles(fakeAsc().api, apps, 'cert-1')).rejects.toThrow(/step 4/);
   });
-  it('asks Apple for a distribution certificate and packs it the way macOS can import it', () => {
-    expect(certificateRequest('CSR')).toEqual({ data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: 'CSR' } } });
-    const files = { key: 'k', cert: 'c', out: 'o', passFile: 'p' };
-    expect(pkcs12Args('OpenSSL 3.0.13 30 Jan 2024', files)).toContain('-legacy');
-    expect(pkcs12Args('LibreSSL 3.3.6', files)).not.toContain('-legacy');
-    expect(pkcs12Args('LibreSSL 3.3.6', files)).toEqual(expect.arrayContaining(['-inkey', 'k', '-in', 'c', '-out', 'o', '-passout', 'file:p']));
+  it("signs each release with a new certificate, revoking the previous run's, and never yours", async () => {
+    const asc = fakeAsc({ apps });
+    await provision({ api: asc.api, apps, log: () => {} });
+    asc.rows.push({ id: 'yours', type: 'certificates', attributes: { certificateType: 'DISTRIBUTION' } }); // made in Xcode
+    const first = await releaseSigning(asc.api, apps, 'CSR 1');
+    expect(first.certificate.attributes).toMatchObject({ certificateType: 'DISTRIBUTION', csrContent: 'CSR 1' });
+    expect(first.profiles.map((p: any) => p.name)).toEqual(['DashyHQ CI App Store', 'DashyHQ Test CI App Store']);
+    // The next run revokes it (Apple has had time to process that run's builds).
+    const log: string[] = [];
+    const seen: string[] = [];
+    const second = await releaseSigning(asc.api, apps, 'CSR 2', { log: (l: string) => log.push(l), onCertificate: (c: any) => seen.push(c.id) });
+    expect(log[0]).toBe(`- revoked certificate ${first.certificate.id}, from an earlier run`);
+    expect(seen).toEqual([second.certificate.id]);
+    expect(asc.of('certificates').map((c) => c.id).sort()).toEqual([second.certificate.id, 'yours'].sort());
+    expect(asc.of('profiles').every((p) => p.rel?.certificate === second.certificate.id)).toBe(true);
+    // A run that failed before uploading revokes its own.
+    expect(await revokeCertificate(asc.api, second.certificate.id)).toBe(true);
+    expect(await revokeCertificate(asc.api, second.certificate.id)).toBe(false);
+    expect(await leftoverCertificates(asc.api, apps)).toEqual([]);
+  });
+
+  it('says what to do when the team has no room for another distribution certificate', async () => {
+    const asc = fakeAsc({ apps });
+    await provision({ api: asc.api, apps, log: () => {} });
+    for (const id of ['a', 'b', 'c']) asc.rows.push({ id, type: 'certificates', attributes: { certificateType: 'DISTRIBUTION' } });
+    await expect(releaseSigning(asc.api, apps, 'CSR')).rejects.toThrow(/409[\s\S]*revoke one you don't use/);
+    expect(asc.of('certificates')).toHaveLength(3); // yours are never revoked
+  });
+
+  it('keeps revoke errors other than "already gone"', async () => {
+    const api = async () => {
+      throw new Error('DELETE /v1/certificates/x → 403 Forbidden');
+    };
+    await expect(revokeCertificate(api, 'x')).rejects.toThrow(/403/);
   });
 });
