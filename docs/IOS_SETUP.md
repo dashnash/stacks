@@ -12,6 +12,7 @@ Connect key goes straight into GitHub.
 | --- | --- | --- | --- |
 | Apple Team ID | you | `stacks.config.json` → `native.appleTeamId` | No |
 | App Store Connect API key (`.p8`, Key ID, Issuer ID) | you | GitHub environment `ios-release` secrets | **Yes** |
+| Apple Distribution certificate (`.p12` + password), yearly | you, with `scripts/ios-signing-cert.mjs` | GitHub environment `ios-release` secrets | **Yes** |
 | Bundle IDs with Associated Domains | the **iOS provision** workflow | Apple | No |
 | The two App Store Connect apps | you (Apple has no API for it) | Apple | No |
 | TestFlight groups that get every build, with you as tester | the **iOS provision** workflow | Apple | No |
@@ -28,8 +29,8 @@ Connect key goes straight into GitHub.
 → **Team Keys** → **Generate API Key**:
 
 - Name: `GitHub Actions (stacks)`
-- Access: **Admin**. It registers bundle IDs and manages TestFlight (step 4), and CI uses Xcode's
-  cloud-managed signing, which creates and renews the signing certificates itself.
+- Access: **Admin**. It registers bundle IDs and manages TestFlight (step 4), makes the signing
+  certificate (step 5b) and, on every release, fresh App Store provisioning profiles.
 
 Note the **Issuer ID** (top of the page) and the **Key ID**, and **Download** the `.p8` file. Apple
 lets you download it only once; keep it somewhere safe, or revoke it and make a new one if lost.
@@ -71,6 +72,35 @@ is taken, pick another name here. The name on the home screen comes from the bui
 Then run **iOS provision** again, this time with **your Apple ID email**: it gives each app an
 internal TestFlight group, "Internal (automatic)", that receives every build, with you in it.
 
+## 5b. The signing certificate (once a year; secret)
+
+Release builds are signed with an **Apple Distribution** certificate whose private key only GitHub
+holds. On your Mac (or any machine with Node 22 and `openssl`), in a checkout of this repo, with the
+`.p8` from step 2:
+
+```bash
+ASC_KEY_ID=<Key ID> ASC_ISSUER_ID=<Issuer ID> ASC_KEY_P8="$(cat ~/Downloads/AuthKey_<Key ID>.p8)" node scripts/ios-signing-cert.mjs
+```
+
+It makes a key and a signing request locally, has Apple issue the certificate, and writes a folder
+`ios-signing-<date>/`. Add two more secrets to the `ios-release` environment (step 3's page):
+
+| Name | Value |
+| --- | --- |
+| `DIST_CERT_P12` | the contents of `dashyhq-distribution.p12.b64` |
+| `DIST_CERT_PASSWORD` | the contents of `password.txt` |
+
+Then delete the folder (`rm -r ios-signing-*`); you can always make a new certificate. A team can
+have only a few distribution certificates (Apple says so if you hit the limit: revoke an old one in
+[Certificates, Identifiers & Profiles → Certificates](https://developer.apple.com/account/resources/certificates/list)).
+
+Prefer Xcode? **Xcode → Settings → Accounts → Manage Certificates → + → Apple Distribution**, then
+in Keychain Access export that certificate *with its key* as a `.p12`, and use
+`base64 -i cert.p12 | pbcopy` for `DIST_CERT_P12`.
+
+No device needs registering for TestFlight. (To run builds from Xcode on your own iPhone, sign in to
+Xcode with your Apple ID and let it register the phone when you first pick it as a destination.)
+
 ## 6. Two iOS OAuth clients for native Google sign-in (not secret)
 
 [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials),
@@ -111,8 +141,8 @@ can do this if you give it the Team ID and the two client IDs. When it merges:
 - the platform starts serving `/.well-known/apple-app-site-association` and accepting the app's
   Google tokens (staging, then production, as with every deploy);
 - the `iOS` workflow's **Sign and upload to TestFlight** job archives both apps, signs them and
-  uploads them. It skips (and passes) with a notice saying what's missing until steps 2–3 and 7 are
-  done, and until both app records from step 5 exist.
+  uploads them. It skips (and passes) with a notice saying what's missing until steps 2–3, 5b and 7
+  are done, and until both app records from step 5 exist.
 
 ## 8. Install
 
@@ -129,7 +159,10 @@ N2 gate.
 ## Later
 
 - Builds expire after 90 days in TestFlight; the workflow rebuilds on the 1st of every month.
-- Signing certificates are cloud-managed and renewed by Xcode: nothing to rotate except the API key
-  (revoke it on step 2's page and repeat step 3 if it leaks).
+- **Yearly:** the distribution certificate expires a year after step 5b; the release job then fails
+  with "No distribution certificate with serial …". Repeat step 5b (replace both secrets). Builds
+  already in TestFlight keep working. Profiles need nothing: every release makes fresh ones.
+- If a secret leaks: revoke the API key on step 2's page and repeat step 3, or revoke the
+  certificate (link in step 5b) and repeat 5b.
 - Inviting other people: TestFlight → **External Testing** (needs Apple's Beta App Review once per
   version), or add them to your team in App Store Connect as internal testers.

@@ -9,6 +9,7 @@ on:
     paths:
       - native/**
       - scripts/ios-xcconfig.mjs
+      - scripts/asc-provision.mjs
       - stacks.config.json
       - .github/workflows/ios.yml
   push:
@@ -16,6 +17,7 @@ on:
     paths:
       - native/**
       - scripts/ios-xcconfig.mjs
+      - scripts/asc-provision.mjs
       - stacks.config.json
       - .github/workflows/ios.yml
   schedule:
@@ -90,7 +92,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
-    # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect key.
+    # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect
+    # key and the Apple Distribution certificate (.p12) that release builds are signed with.
     environment: ios-release
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +106,8 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
         run: |
           team="$(sed -n 's/^DEVELOPMENT_TEAM = *//p' native/ios/Config/Production.xcconfig)"
           missing=""
@@ -110,6 +115,8 @@ jobs:
           [ -n "$ASC_KEY_ID" ] || missing="$missing ASC_KEY_ID"
           [ -n "$ASC_ISSUER_ID" ] || missing="$missing ASC_ISSUER_ID"
           [ -n "$ASC_KEY_P8" ] || missing="$missing ASC_KEY_P8"
+          [ -n "$DIST_CERT_P12" ] || missing="$missing DIST_CERT_P12"
+          [ -n "$DIST_CERT_PASSWORD" ] || missing="$missing DIST_CERT_PASSWORD"
           if [ -n "$missing" ]; then
             echo "::notice title=TestFlight upload skipped::Not set up yet:$missing. See docs/IOS_SETUP.md."
             echo "go=false" >> "$GITHUB_OUTPUT"
@@ -150,6 +157,47 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate --spec native/ios/project.yml
+      - name: Signing certificate into a temporary keychain
+        id: keychain
+        if: steps.ready.outputs.go == 'true'
+        env:
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          pass="$(openssl rand -hex 24)"
+          p12="$RUNNER_TEMP/dist.p12"
+          printf '%s' "$DIST_CERT_P12" | base64 --decode > "$p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$p12" -k "$keychain" -P "$DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$keychain" > /dev/null
+          # Keep the login keychain on the search list too (Xcode looks there for Apple's intermediates).
+          existing=()
+          while IFS= read -r k; do existing+=("$(echo "$k" | tr -d '" ')"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          rm -f "$p12"
+          serial="$(security find-certificate -c "Apple Distribution" -p "$keychain" | openssl x509 -noout -serial)"
+          echo "Certificate $serial"
+          {
+            echo "keychain=$keychain"
+            echo "serial=$serial"
+          } >> "$GITHUB_OUTPUT"
+      - name: Fresh App Store profiles
+        if: steps.ready.outputs.go == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          CERT_SERIAL: ${{ steps.keychain.outputs.serial }}
+          PROFILE_MAP: ${{ runner.temp }}/profiles.json
+        run: |
+          # Both places: Xcode 16+ reads the second, older tools the first.
+          node scripts/asc-provision.mjs --profiles \
+            "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          cat "$PROFILE_MAP"
       - name: Archive, sign and upload both apps
         if: steps.ready.outputs.go == 'true'
         env:
@@ -157,33 +205,46 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TEAM: ${{ steps.ready.outputs.team }}
           KEY: ${{ steps.ready.outputs.key }}
+          KEYCHAIN: ${{ steps.keychain.outputs.keychain }}
+          PROFILE_MAP: ${{ runner.temp }}/profiles.json
           RUN: ${{ github.run_number }}
           ATTEMPT: ${{ github.run_attempt }}
         run: |
           # Every upload needs a new build number; a re-run of the same run gets the next one.
           build=$((RUN * 100 + ATTEMPT))
           echo "Build $build"
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          # Manual signing: the Apple Distribution certificate (keychain step) and the App Store
+          # profiles just made. No device needed, and no Xcode account: the API key only uploads.
+          upload=(-authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
+            scheme="${pair%%:*}"
+            config="${pair##*:}"
+            bundle="$(sed -n 's/^PRODUCT_BUNDLE_IDENTIFIER = *//p' "native/ios/Config/$config.xcconfig")"
+            profile="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))[process.argv[2]] ?? "")' "$PROFILE_MAP" "$bundle")"
+            if [ -z "$profile" ]; then
+              echo "::error::No profile for $bundle in $PROFILE_MAP"
+              exit 1
+            fi
+            options="$RUNNER_TEMP/ExportOptions-$config.plist"
+            cat > "$options" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
             <key>destination</key><string>upload</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
             <key>teamID</key><string>$TEAM</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$bundle</key><string>$profile</string>
+            </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict>
           </plist>
           PLIST
-          # Cloud-managed signing: Xcode makes or reuses the certificates and profiles with the API key.
-          # The archive signs for distribution straight away: automatic signing would otherwise archive
-          # with a development profile, which needs registered devices (App Store builds need none).
-          auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          for pair in "DashyHQ Test:Staging" "DashyHQ:Production"; do
-            scheme="${pair%%:*}"
-            config="${pair##*:}"
-            echo "::group::$scheme ($config): archive"
+            echo "::group::$scheme ($config): archive with \"$profile\""
             xcodebuild archive -quiet \
               -project native/ios/DashyHQ.xcodeproj \
               -scheme "$scheme" \
@@ -191,21 +252,24 @@ jobs:
               -destination 'generic/platform=iOS' \
               -archivePath "$RUNNER_TEMP/$config.xcarchive" \
               -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
-              "${auth[@]}" \
               DEVELOPMENT_TEAM="$TEAM" \
-              CODE_SIGN_IDENTITY="Apple Distribution" \
+              DASHYHQ_PROFILE="$profile" \
+              OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
               CURRENT_PROJECT_VERSION="$build"
             echo "::endgroup::"
             echo "::group::$scheme ($config): upload to App Store Connect"
             xcodebuild -exportArchive \
               -archivePath "$RUNNER_TEMP/$config.xcarchive" \
-              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+              -exportOptionsPlist "$options" \
               -exportPath "$RUNNER_TEMP/export-$config" \
-              "${auth[@]}"
+              "${upload[@]}"
             echo "::endgroup::"
           done
           echo "### Uploaded build $build of DashyHQ and DashyHQ Test" >> "$GITHUB_STEP_SUMMARY"
           echo "TestFlight shows them after Apple finishes processing (usually 5-15 minutes)." >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the key
+      - name: Remove the key, certificate and profiles
         if: always()
-        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+        run: |
+          if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true; fi
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/dist.p12"
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision

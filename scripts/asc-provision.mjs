@@ -12,9 +12,12 @@
  *
  * Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8 contents), optional TESTER_EMAIL.
  * `--check-apps` only checks that both app records exist (exit 3 if not): the release job's guard.
+ * `--profiles <dir>` (the release job, with CERT_SERIAL and PROFILE_MAP): makes fresh App Store
+ * profiles for both apps with the distribution certificate, writes them to <dir> and a
+ * `{ bundleId: profileName }` map to PROFILE_MAP.
  */
 import { createPrivateKey, sign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,6 +147,51 @@ export async function missingApps(api, apps) {
   return missing;
 }
 
+/** Certificate serials as Apple and openssl print them differ in case and leading zeros. */
+export const normalizeSerial = (serial) => String(serial).trim().replace(/^serial=/i, '').replace(/:/g, '').toUpperCase().replace(/^0+/, '');
+
+/** The team's distribution certificate with this serial number (CI holds its private key). */
+export async function findDistributionCertificate(api, serial) {
+  const want = normalizeSerial(serial);
+  for (const type of ['DISTRIBUTION', 'IOS_DISTRIBUTION']) {
+    const certs = (await api('GET', `/v1/certificates?filter[certificateType]=${type}&limit=200`)).data ?? [];
+    const hit = certs.find((c) => normalizeSerial(c.attributes?.serialNumber ?? '') === want);
+    if (hit) return hit;
+  }
+  throw new Error(`No distribution certificate with serial ${want} in the team: make one with scripts/ios-signing-cert.mjs (docs/IOS_SETUP.md)`);
+}
+
+export const profileName = (app) => `${app.name} CI App Store`;
+
+/**
+ * Fresh App Store profiles for each app, signed by `certificateId`: the previous CI profile is
+ * deleted first, so a capability added since (push, Sign in with Apple) is always included.
+ * Returns `[{ bundleId, name, uuid, content }]` (content: the .mobileprovision, base64).
+ */
+export async function freshProfiles(api, apps, certificateId, log = () => {}) {
+  const out = [];
+  for (const app of apps) {
+    const name = profileName(app);
+    const bundle = ((await api('GET', `/v1/bundleIds?filter[identifier]=${q(app.bundleId)}&limit=200`)).data ?? []).find((b) => b.attributes?.identifier === app.bundleId);
+    if (!bundle) throw new Error(`Bundle ID ${app.bundleId} isn't registered: run the iOS provision workflow (docs/IOS_SETUP.md step 4)`);
+    for (const old of (await api('GET', `/v1/profiles?filter[name]=${q(name)}&limit=200`)).data ?? []) {
+      if (old.attributes?.name === name) await api('DELETE', `/v1/profiles/${old.id}`);
+    }
+    const created = (
+      await api('POST', '/v1/profiles', {
+        data: {
+          type: 'profiles',
+          attributes: { name, profileType: 'IOS_APP_STORE' },
+          relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } }, certificates: { data: [{ type: 'certificates', id: certificateId }] } },
+        },
+      })
+    ).data;
+    log(`+ App Store profile "${name}" for ${app.bundleId}`);
+    out.push({ bundleId: app.bundleId, name, uuid: created.attributes.uuid, content: created.attributes.profileContent });
+  }
+  return out;
+}
+
 /** Set up every app; returns whether any app record still needs creating by hand. */
 export async function provision({ api, apps, testerEmail, log = console.log }) {
   let appsMissing = 0;
@@ -165,6 +213,20 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const missing = await missingApps(api, appsFromConfig(config));
     for (const app of missing) console.log(`${app.name} (${app.bundleId}) has no App Store Connect app yet (docs/IOS_SETUP.md steps 4-5)`);
     process.exit(missing.length ? 3 : 0);
+  }
+  // `--profiles <dir>` (the release job): fresh App Store profiles, installed where Xcode looks.
+  const at = process.argv.indexOf('--profiles');
+  if (at > 0) {
+    const dirs = process.argv.slice(at + 1).filter((a) => !a.startsWith('--'));
+    if (!dirs.length) (console.error('--profiles needs a directory'), process.exit(2));
+    const cert = await findDistributionCertificate(api, need('CERT_SERIAL'));
+    const profiles = await freshProfiles(api, appsFromConfig(config), cert.id, console.log);
+    for (const dir of dirs) {
+      mkdirSync(dir, { recursive: true });
+      for (const p of profiles) writeFileSync(join(dir, `${p.uuid}.mobileprovision`), Buffer.from(p.content, 'base64'));
+    }
+    writeFileSync(need('PROFILE_MAP'), JSON.stringify(Object.fromEntries(profiles.map((p) => [p.bundleId, p.name]))));
+    process.exit(0);
   }
   const testerEmail = (process.env.TESTER_EMAIL ?? '').trim() || undefined;
   const { appsMissing } = await provision({ api, apps: appsFromConfig(config), testerEmail });

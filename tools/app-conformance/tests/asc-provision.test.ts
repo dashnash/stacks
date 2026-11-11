@@ -1,7 +1,9 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, GROUP_NAME, missingApps, provision } from '../../../scripts/asc-provision.mjs';
+import { certificateRequest, pkcs12Args } from '../../../scripts/ios-signing-cert.mjs';
+// @ts-expect-error: plain .mjs script, no types
+import { appsFromConfig, ascToken, createApi, findDistributionCertificate, freshProfiles, GROUP_NAME, missingApps, normalizeSerial, profileName, provision } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -45,6 +47,16 @@ function fakeAsc(opts: { apps?: { bundleId: string; name: string }[]; testers?: 
         throw new Error(`POST ${path} → 409 The request cannot be fulfilled because of the state of another resource.: Tester(s) cannot be assigned`);
       }
       for (const t of body.data) (members.get(m[1]!) ?? members.set(m[1]!, new Set()).get(m[1]!)!).add(t.id);
+      return {};
+    }
+    if (method === 'GET' && p === '/v1/certificates') return { data: of('certificates').filter((c) => c.attributes.certificateType === filter.certificateType) };
+    if (method === 'GET' && p === '/v1/profiles') return { data: of('profiles').filter((r) => r.attributes.name === filter.name) };
+    if (method === 'POST' && p === '/v1/profiles') {
+      const r = body.data.relationships;
+      return { data: add('profiles', { ...body.data.attributes, uuid: `uuid-${n + 1}`, profileContent: Buffer.from(`profile ${n + 1}`).toString('base64') }, { bundleId: r.bundleId.data.id, certificate: r.certificates.data[0].id }) };
+    }
+    if (method === 'DELETE' && (m = p!.match(/^\/v1\/profiles\/(.+)$/))) {
+      rows.splice(rows.findIndex((r) => r.id === m![1]), 1);
       return {};
     }
     throw new Error(`fake ASC has no ${method} ${path}`);
@@ -145,5 +157,49 @@ describe('App Store Connect provisioning', () => {
     expect(await provision({ api: refusing, apps: [apps[0]!], testerEmail: 'friend@example.com', log: (l: string) => log.push(l) })).toEqual({ appsMissing: 0 });
     expect(log.at(-1)).toMatch(/^! couldn't add friend@example.com to DashyHQ's TestFlight group .*add yourself in App Store Connect/);
     expect(asc.of('betaGroups')).toHaveLength(1);
+  });
+
+  it('matches certificate serials however openssl or Apple prints them', () => {
+    expect(normalizeSerial('serial=0A1B2C')).toBe('A1B2C');
+    expect(normalizeSerial('0a:1b:2c\n')).toBe('A1B2C');
+    expect(normalizeSerial('A1B2C')).toBe('A1B2C');
+  });
+
+  it('finds the distribution certificate CI holds, by serial, or says how to make one', async () => {
+    const asc = fakeAsc();
+    asc.rows.push({ id: 'dev', type: 'certificates', attributes: { certificateType: 'DEVELOPMENT', serialNumber: 'A1B2C' } });
+    asc.rows.push({ id: 'old', type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', serialNumber: '99' } });
+    asc.rows.push({ id: 'ours', type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', serialNumber: 'A1B2C' } });
+    expect((await findDistributionCertificate(asc.api, 'serial=0A1B2C')).id).toBe('ours');
+    await expect(findDistributionCertificate(asc.api, 'FFFF')).rejects.toThrow(/ios-signing-cert\.mjs/);
+  });
+
+  it('replaces each app\'s CI App Store profile with a fresh one for the certificate', async () => {
+    const asc = fakeAsc({ apps });
+    await provision({ api: asc.api, apps, log: () => {} });
+    const stale = asc.of('bundleIds')[0]!;
+    asc.rows.push({ id: 'stale', type: 'profiles', attributes: { name: profileName(apps[0]), profileType: 'IOS_APP_STORE' }, rel: { bundleId: stale.id } });
+    const made = await freshProfiles(asc.api, apps, 'cert-1');
+    expect(asc.of('profiles').some((r) => r.id === 'stale')).toBe(false);
+    expect(asc.of('profiles').map((r) => [r.attributes.name, r.attributes.profileType, r.rel?.certificate])).toEqual([
+      ['DashyHQ CI App Store', 'IOS_APP_STORE', 'cert-1'],
+      ['DashyHQ Test CI App Store', 'IOS_APP_STORE', 'cert-1'],
+    ]);
+    expect(made.map((p: any) => [p.bundleId, p.name])).toEqual([
+      ['com.dashyhq.stacks', 'DashyHQ CI App Store'],
+      ['com.dashyhq.stacks.test', 'DashyHQ Test CI App Store'],
+    ]);
+    expect(made.every((p: any) => p.uuid && Buffer.from(p.content, 'base64').toString().startsWith('profile'))).toBe(true);
+  });
+
+  it('says to run provisioning first when a bundle ID is missing', async () => {
+    await expect(freshProfiles(fakeAsc().api, apps, 'cert-1')).rejects.toThrow(/step 4/);
+  });
+  it('asks Apple for a distribution certificate and packs it the way macOS can import it', () => {
+    expect(certificateRequest('CSR')).toEqual({ data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: 'CSR' } } });
+    const files = { key: 'k', cert: 'c', out: 'o', passFile: 'p' };
+    expect(pkcs12Args('OpenSSL 3.0.13 30 Jan 2024', files)).toContain('-legacy');
+    expect(pkcs12Args('LibreSSL 3.3.6', files)).not.toContain('-legacy');
+    expect(pkcs12Args('LibreSSL 3.3.6', files)).toEqual(expect.arrayContaining(['-inkey', 'k', '-in', 'c', '-out', 'o', '-passout', 'file:p']));
   });
 });
