@@ -82,7 +82,8 @@ jobs:
               -configuration "$config" \
               -destination 'generic/platform=iOS Simulator' \
               -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
-              CODE_SIGNING_ALLOWED=NO
+              CODE_SIGNING_ALLOWED=NO \
+              STACKS_GIT_COMMIT="$GITHUB_SHA"
             echo "::endgroup::"
           done
 
@@ -249,7 +250,8 @@ jobs:
               DEVELOPMENT_TEAM="$TEAM" \
               DASHYHQ_PROFILE="$profile" \
               OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
-              CURRENT_PROJECT_VERSION="$build"
+              CURRENT_PROJECT_VERSION="$build" \
+              STACKS_GIT_COMMIT="$GITHUB_SHA"
             echo "::endgroup::"
             echo "::group::$scheme ($config): upload to App Store Connect"
             xcodebuild -exportArchive \

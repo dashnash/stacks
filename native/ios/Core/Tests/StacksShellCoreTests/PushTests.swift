@@ -26,3 +26,11 @@ final class PushTests: XCTestCase {
         XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "iamdashnash.com"])?.pushEnvironment, "sandbox")
     }
 }
+
+final class BuildCommitTests: XCTestCase {
+    func testSettingsReadTheCommitCIBuiltFrom() {
+        let ci = ShellSettings(info: ["StacksRootDomain": "iamdashnash.com", "StacksGitCommit": "0123456789abcdef0123456789abcdef01234567"])
+        XCTAssertEqual(ci?.commit, "0123456789abcdef0123456789abcdef01234567")
+        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "iamdashnash.com"])?.commit, "")
+    }
+}

@@ -139,4 +139,14 @@ describe('the portal inside the iOS app', () => {
     await userEvent.click(box);
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Hello Board' })).not.toBeChecked());
   });
+
+  it("shows the app's build and the commit it was built from in the footer", async () => {
+    renderInApp({ 'app.info': () => ({ version: '1.0.0', build: '4201', commit: '0123456789abcdef0123456789abcdef01234567', platform: 'ios', protocol: 1 }) });
+    expect(await screen.findByText('App 1.0.0 (4201) · 0123456')).toHaveAttribute('title', 'App built from commit 0123456789abcdef0123456789abcdef01234567');
+  });
+
+  it('says "local" for a build from Xcode', async () => {
+    renderInApp({ 'app.info': () => ({ version: '1.0.0', build: '1', commit: '', platform: 'ios', protocol: 1 }) });
+    expect(await screen.findByText('App 1.0.0 (1) · local')).toBeInTheDocument();
+  });
 });

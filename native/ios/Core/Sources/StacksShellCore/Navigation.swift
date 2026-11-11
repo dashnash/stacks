@@ -100,19 +100,22 @@ public struct ShellSettings: Equatable {
     public let build: String
     /// The APNs environment the platform should push through: "sandbox" or "production".
     public let pushEnvironment: String
+    /// The git commit CI built this from (empty for a local Xcode build).
+    public let commit: String
 
-    public init(policy: NavigationPolicy, googleClientID: String, googleServerClientID: String, appVersion: String, build: String, pushEnvironment: String = "sandbox") {
+    public init(policy: NavigationPolicy, googleClientID: String, googleServerClientID: String, appVersion: String, build: String, pushEnvironment: String = "sandbox", commit: String = "") {
         self.policy = policy
         self.googleClientID = googleClientID
         self.googleServerClientID = googleServerClientID
         self.appVersion = appVersion
         self.build = build
         self.pushEnvironment = pushEnvironment
+        self.commit = commit
     }
 
     /// From Info.plist keys `StacksRootDomain`, `StacksOtherRoots` (comma-separated), `GIDClientID`,
     /// `GIDServerClientID`, `CFBundleShortVersionString`, `CFBundleVersion`, `StacksPushEnvironment`
-    /// (the `aps-environment` entitlement's value). Nil without a root domain.
+    /// (the `aps-environment` entitlement's value), `StacksGitCommit`. Nil without a root domain.
     public init?(info: [String: Any]) {
         guard let root = (info["StacksRootDomain"] as? String)?.trimmingCharacters(in: .whitespaces), !root.isEmpty else { return nil }
         let others = ((info["StacksOtherRoots"] as? String) ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -122,7 +125,8 @@ public struct ShellSettings: Equatable {
             googleServerClientID: (info["GIDServerClientID"] as? String) ?? "",
             appVersion: (info["CFBundleShortVersionString"] as? String) ?? "0",
             build: (info["CFBundleVersion"] as? String) ?? "0",
-            pushEnvironment: Push.environment(apsEnvironment: (info["StacksPushEnvironment"] as? String) ?? "")
+            pushEnvironment: Push.environment(apsEnvironment: (info["StacksPushEnvironment"] as? String) ?? ""),
+            commit: ((info["StacksGitCommit"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
         )
     }
 
