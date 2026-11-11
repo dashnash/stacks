@@ -27,6 +27,26 @@ final class PushTests: XCTestCase {
     }
 }
 
+final class PushActionTests: XCTestCase {
+    func testButtonsMapToThePlatformsActions() {
+        XCTAssertEqual(PushAction.action(forIdentifier: "APPROVE"), "approve")
+        XCTAssertEqual(PushAction.action(forIdentifier: "DENY"), "deny")
+        XCTAssertNil(PushAction.action(forIdentifier: "com.apple.UNNotificationDefaultActionIdentifier"))
+    }
+
+    func testTheTokenComesFromTheNotification() {
+        XCTAssertEqual(PushAction.token(from: ["actionToken": "spa_abc", "url": "https://x/"]), "spa_abc")
+        XCTAssertNil(PushAction.token(from: ["url": "https://x/"]))
+    }
+
+    func testThePressGoesToThePortalHostWithTheDeviceSecret() throws {
+        XCTAssertEqual(PushAction.url(authHost: "auth.iamdashnash.com", deviceId: "5f2c-8e1a")?.absoluteString, "https://auth.iamdashnash.com/api/devices/5f2c-8e1a/actions")
+        XCTAssertEqual(PushAction.url(authHost: "auth.iamdashnash.com", deviceId: "../x")?.absoluteString, "https://auth.iamdashnash.com/api/devices/..%2Fx/actions")
+        let body = try PushAction.body(secret: "sdv_1", token: "spa_2", action: "approve")
+        XCTAssertEqual(String(data: body, encoding: .utf8), #"{"action":"approve","secret":"sdv_1","token":"spa_2"}"#)
+    }
+}
+
 final class BuildCommitTests: XCTestCase {
     func testSettingsReadTheCommitCIBuiltFrom() {
         let ci = ShellSettings(info: ["StacksRootDomain": "iamdashnash.com", "StacksGitCommit": "0123456789abcdef0123456789abcdef01234567"])

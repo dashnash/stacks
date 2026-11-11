@@ -47,7 +47,7 @@ import {
   userIdForEmail,
 } from './core';
 import { linkGoogle, mergeWithTicket, unlinkIdentity } from './merge';
-import { badges, deviceView, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
+import { badges, deviceView, handlePushAction, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
 
 const CSRF_HEADER = 'x-stacks-request';
@@ -437,6 +437,9 @@ export function createPlatformApp(deps: PlatformDeps) {
         return { body: { ok: true } };
       }),
     )
+    // A button on a notification (Approve / Deny), sent by the app itself: no session, the device's
+    // secret instead (the app keeps it in the Keychain).
+    .add('POST', '/devices/:id/actions', async (req) => ({ body: { ok: true, ...(await handlePushAction(deps, req.params.id!, req.body)) } }))
     .add('GET', '/me/notification-settings', signedIn(async (_req, user) => ({ body: { apps: await notificationSettings(deps, user) } })))
     .add(
       'PUT',

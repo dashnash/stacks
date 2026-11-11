@@ -96,6 +96,10 @@ export interface PushMessage {
   url?: string;
   /** Groups notifications per app on the lock screen. */
   threadId?: string;
+  /** Lock-screen buttons: `ACCESS_REQUEST` shows Approve and Deny. */
+  category?: 'ACCESS_REQUEST';
+  /** Single-use token the app sends back with a button press (`POST /devices/:id/actions`). */
+  actionToken?: string;
 }
 
 /** Delivers to Apple. `gone`: the token is no longer valid (APNs 410 or BadDeviceToken). */
@@ -196,6 +200,8 @@ export const keys = {
   notification: (userId: string, at: string, id: string) => ({ PK: `NOTIF#${userId}`, SK: `${at}#${id}` }),
   /** A device, findable by id (acting on a notification) and, through GSI1, by its person. */
   device: (id: string, userId: string) => ({ PK: `DEVICE#${id}`, SK: 'DEVICE', GSI1PK: `USERDEVICES#${userId}`, GSI1SK: id }),
+  /** A lock-screen action offered to one device, by the action token's hash (single use, 7 days). */
+  pushAction: (tokenHash: string) => ({ PK: `PUSHACTION#${tokenHash}`, SK: 'PUSHACTION' }),
   /** Unique lookup from an APNs token to the device that has it (a phone signs in as someone else). */
   pushToken: (tokenHash: string) => ({ PK: `PUSHTOKEN#${tokenHash}`, SK: 'PUSHTOKEN' }),
 };

@@ -1,7 +1,7 @@
 import { canManageAccess, type AppManifest } from '@stacks/manifest';
-import { badRequest, notFound, randomToken, sha256Hex, type Item } from '@stacks/api';
-import { getUser, grantsForApp, grantsForUser, listApps, listNotifications, managesApp, userIdForEmail } from './core';
-import { holdsRole, keys, PENDING, type Device, type DeviceItem, type PlatformDeps, type PlatformUser, type PushMessage } from './model';
+import { badRequest, forbidden, notFound, randomToken, sha256Hex, unauthorized, type Item } from '@stacks/api';
+import { getApp, getGrant, getUser, grantsForApp, grantsForUser, listApps, listNotifications, managesApp, notify, setGrant, userIdForEmail } from './core';
+import { holdsRole, keys, PENDING, shownName, type Device, type DeviceItem, type PlatformDeps, type PlatformUser, type PushMessage } from './model';
 
 /*
  * Push to the iOS app (docs/NATIVE_APP_SPEC.md, "Notifications and push"). The inbox stays the
@@ -127,14 +127,15 @@ export async function accessManagers(deps: PlatformDeps, manifest: AppManifest):
 
 /* ---------- Sending ---------- */
 
-async function deliver(deps: PlatformDeps, user: PlatformUser, build: (badge: number) => PushMessage): Promise<void> {
+async function deliver(deps: PlatformDeps, user: PlatformUser, build: (badge: number, device: Device) => PushMessage | Promise<PushMessage>): Promise<void> {
   const push = deps.push;
   if (!push) return;
   const devices = await listDevices(deps, user.id);
   if (!devices.length) return;
-  const message = build(await badgeCount(deps, user));
+  const badge = await badgeCount(deps, user);
   await Promise.all(
     devices.map(async (d) => {
+      const message = await build(badge, d);
       const result = await push.send(d, message).catch((err) => {
         console.error('Push failed', err);
         return 'failed' as const;
@@ -144,18 +145,86 @@ async function deliver(deps: PlatformDeps, user: PlatformUser, build: (badge: nu
   );
 }
 
+/** What a notification lets people do from the lock screen. */
+export interface PushActions {
+  /** An access request: Approve (the app's default role) or Deny. */
+  access?: { app: string; requesterId: string };
+}
+
+const ACTION_DAYS = 7;
+
+type ActionItem = Item & { app: string; requesterId: string; approverId: string; deviceId: string; notAfter: number; expiresAt: number };
+
+/** A single-use token for one device's buttons on one request; only its hash is stored. */
+async function offerAction(deps: PlatformDeps, device: Device, access: NonNullable<PushActions['access']>): Promise<string> {
+  const token = randomToken('spa_');
+  const now = deps.now().getTime();
+  await deps.store.put({
+    ...keys.pushAction(await sha256Hex(token)),
+    app: access.app,
+    requesterId: access.requesterId,
+    approverId: device.userId,
+    deviceId: device.id,
+    notAfter: now + ACTION_DAYS * 86_400_000,
+    expiresAt: Math.floor(now / 1000) + ACTION_DAYS * 86_400 + 86_400,
+  });
+  return token;
+}
+
 /** A new inbox item, pushed to the person's devices (unless they muted its app: then the badge only). */
-export async function pushNotification(deps: PlatformDeps, userId: string, n: { text: string; link?: string; app?: string }): Promise<void> {
+export async function pushNotification(deps: PlatformDeps, userId: string, n: { text: string; link?: string; app?: string }, actions: PushActions = {}): Promise<void> {
   try {
     const user = await getUser(deps, userId);
     if (!user) return;
     const muted = !!n.app && (user.mutedApps ?? []).includes(n.app);
     const title = n.app ? ((await listApps(deps)).find((a) => a.manifest.slug === n.app)?.manifest.name ?? 'Stacks') : 'Stacks';
-    await deliver(deps, user, (badge) =>
-      muted ? { badge } : { alert: { title, body: n.text }, badge, url: absoluteLink(deps, n.link) ?? `${deps.config.authOrigin}/#/notifications`, ...(n.app ? { threadId: n.app } : {}) },
-    );
+    await deliver(deps, user, async (badge, device) => {
+      if (muted) return { badge };
+      const message: PushMessage = { alert: { title, body: n.text }, badge, url: absoluteLink(deps, n.link) ?? `${deps.config.authOrigin}/#/notifications`, ...(n.app ? { threadId: n.app } : {}) };
+      if (actions.access) return { ...message, category: 'ACCESS_REQUEST', actionToken: await offerAction(deps, device, actions.access) };
+      return message;
+    });
   } catch (err) {
     console.error('Could not push a notification', err);
+  }
+}
+
+/**
+ * A button pressed on a notification (the app sends it without opening the web view). The device
+ * proves itself with its secret; the token says which request, for whom, on which device. The
+ * normal grant rules apply (the approver must still manage access). A failure is also sent to the
+ * approver as a notification, since nobody is looking at a screen when it happens.
+ */
+export async function handlePushAction(
+  deps: PlatformDeps,
+  deviceId: string,
+  body: { secret?: unknown; token?: unknown; action?: unknown },
+): Promise<{ result: 'approved' | 'denied' | 'already-handled' }> {
+  const device = await deps.store.get<DeviceItem>(`DEVICE#${deviceId}`, 'DEVICE');
+  if (!device || typeof body.secret !== 'string' || (await sha256Hex(body.secret)) !== device.secretHash) throw unauthorized('Unknown device');
+  if (body.action !== 'approve' && body.action !== 'deny') throw badRequest('"action" must be "approve" or "deny"');
+  const key = keys.pushAction(await sha256Hex(String(body.token ?? '')));
+  const offer = await deps.store.get<ActionItem>(key.PK, key.SK);
+  if (offer) await deps.store.delete(key.PK, key.SK); // single use, even when what follows fails
+  if (!offer || offer.deviceId !== device.id || offer.approverId !== device.userId || offer.notAfter < deps.now().getTime()) {
+    throw forbidden('This notification has expired: open the request in the app');
+  }
+
+  const approver = await getUser(deps, device.userId);
+  const requester = await getUser(deps, offer.requesterId);
+  const app = await getApp(deps, offer.app).catch(() => null);
+  if (!approver || !requester || !app) throw notFound('That request is gone');
+  const who = shownName(requester);
+  if ((await getGrant(deps, app.manifest.slug, requester.id))?.role !== PENDING) return { result: 'already-handled' };
+  try {
+    const role = body.action === 'approve' ? (app.manifest.defaultRole ?? null) : null;
+    if (body.action === 'approve' && !role) throw badRequest(`${app.manifest.name} has no default role: choose one in the access page`);
+    await setGrant(deps, approver, app.manifest, requester.id, role, { via: 'push' });
+    return { result: body.action === 'approve' ? 'approved' : 'denied' };
+  } catch (err) {
+    const verb = body.action === 'approve' ? 'approve' : 'deny';
+    await notify(deps, approver.id, { text: `Couldn't ${verb} ${who} for ${app.manifest.name}: ${(err as Error).message}`, link: `#/admin/access?app=${app.manifest.slug}`, app: app.manifest.slug });
+    throw err;
   }
 }
 
