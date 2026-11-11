@@ -103,6 +103,9 @@ enum DeviceKeychain {
 
     static var deviceId: String? { load()?.id }
 
+    /// The id and secret, for answering a notification's buttons.
+    static var credentials: (id: String, secret: String)? { load().map { (id: $0.id, secret: $0.secret) } }
+
     static func clear() {
         SecItemDelete(query as CFDictionary)
     }

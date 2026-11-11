@@ -74,6 +74,8 @@ describe('push', () => {
           badge: 2,
           url: 'https://auth.stacks.test/#/admin/access?app=club',
           threadId: 'club',
+          category: 'ACCESS_REQUEST',
+          actionToken: expect.stringMatching(/^spa_/),
         },
       },
     ]);
@@ -146,6 +148,73 @@ describe('push', () => {
     const res = await h.call('POST', '/apps/hello/notify', { headers: { authorization: 'Bearer cred-hello' }, body: { userId: await h.idOf('ann@test.dev'), text: 'Bob said hi', link: 'https://hello.stacks.test/#post-1' } });
     expect(res.status).toBe(200);
     expect(h.pushes.at(-1)?.message).toEqual({ alert: { title: 'Hello Board', body: 'Bob said hi' }, badge: 1, url: 'https://hello.stacks.test/#post-1', threadId: 'hello' });
+  });
+});
+
+describe('Approve / Deny from the lock screen', () => {
+  async function requestOnPhone(opts: { secondPhone?: boolean } = {}) {
+    const h = createPlatformHarness();
+    const owner = (await h.addDevice('owner@test.dev', OWNER_PHONE)).body;
+    const other = opts.secondPhone ? (await h.addDevice('owner@test.dev', tok(4))).body : null;
+    await h.authorize('club', 'ann@test.dev');
+    const pushed = (token: string) => h.pushes.find((p) => p.token === token)!.message;
+    const press = (device: { device: { id: string }; secret: string }, token: string | undefined, action: string, secret = device.secret) =>
+      h.call('POST', `/devices/${device.device.id}/actions`, { body: { secret, token, action } });
+    return { h, owner, other, pushed, press };
+  }
+
+  it('gives each of the approver\'s phones its own buttons and single-use token', async () => {
+    const { pushed } = await requestOnPhone({ secondPhone: true });
+    const a = pushed(OWNER_PHONE);
+    const b = pushed(tok(4));
+    expect(a).toMatchObject({ category: 'ACCESS_REQUEST', actionToken: expect.stringMatching(/^spa_/) });
+    expect(b.actionToken).not.toBe(a.actionToken);
+    expect(apnsPayload(a)).toMatchObject({ aps: { category: 'ACCESS_REQUEST' }, actionToken: a.actionToken });
+  });
+
+  it('approves with the default role, tells the requester, and records that it came from a phone', async () => {
+    const { h, owner, pushed, press } = await requestOnPhone();
+    const res = await press(owner, pushed(OWNER_PHONE).actionToken, 'approve');
+    expect(res.body).toEqual({ ok: true, result: 'approved' });
+    const grid = await h.call('GET', '/admin/access', { as: 'owner@test.dev' });
+    expect(grid.body.grants.find((g: { userId: string }) => g.userId === grid.body.users.find((u: { email: string }) => u.email === 'ann@test.dev').id).role).toBe('MEMBER');
+    expect((await h.call('GET', '/notifications', { as: 'ann@test.dev' })).body.notifications[0].text).toBe('You now have access to Book Club.');
+    const audit = await h.call('GET', '/admin/audit', { as: 'owner@test.dev', query: { action: 'grant' } });
+    expect(audit.body.events[0]).toMatchObject({ action: 'grant.set', details: expect.objectContaining({ via: 'push', from: 'PENDING', to: 'MEMBER' }) });
+    // Single use.
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'approve')).status).toBe(403);
+  });
+
+  it('denies by dismissing the request', async () => {
+    const { h, owner, pushed, press } = await requestOnPhone();
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'deny')).body.result).toBe('denied');
+    expect((await h.call('GET', '/admin/access', { as: 'owner@test.dev' })).body.grants.some((g: { role: string }) => g.role === 'PENDING')).toBe(false);
+  });
+
+  it('says so when the request was already handled elsewhere', async () => {
+    const { h, owner, pushed, press } = await requestOnPhone();
+    await h.setRole('club', 'ann@test.dev', { as: 'owner@test.dev', body: { role: 'MEMBER' } });
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'deny')).body.result).toBe('already-handled');
+  });
+
+  it('needs the device\'s secret, and the token for that device, within 7 days', async () => {
+    const { h, owner, other, pushed, press } = await requestOnPhone({ secondPhone: true });
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'approve', 'sdv_wrong')).status).toBe(401);
+    expect((await press(other!, pushed(OWNER_PHONE).actionToken, 'approve')).status).toBe(403); // another phone's token
+    h.advance(8 * 86_400_000);
+    expect((await press(other!, pushed(tok(4)).actionToken, 'approve')).status).toBe(403);
+    expect((await press(owner, 'spa_made_up', 'approve')).status).toBe(403);
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'maybe')).status).toBe(400);
+  });
+
+  it('applies the normal rules, and tells the approver when it could not', async () => {
+    const { h, owner, pushed, press } = await requestOnPhone();
+    // The owner loses the right to manage access before pressing Approve.
+    await h.setRole('club', 'admin2@test.dev', { as: 'owner@test.dev', body: { role: 'OWNER' } });
+    await h.setRole('club', 'owner@test.dev', { as: 'admin2@test.dev', body: { role: 'MEMBER' } });
+    expect((await press(owner, pushed(OWNER_PHONE).actionToken, 'approve')).status).toBe(403);
+    const notes = (await h.call('GET', '/notifications', { as: 'owner@test.dev' })).body.notifications;
+    expect(notes[0].text).toMatch(/^Couldn't approve ann for Book Club: /);
   });
 });
 
