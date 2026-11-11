@@ -93,7 +93,7 @@ describe('App Store Connect provisioning', () => {
     expect(verify('sha256', Buffer.from(`${h}.${p}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(s, 'base64url'))).toBe(true);
   });
 
-  it("registers both bundle IDs with Associated Domains, and says which app records it can't create", async () => {
+  it("registers both bundle IDs with Associated Domains and push, and says which app records it can't create", async () => {
     const asc = fakeAsc();
     const log: string[] = [];
     expect(await provision({ api: asc.api, apps, log: (l: string) => log.push(l) })).toEqual({ appsMissing: 2 });
@@ -101,7 +101,7 @@ describe('App Store Connect provisioning', () => {
       ['com.dashyhq.stacks', 'DashyHQ', 'IOS'],
       ['com.dashyhq.stacks.test', 'DashyHQ Test', 'IOS'],
     ]);
-    expect(asc.of('caps').map((c) => c.attributes.capabilityType)).toEqual(['ASSOCIATED_DOMAINS', 'ASSOCIATED_DOMAINS']);
+    expect(asc.of('caps').map((c) => c.attributes.capabilityType)).toEqual(['ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS', 'ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS']);
     expect(log.filter((l) => l.startsWith('!'))).toHaveLength(2);
   });
 
@@ -202,7 +202,7 @@ describe('App Store Connect provisioning', () => {
     const log: string[] = [];
     const seen: string[] = [];
     const second = await releaseSigning(asc.api, apps, 'CSR 2', { log: (l: string) => log.push(l), onCertificate: (c: any) => seen.push(c.id) });
-    expect(log[0]).toBe(`- revoked certificate ${first.certificate.id}, from an earlier run`);
+    expect(log).toContain(`- revoked certificate ${first.certificate.id}, from an earlier run`);
     expect(seen).toEqual([second.certificate.id]);
     expect(asc.of('certificates').map((c) => c.id).sort()).toEqual([second.certificate.id, 'yours'].sort());
     expect(asc.of('profiles').every((p) => p.rel?.certificate === second.certificate.id)).toBe(true);
@@ -210,6 +210,16 @@ describe('App Store Connect provisioning', () => {
     expect(await revokeCertificate(asc.api, second.certificate.id)).toBe(true);
     expect(await revokeCertificate(asc.api, second.certificate.id)).toBe(false);
     expect(await leftoverCertificates(asc.api, apps)).toEqual([]);
+  });
+
+  it('turns on a capability the app started using since provisioning before making profiles', async () => {
+    const asc = fakeAsc({ apps });
+    await provision({ api: asc.api, apps, log: () => {} });
+    for (const c of asc.of('caps').filter((c) => c.attributes.capabilityType === 'PUSH_NOTIFICATIONS')) asc.rows.splice(asc.rows.indexOf(c), 1);
+    const log: string[] = [];
+    await releaseSigning(asc.api, apps, 'CSR', { log: (l: string) => log.push(l) });
+    expect(log).toContain('+ turned on Push Notifications for com.dashyhq.stacks');
+    expect(asc.calls.indexOf('POST /v1/bundleIdCapabilities')).toBeLessThan(asc.calls.lastIndexOf('POST /v1/profiles'));
   });
 
   it('says what to do when the team has no room for another distribution certificate', async () => {

@@ -6,7 +6,8 @@
  * in a Claude session, which must not hold the key.
  *
  * For each environment's app (bundle ID from stacks.config.json):
- *   1. registers the bundle ID and turns on Associated Domains (universal links);
+ *   1. registers the bundle ID and turns on Associated Domains (universal links) and Push
+ *      Notifications (the release job does this too, so a new capability needs no re-run);
  *   2. if the app record exists in App Store Connect (Apple offers no API to create one), makes an
  *      internal TestFlight group that gets every build automatically, and adds TESTER_EMAIL to it.
  *
@@ -76,6 +77,12 @@ export function appsFromConfig(config) {
 
 const q = (s) => encodeURIComponent(s);
 
+/** What the app's entitlements use; profiles made afterwards include them. */
+export const CAPABILITIES = [
+  ['ASSOCIATED_DOMAINS', 'Associated Domains'],
+  ['PUSH_NOTIFICATIONS', 'Push Notifications'],
+];
+
 async function ensureBundleId(api, app, log) {
   const found = (await api('GET', `/v1/bundleIds?filter[identifier]=${q(app.bundleId)}&limit=200`)).data ?? [];
   let bundle = found.find((b) => b.attributes?.identifier === app.bundleId);
@@ -85,12 +92,14 @@ async function ensureBundleId(api, app, log) {
     log(`+ registered bundle ID ${app.bundleId}`);
   }
   const caps = (await api('GET', `/v1/bundleIds/${bundle.id}/bundleIdCapabilities`)).data ?? [];
-  if (caps.some((c) => c.attributes?.capabilityType === 'ASSOCIATED_DOMAINS')) log(`= Associated Domains is on for ${app.bundleId}`);
-  else {
-    await api('POST', '/v1/bundleIdCapabilities', {
-      data: { type: 'bundleIdCapabilities', attributes: { capabilityType: 'ASSOCIATED_DOMAINS' }, relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } } } },
-    });
-    log(`+ turned on Associated Domains for ${app.bundleId}`);
+  for (const [type, label] of CAPABILITIES) {
+    if (caps.some((c) => c.attributes?.capabilityType === type)) log(`= ${label} is on for ${app.bundleId}`);
+    else {
+      await api('POST', '/v1/bundleIdCapabilities', {
+        data: { type: 'bundleIdCapabilities', attributes: { capabilityType: type }, relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } } } },
+      });
+      log(`+ turned on ${label} for ${app.bundleId}`);
+    }
   }
   return bundle;
 }
@@ -226,6 +235,8 @@ export async function createDistributionCertificate(api, csrPem) {
 
 /** Everything a release run signs with: earlier runs' certificates revoked, a new one, fresh profiles. */
 export async function releaseSigning(api, apps, csrPem, { log = () => {}, onCertificate = () => {} } = {}) {
+  // A capability the app started using since provisioning (push) is turned on before profiles are made.
+  for (const app of apps) await ensureBundleId(api, app, log);
   for (const id of await leftoverCertificates(api, apps)) {
     if (await revokeCertificate(api, id)) log(`- revoked certificate ${id}, from an earlier run`);
   }

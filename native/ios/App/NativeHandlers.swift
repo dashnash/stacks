@@ -35,8 +35,41 @@ enum NativeHandlers {
             }
         }
 
-        router.register("auth.signedOut") { @MainActor _ in
+        // Signing out ends every session and the platform forgets this person's devices: forget
+        // the Google session, this device's key and the badge here too.
+        router.register("auth.signedOut") { @MainActor [weak shell] _ in
             GIDSignIn.sharedInstance.signOut()
+            DeviceKeychain.clear()
+            await shell?.push.setBadge(0)
+            return .object([:])
+        }
+
+        router.register("push.status") { @MainActor [weak shell] _ in
+            guard let shell else { throw BridgeError(.failed, "The app is closing") }
+            return .object([
+                "permission": .string(await shell.push.permission()),
+                "deviceId": DeviceKeychain.deviceId.map { JSONValue.string($0) } ?? JSONValue.null,
+            ])
+        }
+
+        // The page registers the token with its own session (POST /devices), then hands back the
+        // platform's device id and secret for the Keychain.
+        router.register("push.register") { @MainActor [weak shell] _ in
+            guard let shell else { throw BridgeError(.failed, "The app is closing") }
+            return try await shell.push.register()
+        }
+
+        router.register("push.saveDevice") { @MainActor args in
+            guard let id = args["id"]?.stringValue, !id.isEmpty, let secret = args["secret"]?.stringValue, !secret.isEmpty else {
+                throw BridgeError(.failed, "\"id\" and \"secret\" are required")
+            }
+            try DeviceKeychain.save(id: id, secret: secret)
+            return .object([:])
+        }
+
+        router.register("badge.set") { @MainActor [weak shell] args in
+            guard case .number(let count)? = args["count"] else { throw BridgeError(.failed, "\"count\" is required") }
+            await shell?.push.setBadge(Int(count))
             return .object([:])
         }
 

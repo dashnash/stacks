@@ -15,6 +15,10 @@ public enum BridgeProtocol {
         "app.info": .any,
         "auth.google": .auth,
         "auth.signedOut": .auth,
+        "badge.set": .auth,
+        "push.register": .auth,
+        "push.saveDevice": .auth,
+        "push.status": .auth,
         "share": .any,
     ]
 

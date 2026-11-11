@@ -17,6 +17,7 @@ Connect key goes straight into GitHub.
 | The two App Store Connect apps | you (Apple has no API for it) | Apple | No |
 | TestFlight groups that get every build, with you as tester | the **iOS provision** workflow | Apple | No |
 | Two iOS OAuth clients | you | `stacks.config.json` → `native.googleIosClientIds` | No |
+| APNs key (`.p8` + Key ID), for push | you | SSM SecureStrings, from your Mac (step 9) | **Yes** |
 
 ## 1. Your Team ID (not secret)
 
@@ -132,10 +133,38 @@ refresh, airplane mode shows "Can't reach Stacks" with a retry, and a link to
 `https://hello.test.iamdashnash.com` tapped in Messages opens in the app. Then DashyHQ. That is the
 N2 gate.
 
+## 9. Push notifications: the APNs key (once; secret)
+
+The platform sends notifications to Apple directly, signed with an APNs key. Until the key is in
+place everything works, but nothing reaches phones (the inbox still fills).
+
+1. [Certificates, Identifiers & Profiles → Keys](https://developer.apple.com/account/resources/authkeys/list)
+   → **+** → name `Stacks push` → tick **Apple Push Notifications service (APNs)** → **Configure** →
+   Environment **Sandbox & Production**, Key Restriction **Team Scoped (All Topics)** → **Save** →
+   **Continue** → **Register** → **Download** the `.p8` (only once) and note the **Key ID**.
+2. On your Mac, with your AWS admin profile (as in `docs/SETUP.md` §7), store it for both
+   environments (one key serves both apps):
+
+```bash
+for env in test prod; do
+  aws ssm put-parameter --name /stacks/$env/secrets/platform/APNS_KEY --type SecureString --value "$(cat ~/Downloads/AuthKey_<Key ID>.p8)" --overwrite --profile admin --region us-east-1
+  aws ssm put-parameter --name /stacks/$env/secrets/platform/APNS_KEY_ID --type SecureString --value '<Key ID>' --overwrite --profile admin --region us-east-1
+done
+```
+
+The platform picks it up within five minutes; no deploy. Then delete the `.p8` from Downloads (or
+keep it in your password manager). Push Notifications on the bundle IDs is turned on by the release
+job itself.
+
+Check: in DashyHQ Test, the home page offers **Turn on notifications**; allow it, then ask for access
+to a private app from another account. The approver's phone shows the request; tapping it opens
+the access page.
+
 ## Later
 
 - Builds expire after 90 days in TestFlight; the workflow rebuilds on the 1st of every month.
 - Nothing to rotate except the API key: revoke it on step 2's page and repeat step 3 if it leaks.
+  Same for the APNs key: revoke it on step 9's page, make a new one and store it again.
   Signing certificates live one release each. If a release ever fails saying the team has no room
   for another distribution certificate, revoke one you don't use in
   [Certificates, Identifiers & Profiles → Certificates](https://developer.apple.com/account/resources/certificates/list)

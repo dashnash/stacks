@@ -3,10 +3,11 @@ import StacksShellCore
 import SwiftUI
 
 /// DashyHQ: the Stacks platform in a native shell. Everything people see is the live website; the
-/// app adds native sign-in, the share sheet, universal links and (later) push and device features.
+/// app adds native sign-in, the share sheet, universal links, push and (later) device features.
 @main
 struct DashyHQApp: App {
-    @StateObject private var shell = Shell(settings: ShellSettings(info: Bundle.main.infoDictionary ?? [:]) ?? Shell.fallbackSettings)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    private var shell: Shell { appDelegate.shell }
 
     var body: some Scene {
         WindowGroup {

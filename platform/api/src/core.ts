@@ -21,6 +21,8 @@ import {
   type RegisteredApp,
   type UserItem,
 } from './model';
+// push.ts uses this module too; only functions cross, at call time, so the cycle is harmless.
+import { accessManagers, pushNotification, removeAllDevices, syncBadges } from './push';
 
 const DAY_MS = 86_400_000;
 
@@ -222,6 +224,8 @@ export async function signOutEverywhere(deps: PlatformDeps, userId: string): Pro
   await Promise.all(sessions.map((s) => deps.store.delete(s.PK, s.SK)));
   const grants = await grantsForUser(deps, userId);
   await Promise.all(grants.filter((g) => holdsRole(g.role)).map((g) => deps.appSessions.endUserSessions(g.app, userId).catch((err) => console.error(`Could not end ${g.app} sessions`, err))));
+  // Signed out on every device, so no device gets their notifications any more.
+  await removeAllDevices(deps, userId);
 }
 
 /* ---------- Apps ---------- */
@@ -343,6 +347,8 @@ export async function setGrant(
   // Their open sessions carry the old role: end them so the next request picks up the new one.
   if (holdsRole(from)) await deps.appSessions.endUserSessions(manifest.slug, userId);
   if (from === PENDING && holdsRole(role)) await notify(deps, userId, { text: `You now have access to ${manifest.name}.`, link: `https://${manifest.slug}.${deps.config.rootDomain}/`, app: manifest.slug });
+  // A request was handled: one fewer waiting on every approver's badge.
+  if (from === PENDING) await syncBadges(deps, await accessManagers(deps, manifest));
   const action = role === BLOCKED ? 'grant.block' : from === BLOCKED ? 'grant.unblock' : role === null ? 'grant.remove' : 'grant.set';
   await audit(deps, actor, manifest.slug, { action, label: shownName(target), details: { userId, from, to: role } });
   return next;
@@ -377,10 +383,13 @@ export async function requestAccess(deps: PlatformDeps, user: PlatformUser, mani
 
 /* ---------- Notifications ---------- */
 
+/** A new inbox item (links stored absolute, so a tapped push can open them), pushed to their devices. */
 export async function notify(deps: PlatformDeps, userId: string, n: Pick<Notification, 'text' | 'link' | 'app'>): Promise<void> {
   const at = deps.now().toISOString();
   const id = deps.newId();
-  await deps.store.put({ ...keys.notification(userId, at, id), id, at, read: false, ...n });
+  const link = n.link?.startsWith('#') ? `${deps.config.authOrigin}/${n.link}` : n.link;
+  await deps.store.put({ ...keys.notification(userId, at, id), id, at, read: false, ...n, ...(link ? { link } : {}) });
+  await pushNotification(deps, userId, { ...n, link });
 }
 
 export async function listNotifications(deps: PlatformDeps, userId: string, limit = 50): Promise<Notification[]> {
@@ -393,7 +402,10 @@ export async function listNotifications(deps: PlatformDeps, userId: string, limi
 
 export async function markNotificationsRead(deps: PlatformDeps, userId: string): Promise<void> {
   const items = await deps.store.query<NotificationItem>(`NOTIF#${userId}`);
-  await Promise.all(items.filter((i) => !i.read).map((i) => deps.store.put({ ...i, read: true })));
+  const unread = items.filter((i) => !i.read);
+  await Promise.all(unread.map((i) => deps.store.put({ ...i, read: true })));
+  // Read here: the icon on their phone clears too.
+  if (unread.length) await syncBadges(deps, [userId]);
 }
 
 /* ---------- Central audit feed ---------- */

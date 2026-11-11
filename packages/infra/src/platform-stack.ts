@@ -127,6 +127,9 @@ export class PlatformStack extends cdk.Stack {
         GOOGLE_CLIENT_ID: env.googleClientId,
         GOOGLE_IOS_CLIENT_IDS: (env.native?.googleIosClientIds ?? []).join(','),
         MIN_SHELL_VERSION: env.native?.minShellVersion ?? '1.0.0',
+        ...(env.native ? { IOS_BUNDLE_ID: env.native.iosBundleId, APPLE_TEAM_ID: env.native.appleTeamId } : {}),
+        // The APNs key (docs/IOS_SETUP.md): SecureStrings an admin puts here by hand, never in git or CI.
+        PLATFORM_SECRETS_PREFIX: `/stacks/${tag}/secrets/platform/`,
         PLATFORM_ADMINS: env.platformAdmins.join(','),
         ...(env.maintenance ? { STACKS_MAINTENANCE: '1' } : {}),
         NODE_OPTIONS: '--enable-source-maps',
@@ -139,6 +142,12 @@ export class PlatformStack extends cdk.Stack {
       new iam.PolicyStatement({ actions: ['ssm:GetParametersByPath'], resources: [arn('ssm', `parameter/stacks/${tag}/apps`), arn('ssm', `parameter/stacks/${tag}/apps/*`)] }),
     );
     this.handler.addToRolePolicy(new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [arn('secretsmanager', `secret:stacks-${tag}-app-*`)] }));
+    // The platform's own secrets (the APNs key), decrypted only through SSM. No app can read them:
+    // apps read /stacks/<env>/secrets/<slug>/, and "platform" is a reserved slug.
+    this.handler.addToRolePolicy(new iam.PolicyStatement({ actions: ['ssm:GetParameters'], resources: [arn('ssm', `parameter/stacks/${tag}/secrets/platform/*`)] }));
+    this.handler.addToRolePolicy(
+      new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: ['*'], conditions: { StringEquals: { 'kms:ViaService': `ssm.${this.region}.amazonaws.com` } } }),
+    );
     // Ending a user's sessions inside apps (revocation, sign-out everywhere): only session items.
     this.handler.addToRolePolicy(
       new iam.PolicyStatement({

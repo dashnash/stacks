@@ -65,6 +65,17 @@ describe('PlatformStack', () => {
     expect(policies).toContain('"dynamodb:LeadingKeys":["SESSION#*","USERSESSIONS#*"]');
   });
 
+  it('lets the Lambda read the APNs key from its own secrets path, decrypting only through SSM', () => {
+    const t = synth({ ...env, native: { appleTeamId: '47ZUZ59AHR', iosBundleId: 'com.dashyhq.stacks.test', googleIosClientIds: [], minShellVersion: '1.0.0' } });
+    t.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: { Variables: Match.objectLike({ PLATFORM_SECRETS_PREFIX: '/stacks/test/secrets/platform/', IOS_BUNDLE_ID: 'com.dashyhq.stacks.test', APPLE_TEAM_ID: '47ZUZ59AHR' }) },
+    });
+    const policies = JSON.stringify(t.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain(':parameter/stacks/test/secrets/platform/*');
+    expect(policies).toContain('ssm.us-east-1.amazonaws.com');
+    expect(JSON.stringify(t.findResources('AWS::SSM::Parameter'))).not.toContain('/secrets/');
+  });
+
   it('works without a hosted zone (CloudFront domain, no certificate)', () => {
     const t = synth({ ...env, hostedZoneId: '' });
     t.resourceCountIs('AWS::CertificateManager::Certificate', 0);
