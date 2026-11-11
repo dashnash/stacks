@@ -33,11 +33,12 @@ describe('Hello Board API', () => {
     expect(t.platform.audit.map((e) => e.action)).toEqual(['greeting.post', 'greeting.delete']);
   });
 
-  it('tells every other member about a new greeting (inbox and phones), never the author', async () => {
+  it('tells every member about a new greeting (inbox and phones), the author first', async () => {
     const t = harness();
     t.platform.members = [memberFor('max@x.dev', 'MEMBER', 'Max'), memberFor('ann@x.dev', 'MEMBER', 'Ann'), memberFor('bob@x.dev', 'MEMBER', 'Bob')];
     await t.call('POST', '/greetings', { as: { email: 'max@x.dev', name: 'Max' }, body: { text: 'hi everyone' } });
     expect(t.platform.notifications).toEqual([
+      { userId: testUserId('max@x.dev'), text: 'Max: hi everyone', link: undefined },
       { userId: testUserId('ann@x.dev'), text: 'Max: hi everyone', link: undefined },
       { userId: testUserId('bob@x.dev'), text: 'Max: hi everyone', link: undefined },
     ]);

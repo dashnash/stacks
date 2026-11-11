@@ -17,17 +17,20 @@ const PK = 'GREETINGS';
 export const MAX_NOTIFIED = 50;
 
 /**
- * Tell the other members someone said hi: their platform inbox and, with the iOS app, their phones
- * (people who find it noisy mute Hello in Settings › Notifications). Best-effort: a greeting is
+ * Tell every member someone said hi, the author too (so posting from the web is an easy way to see
+ * a notification on your own phone): their platform inbox and, with the iOS app, their phones.
+ * People who find it noisy mute Hello in Settings › Notifications. Best-effort: a greeting is
  * never lost because a notification failed.
  */
 async function tellEveryone(deps: AppDeps, greeting: Greeting): Promise<void> {
   try {
-    const others = (await appMembers(deps)).filter((m) => m.id !== greeting.authorId).slice(0, MAX_NOTIFIED);
+    const members = await appMembers(deps);
+    // The author first, so they always hear about their own post even on a busy board.
+    const everyone = [...members.filter((m) => m.id === greeting.authorId), ...members.filter((m) => m.id !== greeting.authorId)].slice(0, MAX_NOTIFIED);
     const text = `${greeting.authorName}: ${greeting.text}`.slice(0, 120);
-    const results = await Promise.allSettled(others.map((m) => deps.platform.notify(m.id, text)));
+    const results = await Promise.allSettled(everyone.map((m) => deps.platform.notify(m.id, text)));
     const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed) console.error(`Hello: ${failed} of ${others.length} notifications failed`);
+    if (failed) console.error(`Hello: ${failed} of ${everyone.length} notifications failed`);
   } catch (err) {
     console.error('Hello: could not notify members', err);
   }
