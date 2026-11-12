@@ -1,5 +1,8 @@
 # User-id cut-over (N1a)
 
+> **Historical.** The domain has since moved from `iamdashnash.com` to `dashnash.ninja` (#42); the old
+> addresses below only redirect now.
+
 Moves every person from email keys (`USER#<email>`, `GRANT#<email>`, `authorEmail`, …) to a stable
 user id (`u_…`), in the platform table and in every app's table, in one maintenance window.
 Background: `docs/NATIVE_APP_SPEC.md`, "Identity v2". Run every AWS command on your own machine with

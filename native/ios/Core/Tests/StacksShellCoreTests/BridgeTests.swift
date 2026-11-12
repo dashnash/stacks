@@ -19,11 +19,11 @@ private func field(_ v: JSONValue, _ path: String...) -> JSONValue {
     return cur
 }
 
-private let portal = FrameInfo(scheme: "https", host: "auth.iamdashnash.com", isMainFrame: true)
-private let anApp = FrameInfo(scheme: "https", host: "hello.iamdashnash.com", isMainFrame: true)
+private let portal = FrameInfo(scheme: "https", host: "auth.dashnash.ninja", isMainFrame: true)
+private let anApp = FrameInfo(scheme: "https", host: "hello.dashnash.ninja", isMainFrame: true)
 
 private func router() -> BridgeRouter {
-    let policy = NavigationPolicy(rootDomain: "iamdashnash.com", otherRoots: ["test.iamdashnash.com"])
+    let policy = NavigationPolicy(rootDomain: "dashnash.ninja", otherRoots: ["test.dashnash.ninja"])
     let r = BridgeRouter(authHost: policy.authHost, isOurHost: policy.isOurHost)
     r.register("app.info") { _ in .object(["version": .string("1.0.0")]) }
     r.register("auth.google") { _ in .object(["credential": .string("tok")]) }
@@ -66,9 +66,9 @@ final class BridgeRouterTests: XCTestCase {
         XCTAssertEqual(ok, .ok(.object(["credential": .string("tok")])))
         for frame in [
             anApp,
-            FrameInfo(scheme: "https", host: "auth.iamdashnash.com", isMainFrame: false),
-            FrameInfo(scheme: "http", host: "auth.iamdashnash.com", isMainFrame: true),
-            FrameInfo(scheme: "https", host: "auth.test.iamdashnash.com", isMainFrame: true),
+            FrameInfo(scheme: "https", host: "auth.dashnash.ninja", isMainFrame: false),
+            FrameInfo(scheme: "http", host: "auth.dashnash.ninja", isMainFrame: true),
+            FrameInfo(scheme: "https", host: "auth.test.dashnash.ninja", isMainFrame: true),
             FrameInfo(scheme: "https", host: "evil.example", isMainFrame: true),
         ] {
             let reply = await r.handle(BridgeRequest(name: "auth.google"), from: frame)
@@ -81,7 +81,7 @@ final class BridgeRouterTests: XCTestCase {
         let r = router()
         let shared = await r.handle(BridgeRequest(name: "share", args: ["url": .string("https://x")]), from: anApp)
         XCTAssertEqual(shared, .ok(.object(["completed": .bool(true)])))
-        let framed = await r.handle(BridgeRequest(name: "share", args: ["url": .string("https://x")]), from: FrameInfo(scheme: "https", host: "hello.iamdashnash.com", isMainFrame: false))
+        let framed = await r.handle(BridgeRequest(name: "share", args: ["url": .string("https://x")]), from: FrameInfo(scheme: "https", host: "hello.dashnash.ninja", isMainFrame: false))
         XCTAssertEqual(framed, .error(BridgeError(.forbidden, "Not allowed from this page")))
     }
 
@@ -96,7 +96,7 @@ final class BridgeRouterTests: XCTestCase {
         let garbage = await r.handle(body: ["nope": 1], from: anApp)
         XCTAssertEqual(garbage, .error(BridgeError(.failed, "Malformed bridge request")))
         // A call the protocol knows but this build has no handler for is unsupported, not a crash.
-        let bare = BridgeRouter(authHost: "auth.iamdashnash.com", isOurHost: { _ in true })
+        let bare = BridgeRouter(authHost: "auth.dashnash.ninja", isOurHost: { _ in true })
         let none = await bare.handle(BridgeRequest(name: "share"), from: anApp)
         guard case .error(let e3) = none else { return XCTFail() }
         XCTAssertEqual(e3.code, .unsupported)
@@ -104,7 +104,7 @@ final class BridgeRouterTests: XCTestCase {
 
     func testAHandlersOwnErrorsAreReportedAsFailed() async {
         struct Boom: LocalizedError { var errorDescription: String? { "Boom" } }
-        let r = BridgeRouter(authHost: "auth.iamdashnash.com", isOurHost: { _ in true })
+        let r = BridgeRouter(authHost: "auth.dashnash.ninja", isOurHost: { _ in true })
         r.register("app.info") { _ in throw Boom() }
         let reply = await r.handle(BridgeRequest(name: "app.info"), from: anApp)
         XCTAssertEqual(reply, .error(BridgeError(.failed, "Boom")))

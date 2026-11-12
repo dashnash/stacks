@@ -16,6 +16,6 @@ export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react(), siteUrl()],
   build: { outDir: 'dist', emptyOutDir: true },
-  // For local dev against a deployed copy: STACKS_API_PROXY=https://mofobookklub.test.iamdashnash.com
+  // For local dev against a deployed copy: STACKS_API_PROXY=https://mofobookklub.test.dashnash.ninja
   server: process.env.STACKS_API_PROXY ? { proxy: { '/api': { target: process.env.STACKS_API_PROXY, changeOrigin: true, secure: true } } } : {},
 });

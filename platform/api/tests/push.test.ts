@@ -24,7 +24,7 @@ describe('devices', () => {
     const h = createPlatformHarness();
     expect((await h.addDevice('ann@test.dev', 'not-hex')).status).toBe(400);
     expect((await h.addDevice('ann@test.dev', PHONE, { env: 'dev' })).status).toBe(400);
-    expect((await h.addDevice('ann@test.dev', PHONE, { bundleId: 'com.dashyhq.stacks' })).status).toBe(400);
+    expect((await h.addDevice('ann@test.dev', PHONE, { bundleId: 'ninja.dashnash.stacks' })).status).toBe(400);
     expect((await h.call('POST', '/devices', { body: { token: PHONE } })).status).toBe(401);
   });
 
@@ -68,7 +68,7 @@ describe('push', () => {
     expect(h.pushes).toEqual([
       {
         token: OWNER_PHONE,
-        device: expect.objectContaining({ env: 'production', bundleId: 'com.dashyhq.stacks.test' }),
+        device: expect.objectContaining({ env: 'production', bundleId: 'ninja.dashnash.stacks.test' }),
         message: {
           alert: { title: 'Book Club', body: expect.stringContaining('asked for access to Book Club') },
           badge: 2,
@@ -139,6 +139,17 @@ describe('push', () => {
     expect(first.url!.searchParams.get('error')).toBe('access_pending');
     expect((await h.call('GET', '/devices', { as: 'owner@test.dev' })).body.devices).toEqual([]);
     expect((await h.call('GET', '/devices', { as: 'root@test.dev' })).body.devices).toHaveLength(1);
+  });
+
+  it('forgets phones registered by another bundle ID (from before a move) instead of pushing them', async () => {
+    const h = createPlatformHarness();
+    await h.addDevice('owner@test.dev', OWNER_PHONE);
+    await h.addDevice('owner@test.dev', tok(4));
+    h.deps.config.iosBundleId = 'ninja.dashnash.stacks.next'; // the environment moves to a new app
+    await h.addDevice('owner@test.dev', tok(5), { bundleId: 'ninja.dashnash.stacks.next' });
+    await h.authorize('club', 'ann@test.dev');
+    expect(h.pushes.map((p) => p.device.token)).toEqual([tok(5)]);
+    expect((await h.call('GET', '/devices', { as: 'owner@test.dev' })).body.devices).toHaveLength(1);
   });
 
   it('pushes app notifications with the app\'s own link', async () => {
@@ -249,9 +260,9 @@ describe('APNs', () => {
     const calls: { env: string; path: string; headers: Record<string, string>; body: string }[] = [];
     let now = 1_700_000_000_000;
     const sender = createApnsSender({ key: async () => key, now: () => now, post: async (env, path, headers, body) => (calls.push({ env, path, headers, body }), { status: 200, body: '' }) });
-    const device = { token: PHONE, env: 'sandbox' as const, bundleId: 'com.dashyhq.stacks.test' };
+    const device = { token: PHONE, env: 'sandbox' as const, bundleId: 'ninja.dashnash.stacks.test' };
     expect(await sender.send(device, { alert: { title: 'T', body: 'B' }, badge: 1 })).toBe('ok');
-    expect(calls[0]).toMatchObject({ env: 'sandbox', path: `/3/device/${PHONE}`, headers: { 'apns-topic': 'com.dashyhq.stacks.test', 'apns-push-type': 'alert', 'apns-priority': '10' } });
+    expect(calls[0]).toMatchObject({ env: 'sandbox', path: `/3/device/${PHONE}`, headers: { 'apns-topic': 'ninja.dashnash.stacks.test', 'apns-push-type': 'alert', 'apns-priority': '10' } });
     await sender.send(device, { badge: 0 });
     expect(calls[1]!.headers).toMatchObject({ 'apns-push-type': 'alert', 'apns-priority': '5', authorization: calls[0]!.headers.authorization });
     now += 41 * 60_000;

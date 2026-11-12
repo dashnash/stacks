@@ -155,11 +155,19 @@ describe('access grid', () => {
   });
 });
 
+describe('branding', () => {
+  it('calls the portal DashyHQ in the header, with its mark', async () => {
+    renderPortal();
+    const brand = await screen.findByRole('link', { name: 'DashyHQ' });
+    expect(brand.querySelector('img')?.getAttribute('src')).toMatch(/favicon\.svg$/);
+  });
+});
+
 describe('footer', () => {
   it('ends every page with the build (shared <BuildVersion />)', async () => {
     renderPortal();
     const footer = await screen.findByRole('contentinfo');
-    expect(footer).toHaveTextContent('Stacks');
+    expect(footer).toHaveTextContent(`© ${new Date().getFullYear()} DashyHQ`);
     expect(footer.querySelector('[data-stacks-build]')).not.toBeNull();
   });
 });

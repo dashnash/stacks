@@ -45,7 +45,7 @@ From the brainstorm on 2026-11-09.
 | Why native | Learn iOS publishing, App Store presence, native sign-in, reliable push. Web Push for Home Screen web apps was considered and is not the plan; it may come later for desktop browsers on the same device registry |
 | Distribution | TestFlight first; designed to the App Store bar so a public listing follows |
 | Scope | One universal app for the whole platform (iPhone + iPad) |
-| Name / bundle ID | App name **DashyHQ** / `com.dashyhq.stacks`; staging **DashyHQ Test** / `com.dashyhq.stacks.test` |
+| Name / bundle ID | App name **DashyHQ** / `ninja.dashnash.stacks`; staging **DashyHQ Test** / `ninja.dashnash.stacks.test` |
 | Apple account | Paid individual Developer Program membership, active (seller shows as Dashiell Nash). Covers TestFlight, CI uploads, push, Sign in with Apple and universal links |
 | Minimum OS | iOS/iPadOS 26 |
 | Staging app | Yes: a second app on `*.test.<domain>`, own bundle ID, TestFlight internal testers only |
@@ -65,6 +65,7 @@ From the brainstorm on 2026-11-09.
 | Dev machine | Dash has a Mac with Xcode (local simulator and device debugging); CI does signing and uploads |
 | CI | macOS runner only when the app itself changes (merge to `main` → TestFlight; PR → one unsigned simulator build), plus manual dispatch and a rebuild every two months; everything else (Core tests, protocol, scripts) on Linux |
 | Project file | Generated from a text spec (XcodeGen `project.yml`), so it is reviewable and editable from Linux sessions |
+| Domain move (2026-11-11, #42) | Root moves from `iamdashnash.com` to `dashnash.ninja` (staging `test.dashnash.ninja`); bundle IDs from `com.dashyhq.stacks(.test)` to `ninja.dashnash.stacks(.test)` (new App Store Connect records and iOS OAuth clients). Everyone signs in again; push devices registered under the old bundle IDs are not migrated: the Platform API forgets any device whose bundle ID is not the configured one the next time it pushes to that person (APNs would still deliver to them, since the team key covers every bundle ID). The old domain only 301-redirects, so the app treats it as external (Safari). New ninja-mask icon; product name stays DashyHQ |
 
 ## Architecture
 
@@ -395,8 +396,8 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 
 | App | Bundle ID | Domain | TestFlight audience |
 | --- | --- | --- | --- |
-| dashyhq | `com.dashyhq.stacks` | `<domain>` | Internal (Dash), then an external group by invite link for members (Beta App Review on each new version) |
-| DashyHQ Test | `com.dashyhq.stacks.test` | `test.<domain>` | Internal only |
+| dashyhq | `ninja.dashnash.stacks` | `<domain>` | Internal (Dash), then an external group by invite link for members (Beta App Review on each new version) |
+| DashyHQ Test | `ninja.dashnash.stacks.test` | `test.<domain>` | Internal only |
 
 **`ios.yml`**
 
@@ -453,7 +454,7 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 
 ## One-time setup (Dash, runbook in `docs/IOS_SETUP.md`)
 
-1. Apple Developer: register the App IDs `com.dashyhq.stacks` and `.test` (plus their widget
+1. Apple Developer: register the App IDs `ninja.dashnash.stacks` and `.test` (plus their widget
    extensions and an App Group) with Push Notifications, Sign in with Apple, Associated Domains,
    Game Center and App Groups.
 2. App Store Connect: create the two apps, TestFlight groups, an API key for CI (→ GitHub
@@ -515,7 +516,7 @@ Gate: flick-to-flip on a real iPhone, keyboard/drag emulation in demo mode, and 
 
 Defaulted as written above; change any by editing this spec.
 
-- [x] **App name**: DashyHQ; bundle IDs stay lower case (`com.dashyhq.stacks`).
+- [x] **App name**: DashyHQ; bundle IDs stay lower case (`ninja.dashnash.stacks`).
 - [x] **Email to apps**: none by default; Book Club doesn't need member emails.
 - [x] **Account merge**: self-serve from Settings (aliases, see Identity v2).
 - [x] **Developer Program**: paid individual membership already active; nothing blocks TestFlight.

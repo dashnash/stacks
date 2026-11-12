@@ -13,7 +13,7 @@ For each environment: `rootDomain` (apps live at `<slug>.<rootDomain>`), the Rou
 | Value | Why it is safe to commit |
 | --- | --- |
 | `rootDomain` | Public: it is in every URL. |
-| `hostedZoneId` | An identifier, not a credential. It does nothing without AWS credentials for your account. |
+| `hostedZoneId` | An identifier, not a credential. It does nothing without AWS credentials for your account. Or `"lookup"`: CI finds the ID by `hostedZoneName` at deploy time. |
 | `googleClientId` | Public by design: Google's sign-in button sends it to every visitor's browser. Stacks uses Google's ID-token flow, which needs **no client secret**. |
 | `platformAdmins` | Email addresses (personal, not secret). The repo is private; move them to a GitHub variable if you prefer. |
 
@@ -24,12 +24,22 @@ app's Platform API credential is generated inside AWS Secrets Manager by its sta
 wildcard certificate (`*.<rootDomain>`) and the `auth.` and app hostnames in that zone. With it
 empty, stacks still synth and deploy on CloudFront's own domains, which is only useful for smoke tests.
 
+With `"hostedZoneId": "lookup"` the deploy workflows resolve the zone by `hostedZoneName` before
+synth (`scripts/lookup-zones.mjs`, through the read-only `cdk-stktest-lookup-role`; it fails unless
+exactly one public zone has that name) and pass it as `-c hostedZoneIds=<name>=<id>`. Synth without
+it (sessions, `ci.yml`) uses the placeholder `ZLOOKUPPLACEHOLDER`, which is never deployed:
+deploy builds pass `-c requireZones=true`.
+
+`legacyRedirects` (optional, per environment) lists old roots kept only as 301 redirects to
+`rootDomain`, e.g. `[{ "rootDomain": "test.old.example", "hostedZoneId": "Z…", "hostedZoneName": "old.example" }]`.
+They get their own stack, `stacks-<env>-legacy-redirect` (see `docs/PLATFORM_SPEC.md`).
+
 ## 1b. Google OAuth client (one per environment)
 
 In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an **OAuth client
 ID** of type **Web application** for each environment. Under **Authorised JavaScript origins** add
-exactly one origin: `https://auth.<rootDomain>` (e.g. `https://auth.iamdashnash.com` and
-`https://auth.test.iamdashnash.com`). No redirect URIs and no client secret are needed; apps never
+exactly one origin: `https://auth.<rootDomain>` (e.g. `https://auth.dashnash.ninja` and
+`https://auth.test.dashnash.ninja`). No redirect URIs and no client secret are needed; apps never
 talk to Google. Put each client ID in `googleClientId`.
 
 ## 2. Bootstrap production and deploy the CI stack

@@ -59,7 +59,7 @@ the recommended one first, marked "(Recommended)". The owner can always type "Ot
   Don't ask what the code, the spec or a sensible default answers. Decide those and note them.
 - **Lead with what blocks everything else** (a typo in the title, the exact target, does X already
   exist), then the shape of the change, then the edges (migration, old data, failure, rollout).
-- **Make options real**: name the actual files, IDs and values you found ("`com.dashyhq.stacks` →
+- **Make options real**: name the actual files, IDs and values you found ("`ninja.dashnash.stacks` →
   `ninja.dashnash.stacks`"), and put the trade-off in the description ("means new App Store records").
 - If an answer opens a new decision, ask about it in the next round. Usually 2–3 rounds is enough.
   Stop when an agent could build it without asking anything. Don't pad.

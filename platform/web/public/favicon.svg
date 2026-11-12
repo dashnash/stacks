@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- DashyHQ app icon master: an original ninja-mask mark. Edit this, then run
+       node scripts/render-icons.mjs to remake the PNGs and the portal favicon. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff9a6e"/>
+      <stop offset="1" stop-color="#f26b5b"/>
+    </linearGradient>
+    <clipPath id="hood"><circle cx="492" cy="540" r="318"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- headband tails, flying out behind the knot -->
+  <path d="M770 452 C 850 400, 900 330, 968 300 C 930 380, 880 450, 800 500 Z" fill="#1d1a48"/>
+  <path d="M780 500 C 870 500, 930 540, 980 600 C 900 590, 840 570, 772 548 Z" fill="#1d1a48"/>
+  <!-- the hood -->
+  <circle cx="492" cy="540" r="318" fill="#1d1a48"/>
+  <!-- the eye slit, cut across the hood -->
+  <g clip-path="url(#hood)">
+    <path d="M150 452 Q 492 404 834 452 L 834 608 Q 492 648 150 608 Z" fill="#fdd0a2"/>
+  </g>
+  <!-- the knot -->
+  <circle cx="792" cy="492" r="46" fill="#1d1a48"/>
+  <!-- eyes: stern, slanted -->
+  <path d="M318 506 L 458 540 Q 444 598 384 598 Q 322 594 318 506 Z" fill="#1d1a48"/>
+  <path d="M666 506 L 526 540 Q 540 598 600 598 Q 662 594 666 506 Z" fill="#1d1a48"/>
+  <circle cx="404" cy="562" r="14" fill="#ffffff"/>
+  <circle cx="586" cy="562" r="14" fill="#ffffff"/>
+</svg>

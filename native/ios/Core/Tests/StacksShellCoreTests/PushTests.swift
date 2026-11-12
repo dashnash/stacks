@@ -14,16 +14,16 @@ final class PushTests: XCTestCase {
     }
 
     func testATappedNotificationOpensItsHttpsLinkOnly() {
-        XCTAssertEqual(Push.url(from: ["url": "https://auth.iamdashnash.com/#/admin/access?app=club"])?.absoluteString, "https://auth.iamdashnash.com/#/admin/access?app=club")
+        XCTAssertEqual(Push.url(from: ["url": "https://auth.dashnash.ninja/#/admin/access?app=club"])?.absoluteString, "https://auth.dashnash.ninja/#/admin/access?app=club")
         XCTAssertNil(Push.url(from: ["url": "javascript:alert(1)"]))
-        XCTAssertNil(Push.url(from: ["url": "http://hello.iamdashnash.com/"]))
+        XCTAssertNil(Push.url(from: ["url": "http://hello.dashnash.ninja/"]))
         XCTAssertNil(Push.url(from: ["aps": ["badge": 1]]))
     }
 
     func testSettingsReadThePushEnvironment() {
-        let settings = ShellSettings(info: ["StacksRootDomain": "iamdashnash.com", "StacksPushEnvironment": "production"])
+        let settings = ShellSettings(info: ["StacksRootDomain": "dashnash.ninja", "StacksPushEnvironment": "production"])
         XCTAssertEqual(settings?.pushEnvironment, "production")
-        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "iamdashnash.com"])?.pushEnvironment, "sandbox")
+        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "dashnash.ninja"])?.pushEnvironment, "sandbox")
     }
 }
 
@@ -40,8 +40,8 @@ final class PushActionTests: XCTestCase {
     }
 
     func testThePressGoesToThePortalHostWithTheDeviceSecret() throws {
-        XCTAssertEqual(PushAction.url(authHost: "auth.iamdashnash.com", deviceId: "5f2c-8e1a")?.absoluteString, "https://auth.iamdashnash.com/api/devices/5f2c-8e1a/actions")
-        XCTAssertEqual(PushAction.url(authHost: "auth.iamdashnash.com", deviceId: "../x")?.absoluteString, "https://auth.iamdashnash.com/api/devices/..%2Fx/actions")
+        XCTAssertEqual(PushAction.url(authHost: "auth.dashnash.ninja", deviceId: "5f2c-8e1a")?.absoluteString, "https://auth.dashnash.ninja/api/devices/5f2c-8e1a/actions")
+        XCTAssertEqual(PushAction.url(authHost: "auth.dashnash.ninja", deviceId: "../x")?.absoluteString, "https://auth.dashnash.ninja/api/devices/..%2Fx/actions")
         let body = try PushAction.body(secret: "sdv_1", token: "spa_2", action: "approve")
         XCTAssertEqual(String(data: body, encoding: .utf8), #"{"action":"approve","secret":"sdv_1","token":"spa_2"}"#)
     }
@@ -49,8 +49,8 @@ final class PushActionTests: XCTestCase {
 
 final class BuildCommitTests: XCTestCase {
     func testSettingsReadTheCommitCIBuiltFrom() {
-        let ci = ShellSettings(info: ["StacksRootDomain": "iamdashnash.com", "StacksGitCommit": "0123456789abcdef0123456789abcdef01234567"])
+        let ci = ShellSettings(info: ["StacksRootDomain": "dashnash.ninja", "StacksGitCommit": "0123456789abcdef0123456789abcdef01234567"])
         XCTAssertEqual(ci?.commit, "0123456789abcdef0123456789abcdef01234567")
-        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "iamdashnash.com"])?.commit, "")
+        XCTAssertEqual(ShellSettings(info: ["StacksRootDomain": "dashnash.ninja"])?.commit, "")
     }
 }

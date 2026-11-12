@@ -82,7 +82,7 @@ export function createPlatformHarness(
       authOrigin: 'https://auth.stacks.test',
       googleClientId: 'gid',
       platformAdmins: opts.admins ?? ['root@test.dev'],
-      iosBundleId: 'com.dashyhq.stacks.test',
+      iosBundleId: 'ninja.dashnash.stacks.test',
     },
     push: {
       send: async (device, message) => {
@@ -166,7 +166,7 @@ export function createPlatformHarness(
 
   /** Register a phone for someone, as the portal does with what the app hands it. */
   async function addDevice(email: string, token: string, extra: Record<string, unknown> = {}): Promise<Res> {
-    return call('POST', '/devices', { as: email, body: { token, env: 'production', bundleId: 'com.dashyhq.stacks.test', deviceName: `${email}'s iPhone`, ...extra } });
+    return call('POST', '/devices', { as: email, body: { token, env: 'production', bundleId: 'ninja.dashnash.stacks.test', deviceName: `${email}'s iPhone`, ...extra } });
   }
 
   return { app, deps, store, revoked, pushes, signIn, call, authorize, advance, idOf, setRole, addDevice };

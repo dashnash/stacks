@@ -10,7 +10,8 @@ share sheet, universal links, and later push and device features. Spec: `docs/NA
 | `project.yml` | XcodeGen spec; the `.xcodeproj` is generated, not committed |
 | `Config/*.xcconfig` | Per-environment settings, **generated** from `stacks.config.json` by `node scripts/ios-xcconfig.mjs` (CI fails if stale) |
 | `VERSION` | The marketing version; CI sets the build number |
-| `App/Assets.xcassets` | The app icon (a generated placeholder: replace `AppIcon-1024.png`, 1024×1024, no transparency) and the staging app's `AppIcon-Test` (the same with a yellow TEST band along the bottom; remake it if the icon changes) |
+| `App/Icon/icon.svg` | The icon's master (an original ninja mask). Edit it, then run `node scripts/render-icons.mjs`: it remakes both PNGs below and the portal's favicon |
+| `App/Assets.xcassets` | The app icon (`AppIcon-1024.png`, 1024×1024, opaque) and the staging app's `AppIcon-Test` (the same with a yellow TEST band along the bottom), both rendered from `App/Icon/icon.svg` |
 | `../protocol/v1.json` | The bridge contract, shared with `@stacks/native` |
 
 ## On a Mac
@@ -23,7 +24,7 @@ brew install xcodegen
 node scripts/ios-xcconfig.mjs && xcodegen generate --spec native/ios/project.yml && open native/ios/DashyHQ.xcodeproj
 ```
 
-Schemes: **DashyHQ Test** (staging, `*.test.iamdashnash.com`) and **DashyHQ** (production; Run uses
+Schemes: **DashyHQ Test** (staging, `*.test.dashnash.ninja`) and **DashyHQ** (production; Run uses
 Debug with staging settings, Archive uses Production). Needs Xcode 26 (iOS 26 is the minimum).
 Native Google sign-in answers "isn't set up in this build yet" until `googleIosClientIds` is in
 `stacks.config.json`; the first entry for an environment is that app's iOS client.

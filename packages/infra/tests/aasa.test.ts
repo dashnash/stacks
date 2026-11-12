@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { appleAppSiteAssociation, portalRouterCode, siteRouterCode, type EnvConfig } from '../src/index';
 
 const base: EnvConfig = { rootDomain: 'example.com', hostedZoneId: 'Z1', googleClientId: 'g', platformAdmins: [] };
-const withApp: EnvConfig = { ...base, native: { appleTeamId: 'ABCDE12345', iosBundleId: 'com.dashyhq.stacks' } };
+const withApp: EnvConfig = { ...base, native: { appleTeamId: 'ABCDE12345', iosBundleId: 'ninja.dashnash.stacks' } };
 
 /** Run a CloudFront Function's source the way CloudFront would, for one request. */
 function run(code: string, uri: string, host = 'hello.example.com') {
@@ -17,7 +17,7 @@ describe('apple-app-site-association', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type'].value).toBe('application/json');
       const doc = JSON.parse(res.body.data);
-      expect(doc.applinks.details[0].appIDs).toEqual(['ABCDE12345.com.dashyhq.stacks']);
+      expect(doc.applinks.details[0].appIDs).toEqual(['ABCDE12345.ninja.dashnash.stacks']);
       expect(doc.applinks.details[0].components.at(-1)).toEqual({ '/': '*' });
       expect(doc.applinks.details[0].components).toContainEqual({ '/': '/api/*', exclude: true });
       // A sign-in started in Safari or Chrome stays there (the app opening it can only fail).

@@ -12,8 +12,8 @@ public enum NavigationDecision: Equatable {
 public struct NavigationPolicy: Equatable {
     /// This environment's root domain: the portal is `auth.<root>`, apps are `<slug>.<root>`.
     public let rootDomain: String
-    /// Roots of other environments under this one (production's `iamdashnash.com` contains staging's
-    /// `test.iamdashnash.com`): their links open in Safari, not in this app.
+    /// Roots of other environments under this one (production's `dashnash.ninja` contains staging's
+    /// `test.dashnash.ninja`): their links open in Safari, not in this app.
     public let otherRoots: [String]
 
     public init(rootDomain: String, otherRoots: [String] = []) {

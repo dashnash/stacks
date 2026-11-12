@@ -84,8 +84,8 @@ function fakeAsc(opts: { apps?: { bundleId: string; name: string }[]; testers?: 
 
 const apps = appsFromConfig({
   environments: {
-    production: { native: { iosBundleId: 'com.dashyhq.stacks' } },
-    staging: { native: { iosBundleId: 'com.dashyhq.stacks.test' } },
+    production: { native: { iosBundleId: 'ninja.dashnash.stacks' } },
+    staging: { native: { iosBundleId: 'ninja.dashnash.stacks.test' } },
   },
 });
 
@@ -105,8 +105,8 @@ describe('App Store Connect provisioning', () => {
     const log: string[] = [];
     expect(await provision({ api: asc.api, apps, log: (l: string) => log.push(l) })).toEqual({ appsMissing: 2 });
     expect(asc.of('bundleIds').map((b) => [b.attributes.identifier, b.attributes.name, b.attributes.platform])).toEqual([
-      ['com.dashyhq.stacks', 'DashyHQ', 'IOS'],
-      ['com.dashyhq.stacks.test', 'DashyHQ Test', 'IOS'],
+      ['ninja.dashnash.stacks', 'DashyHQ', 'IOS'],
+      ['ninja.dashnash.stacks.test', 'DashyHQ Test', 'IOS'],
     ]);
     expect(asc.of('caps').map((c) => c.attributes.capabilityType)).toEqual([
       'ASSOCIATED_DOMAINS', 'PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH',
@@ -120,7 +120,7 @@ describe('App Store Connect provisioning', () => {
   });
 
   it('then makes each app an automatic internal TestFlight group with the tester, and a re-run changes nothing', async () => {
-    const asc = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }], testers: ['dash@example.com'] });
+    const asc = fakeAsc({ apps: [{ bundleId: 'ninja.dashnash.stacks', name: 'DashyHQ' }, { bundleId: 'ninja.dashnash.stacks.test', name: 'DashyHQ Test' }], testers: ['dash@example.com'] });
     expect(await provision({ api: asc.api, apps, testerEmail: 'dash@example.com', log: () => {} })).toEqual({ appsMissing: 0 });
     const groups = asc.of('betaGroups');
     expect(groups.map((g) => g.attributes)).toEqual([
@@ -139,7 +139,7 @@ describe('App Store Connect provisioning', () => {
     const asc = fakeAsc();
     await provision({ api: asc.api, apps: [apps[1]!], log: () => {} }); // only ….test
     await provision({ api: asc.api, apps: [apps[0]!], log: () => {} }); // the GET also returns ….test
-    expect(asc.of('bundleIds').map((b) => b.attributes.identifier).sort()).toEqual(['com.dashyhq.stacks', 'com.dashyhq.stacks.test']);
+    expect(asc.of('bundleIds').map((b) => b.attributes.identifier).sort()).toEqual(['ninja.dashnash.stacks', 'ninja.dashnash.stacks.test']);
   });
 
   it("reports Apple's error details", async () => {
@@ -155,15 +155,15 @@ describe('App Store Connect provisioning', () => {
 
   it('tells the release job which app records are still missing', async () => {
     const none = fakeAsc();
-    expect((await missingApps(none.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['com.dashyhq.stacks', 'com.dashyhq.stacks.test']);
-    const one = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
-    expect((await missingApps(one.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['com.dashyhq.stacks']);
-    const both = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
+    expect((await missingApps(none.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['ninja.dashnash.stacks', 'ninja.dashnash.stacks.test']);
+    const one = fakeAsc({ apps: [{ bundleId: 'ninja.dashnash.stacks.test', name: 'DashyHQ Test' }] });
+    expect((await missingApps(one.api, apps)).map((a: { bundleId: string }) => a.bundleId)).toEqual(['ninja.dashnash.stacks']);
+    const both = fakeAsc({ apps: [{ bundleId: 'ninja.dashnash.stacks', name: 'DashyHQ' }, { bundleId: 'ninja.dashnash.stacks.test', name: 'DashyHQ Test' }] });
     expect(await missingApps(both.api, apps)).toEqual([]);
   });
 
   it('adds a new tester to both apps (the first real run failed here on the second app)', async () => {
-    const asc = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }, { bundleId: 'com.dashyhq.stacks.test', name: 'DashyHQ Test' }] });
+    const asc = fakeAsc({ apps: [{ bundleId: 'ninja.dashnash.stacks', name: 'DashyHQ' }, { bundleId: 'ninja.dashnash.stacks.test', name: 'DashyHQ Test' }] });
     const log: string[] = [];
     await provision({ api: asc.api, apps, testerEmail: 'dash@example.com', log: (l: string) => log.push(l) });
     expect(asc.of('betaTesters')).toHaveLength(1);
@@ -173,7 +173,7 @@ describe('App Store Connect provisioning', () => {
   });
 
   it("finishes the run if Apple won't take the tester at all, saying how to add them by hand", async () => {
-    const asc = fakeAsc({ apps: [{ bundleId: 'com.dashyhq.stacks', name: 'DashyHQ' }] });
+    const asc = fakeAsc({ apps: [{ bundleId: 'ninja.dashnash.stacks', name: 'DashyHQ' }] });
     const refusing = async (method: string, path: string, body?: unknown) => {
       if (method === 'POST' && path === '/v1/betaTesters') throw new Error('POST /v1/betaTesters → 409 Not a team member');
       return asc.api(method, path, body);
@@ -196,8 +196,8 @@ describe('App Store Connect provisioning', () => {
       ['DashyHQ Test CI App Store', 'IOS_APP_STORE', 'cert-1'],
     ]);
     expect(made.map((p: any) => [p.bundleId, p.name])).toEqual([
-      ['com.dashyhq.stacks', 'DashyHQ CI App Store'],
-      ['com.dashyhq.stacks.test', 'DashyHQ Test CI App Store'],
+      ['ninja.dashnash.stacks', 'DashyHQ CI App Store'],
+      ['ninja.dashnash.stacks.test', 'DashyHQ Test CI App Store'],
     ]);
     expect(made.every((p: any) => p.uuid && Buffer.from(p.content, 'base64').toString().startsWith('profile'))).toBe(true);
   });
@@ -232,7 +232,7 @@ describe('App Store Connect provisioning', () => {
     for (const c of asc.of('caps').filter((c) => c.attributes.capabilityType === 'PUSH_NOTIFICATIONS')) asc.rows.splice(asc.rows.indexOf(c), 1);
     const log: string[] = [];
     await releaseSigning(asc.api, apps, 'CSR', { log: (l: string) => log.push(l) });
-    expect(log).toContain('+ turned on Push Notifications for com.dashyhq.stacks');
+    expect(log).toContain('+ turned on Push Notifications for ninja.dashnash.stacks');
     expect(asc.calls.indexOf('POST /v1/bundleIdCapabilities')).toBeLessThan(asc.calls.lastIndexOf('POST /v1/profiles'));
   });
 

@@ -39,7 +39,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | --- | --- |
 | Cloud | AWS, one account, us-east-1, CDK, serverless only |
 | Identity | Google sign-in only (consumer Gmail allowed) |
-| Domains | Apps on subdomains `<slug>.<domain>`; root domain is one config value (today `iamdashnash.com`), one at a time |
+| Domains | Apps on subdomains `<slug>.<domain>`; root domain is one config value (`dashnash.ninja`, staging `test.dashnash.ninja`; moved from `iamdashnash.com` in #42), one at a time. An old root is kept only as 301 redirects (`legacyRedirects`) |
 | Federation | Portal at `auth.<domain>` holds the master session; each app gets its own session through a silent redirect handshake |
 | Stack tenancy | One `platform` stack + one CDK stack per app (option A) |
 | Repo | New monorepo `dashnash/stacks` |
@@ -89,9 +89,10 @@ flowchart TB
 
 Apps reach the platform only through the Platform API, never its table, so one faulty app cannot read another app's data or sessions.
 
-- **Stack names**: `stacks-<prod|test>-platform`, `stacks-<prod|test>-app-<slug>`, and the one-time `stacks-ci`. The `stacks-test-` prefix is what the staging guardrails scope to.
+- **Stack names**: `stacks-<prod|test>-platform`, `stacks-<prod|test>-app-<slug>`, `stacks-<prod|test>-legacy-redirect` (only with `legacyRedirects`), and the one-time `stacks-ci`. The `stacks-test-` prefix is what the staging guardrails scope to.
 - **Platform stack**: Route 53 records for `auth.` and the portal host, the ACM wildcard certificate, the platform table, the Platform API Lambda, the portal SPA, and SSM parameters (`/stacks/<env>/...`) that app stacks read. Cross-stack values go through SSM, not CloudFormation exports, so app stacks deploy and delete independently.
 - **App stack**: CloudFront + private S3 (OAC) at `<slug>.<domain>`, HTTP API at `/api/*` on the same origin, one arm64 Node 22 Lambda, one DynamoDB single table (PK, SK, GSI1, TTL), buckets only for enabled modules, its own DNS alias.
+- **Legacy-redirect stack**: per old root in `legacyRedirects`, one CloudFront distribution holding `<old>` and `*.<old>` (own ACM certificate and alias records in the old zone) whose viewer-request function 301s every request to the same host label + path + query on the new root (bare old root → `auth.`; anything else, e.g. a lookalike host, → the portal's front page). It serves nothing else: no content, API or apple-app-site-association. It depends on the platform and every app stack, so `cdk deploy --all` deploys it last, after they have dropped the old names (a CloudFront alias can only be on one distribution).
 - **Limits**: 200 CloudFront distributions per account covers the few-dozen-app horizon. A new app's first deploy takes about 5 minutes for CloudFront; updates take 1–2.
 - **Cost**: everything is on-demand; an idle app costs cents per month.
 
@@ -300,7 +301,7 @@ stacks/
   .claude/skills/new-app/    # the /new-app skill (interview, scaffold, build, verify, ship)
   .github/CODEOWNERS         # @dashnash owns packages/, infra/, platform/, .github/
   .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand)
-  stacks.config.json         # rootDomain, hostedZoneId, googleClientId per env, PLATFORM_ADMINS
+  stacks.config.json         # rootDomain, hostedZoneId (or "lookup"), legacyRedirects, googleClientId per env, PLATFORM_ADMINS
   platform/                  # the platform app itself
     api/                     # auth, handshake, grants, registry, audit feed, notifications
     web/                     # portal: catalog, profile, access grid, admin
@@ -377,14 +378,14 @@ Developers and Claude sessions never hold AWS credentials; anyone with push acce
 | Control | Rule |
 | --- | --- |
 | Workflow from `main` | `deploy-test.yml` is always dispatched on `main`; the branch is only an input. The staging IAM role trusts only `repo:dashnash/stacks:environment:staging`, and the `staging` GitHub environment allows only `main`. |
-| Build and deploy split | Job 1 checks out the branch, installs, tests and synthesizes the cloud assembly with no AWS credentials (no CDK context lookups; config comes from `stacks.config.json`). Job 2 alone gets credentials and runs no app code: only `cdk deploy --app <assembly>`. |
+| Build and deploy split | Job 1 checks out the branch, installs, tests and synthesizes the cloud assembly with no AWS credentials (no CDK context lookups; config comes from `stacks.config.json`). Zone IDs marked `"lookup"` come from a job before it that runs only `main`'s `scripts/lookup-zones.mjs` (read-only, through staging's CDK lookup role) and passes them as `-c hostedZoneIds=…`. Job 2 alone gets credentials and runs no app code: only `cdk deploy --app <assembly>`. |
 | Assembly check | Job 2 refuses an assembly containing any stack other than `stacks-test-app-<slug>`, or IAM resources outside the allowed name patterns. |
 | Permissions boundary | Staging is bootstrapped with its own qualifier (`stktest`) and the execution policy `stacks-test-cfn-exec` instead of admin; every role a staging deploy creates must carry the `stacks-test-boundary` permissions boundary; both deny anything on resources tagged `stacks:env=production`, and no IAM users or keys can be created. |
 | Production | The prod role trusts only the `production` environment, which allows only `main`. |
 
 One AWS account is kept on purpose; these controls are the isolation. If a Claude session cannot dispatch workflows through its GitHub proxy, the creator runs the same `gh workflow run` command, or the GitHub Actions page's "Run workflow" button, themselves; a push-triggered fallback would run the branch's own workflow file and is not allowed. One-time AWS and GitHub setup: `docs/SETUP.md`.
 
-**Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId`, `googleClientId`, `platformAdmins`, `maintenance`, and `native` (the iOS app: Team ID, bundle ID, iOS OAuth client IDs, oldest supported app version; see `docs/NATIVE_APP_SPEC.md`). Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
+**Config (`stacks.config.json`)**: per environment `rootDomain`, `hostedZoneId` (an ID, or `"lookup"`: resolved by `hostedZoneName` at deploy time; synth without credentials uses a placeholder), `hostedZoneName`, `legacyRedirects` (old roots served only as redirects: `[{ rootDomain, hostedZoneId, hostedZoneName }]`), `googleClientId`, `platformAdmins`, `maintenance`, and `native` (the iOS app: Team ID, bundle ID, iOS OAuth client IDs, oldest supported app version; see `docs/NATIVE_APP_SPEC.md`). Changing `rootDomain` and redeploying moves everything; sessions are per-domain so users sign in again.
 
 **Certificates**: one ACM wildcard cert per environment (`*.<domain>` and `*.test.<domain>`) in us-east-1, owned by the platform stack and shared via SSM.
 
@@ -471,6 +472,7 @@ Phase 3 build notes:
 
 - [x] `templates/app/` and `tools/new-app` (`npm run new-app -- <slug>`)
 - [x] The skill (`.claude/skills/new-app`): interview, scaffold, build, verify (`npm run verify-app`), stage, ship; per-step usage log (`npm run app-usage`)
+- [ ] Domain move to `dashnash.ninja` (#42): staging, shared code, legacy redirects, DashyHQ portal branding and the ninja icon done; production flip next (`docs/DOMAIN_MOVE.md`)
 - [ ] Remaining modules: uploads, scheduled jobs (email deferred until an app needs it, with SES production access)
 - [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
 - [ ] Eval run on the 4 reference apps, usage logged
