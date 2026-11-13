@@ -94,6 +94,14 @@ describe('demo realtime bus', () => {
     error.mockRestore();
   });
 
+  it('drops the cross-tab broadcast of an event published just before the bus closes', async () => {
+    const olive = await tab('olive@demo');
+    await olive.demo.client.post('/counter');
+    olive.demo.realtime!.close();
+    // The broadcast is deferred a task; posting on the closed channel used to throw (uncaught).
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
   it('refuses a socket subscribe on a channel the token does not name', async () => {
     const olive = await tab('olive@demo');
     const { token } = await olive.demo.client.post<{ token: string }>('/realtime/token', { subscribe: ['counter/main'] });

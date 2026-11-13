@@ -20,6 +20,7 @@ export class DemoRealtimeBus implements Realtime {
   private readonly tab = randomToken();
   private readonly sockets = new Set<DemoSocket>();
   private readonly broadcast: BroadcastChannel | null;
+  private closed = false;
 
   constructor(
     slug: string,
@@ -62,6 +63,7 @@ export class DemoRealtimeBus implements Realtime {
 
   /** Stop listening to other tabs (tests). */
   close(): void {
+    this.closed = true;
     this.broadcast?.close();
     for (const s of this.sockets) s.close();
   }
@@ -70,7 +72,8 @@ export class DemoRealtimeBus implements Realtime {
   send(channel: string, event: string): void {
     this.local(channel, event);
     // After the current task, so the route that published has saved its data for the other tab to read.
-    setTimeout(() => this.broadcast?.postMessage({ channel, event, tab: this.tab } satisfies Wire), 0);
+    // Skipped if the bus closed meanwhile: posting on a closed channel throws.
+    setTimeout(() => !this.closed && this.broadcast?.postMessage({ channel, event, tab: this.tab } satisfies Wire), 0);
   }
 
   private local(channel: string, event: string): void {
