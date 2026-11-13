@@ -406,7 +406,9 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 | Push to `main` that changes the app, or `workflow_dispatch` on `main` | Core tests, then archive, sign and upload **both** apps; each app's internal TestFlight group has automatic distribution. Skips with a notice until the setup is done. Other pushes stay on Linux |
 | Every two months (1st of odd months) | The same, so a TestFlight build never reaches its 90-day expiry |
 
-- Runner: `macos-26` with Xcode 26 (pinned with `xcode-select`). `xcodegen generate`, then
+- Runner: `macos-26`, or the repository variable `MACOS_RUNNER` (a JSON array of labels, such as
+  `["self-hosted","macOS","ARM64","stacks-ios"]`) to run on the Mac. Unset means `macos-26`. PRs from forks always use `macos-26`.
+  The newest installed Xcode is used, set as `DEVELOPER_DIR` for the job (no `sudo`). `xcodegen generate`, then
   `xcodebuild archive` with **manual signing** by a certificate made for that run: the runner
   makes a key and CSR, `scripts/asc-provision.mjs --release-signing` revokes the previous run's
   certificate, has Apple issue a new Apple Distribution certificate and makes fresh App Store

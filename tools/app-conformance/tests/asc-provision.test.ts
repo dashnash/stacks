@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, freshProfiles, noteBuilds, GROUP_NAME, leftoverCertificates, missingApps, profileName, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, createApi, freshProfiles, noteBuilds, GROUP_NAME, leftoverCertificates, missingApps, profileName, profileUuids, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -276,4 +276,9 @@ describe('App Store Connect provisioning', () => {
     expect(missing).toEqual([apps[0]]);
     expect(log).toEqual(["! build 9 of DashyHQ didn't appear in App Store Connect"]);
   });
+  it('lists in profile-uuids exactly the profiles a release run made, one per line', () => {
+    expect(profileUuids([{ uuid: 'A-1' }, { uuid: 'B-2' }])).toBe('A-1\nB-2\n');
+    expect(profileUuids([])).toBe('');
+  });
+
 });
