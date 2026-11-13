@@ -24,6 +24,6 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
 - Zones: `hostedZoneId` is a Route 53 ID or `"lookup"` (needs `hostedZoneName`). `resolveZoneIds(env,
   parseZoneIds(ctx), strict)` swaps in the IDs CI passes as `-c hostedZoneIds=<name>=<id>,…`;
   without one it uses `ZONE_ID_PLACEHOLDER` (or throws when `strict`, i.e. `-c requireZones=true`).
-  `zonesToLookUp(config)` lists the names; `scripts/lookup-zones.mjs` resolves them with the aws CLI.
+  `zonesToLookUp(config)` lists the names; `scripts/lookup-zones.mjs` resolves them (Node only: it signs its Route 53 call itself, no AWS CLI or SDK).
 
 Synth never needs AWS credentials (no context lookups; zone IDs come from context or a placeholder). See `docs/SETUP.md` for the one-time setup.

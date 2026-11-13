@@ -15,7 +15,7 @@ import {
   type EnvConfig,
 } from '../src/index';
 // @ts-expect-error: plain .mjs script, no types
-import { pickZone, zoneNames } from '../../../scripts/lookup-zones.mjs';
+import { listHostedZonesByName, parseHostedZones, pickZone, signV4, zoneNames } from '../../../scripts/lookup-zones.mjs';
 
 type Query = Record<string, { value: string; multiValue?: { value: string }[] }>;
 
@@ -119,6 +119,50 @@ describe('hosted zone lookup', () => {
     expect(() => pickZone('missing.example', zones)).toThrow(/found 0/);
     expect(() => pickZone('new.example', { HostedZones: [...zones.HostedZones, { Id: '/hostedzone/ZTWO', Name: 'new.example.' }] })).toThrow(/found 2/);
     expect(() => pickZone('new.example', { HostedZones: [{ Id: '/hostedzone/ZPRIV', Name: 'new.example.', Config: { PrivateZone: true } }] })).toThrow(/found 0/);
+  });
+
+  it('signs requests with SigV4 exactly as in the AWS documentation example', () => {
+    const headers = signV4({
+      host: 'iam.amazonaws.com',
+      query: { Action: 'ListUsers', Version: '2010-05-08' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8' },
+      region: 'us-east-1',
+      service: 'iam',
+      credentials: { accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY' },
+      now: new Date('2015-08-30T12:36:00Z'),
+    });
+    expect(headers['x-amz-date']).toBe('20150830T123600Z');
+    expect(headers.authorization).toBe(
+      'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7',
+    );
+  });
+
+  it('reads Route 53 answers and asks for the zone with the session token signed in', async () => {
+    const xml = `<?xml version="1.0"?><ListHostedZonesByNameResponse xmlns="https://route53.amazonaws.com/doc/2013-04-01/"><HostedZones>
+      <HostedZone><Id>/hostedzone/ZNINJA1</Id><Name>new.example.</Name><CallerReference>x</CallerReference><Config><PrivateZone>false</PrivateZone></Config></HostedZone>
+      <HostedZone><Id>/hostedzone/ZPRIV</Id><Name>new.example.</Name><Config><PrivateZone>true</PrivateZone></Config></HostedZone>
+    </HostedZones><DNSName>new.example</DNSName><IsTruncated>false</IsTruncated><MaxItems>10</MaxItems></ListHostedZonesByNameResponse>`;
+    const parsed = parseHostedZones(xml);
+    expect(parsed.HostedZones).toEqual([
+      { Id: '/hostedzone/ZNINJA1', Name: 'new.example.', Config: { PrivateZone: false } },
+      { Id: '/hostedzone/ZPRIV', Name: 'new.example.', Config: { PrivateZone: true } },
+    ]);
+    expect(pickZone('new.example', parsed)).toBe('ZNINJA1');
+
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const fakeFetch = async (url: string, init: { headers: Record<string, string> }) => {
+      calls.push({ url, headers: init.headers });
+      return new Response(xml, { status: 200 });
+    };
+    const zones = await listHostedZonesByName('new.example', { accessKeyId: 'AK', secretAccessKey: 'SK', sessionToken: 'TOKEN' }, fakeFetch);
+    expect(zones.HostedZones).toHaveLength(2);
+    const [call] = calls;
+    expect(call?.url).toBe('https://route53.amazonaws.com/2013-04-01/hostedzonesbyname?dnsname=new.example&maxitems=10');
+    expect(call?.headers['x-amz-security-token']).toBe('TOKEN');
+    expect(call?.headers.authorization).toMatch(/Credential=AK\/\d{8}\/us-east-1\/route53\/aws4_request, SignedHeaders=host;x-amz-date;x-amz-security-token, Signature=[0-9a-f]{64}$/);
+
+    const denied = async () => new Response('<ErrorResponse><Error><Code>AccessDenied</Code></Error></ErrorResponse>', { status: 403 });
+    await expect(listHostedZonesByName('new.example', { accessKeyId: 'AK', secretAccessKey: 'SK' }, denied)).rejects.toThrow(/HTTP 403.*AccessDenied/);
   });
 
   it('looks up the same zones as the CDK app, and validates the config', () => {
