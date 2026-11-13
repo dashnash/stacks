@@ -33,6 +33,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Pinned for self-hosted macOS runners, which don't use Homebrew (see "Generate the Xcode project").
+  XCODEGEN_VERSION: 2.46.0
+  XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+
 jobs:
   core:
     name: Shell logic (Swift on Linux)
@@ -84,27 +89,53 @@ jobs:
     needs: core
     # PRs that change the app only. On main the release job builds (and signs) the same code.
     if: github.event_name == 'pull_request' && needs.core.outputs.app == 'true'
-    runs-on: macos-26
+    runs-on: ${{ (vars.MACOS_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Use Xcode 26
+      - name: Use the newest Xcode
         run: |
-          xcode=""
-          for candidate in /Applications/Xcode_26*.app; do xcode="$candidate"; done
-          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
-            echo "::error::No Xcode 26 on this runner image"
+          # For this job only: no sudo, and the machine's Xcode selection is left alone (the runner may be a shared Mac).
+          # The newest Xcode installed wins, by version number.
+          best=""
+          bestver=""
+          for candidate in /Applications/Xcode*.app; do
+            [ -d "$candidate" ] || continue
+            version="$(DEVELOPER_DIR="$candidate/Contents/Developer" xcodebuild -version 2>/dev/null | head -n 1 || true)"
+            case "$version" in
+              "Xcode "[0-9]*) ;;
+              *) continue ;;
+            esac
+            ver="${version#Xcode }"
+            if [ -z "$bestver" ] || [ "$(printf '%s\n%s\n' "$bestver" "$ver" | sort -V | tail -n 1)" = "$ver" ]; then
+              best="$candidate"
+              bestver="$ver"
+            fi
+          done
+          if [ -z "$best" ]; then
+            echo "::error::No Xcode found in /Applications"
             exit 1
           fi
-          sudo xcode-select -s "$xcode"
-          xcodebuild -version
+          echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$best/Contents/Developer" xcodebuild -version
       - name: Generate the Xcode project
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
           HOMEBREW_NO_ENV_HINTS: '1'
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen > /dev/null; then
+            if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
+              # A pinned release, checksum-verified: no Homebrew on a self-hosted Mac.
+              zip="$RUNNER_TEMP/xcodegen.zip"
+              curl -fsSL -o "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+              echo "$XCODEGEN_SHA256  $zip" | shasum -a 256 -c -
+              unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen-dist"
+              export PATH="$RUNNER_TEMP/xcodegen-dist/xcodegen/bin:$PATH"
+            else
+              brew install xcodegen
+            fi
+          fi
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
         uses: actions/cache@v4
@@ -129,7 +160,7 @@ jobs:
     needs: core
     # On main: when the app changed, every two months, or by hand.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.core.outputs.app == 'true'
-    runs-on: macos-26
+    runs-on: ${{ (vars.MACOS_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 45
     # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect
     # key. Each run makes its own signing certificate, and the next run revokes it.
@@ -178,17 +209,32 @@ jobs:
             echo "team=$team"
             echo "key=$key"
           } >> "$GITHUB_OUTPUT"
-      - name: Use Xcode 26
+      - name: Use the newest Xcode
         if: steps.ready.outputs.go == 'true'
         run: |
-          xcode=""
-          for candidate in /Applications/Xcode_26*.app; do xcode="$candidate"; done
-          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
-            echo "::error::No Xcode 26 on this runner image"
+          # For this job only: no sudo, and the machine's Xcode selection is left alone (the runner may be a shared Mac).
+          # The newest Xcode installed wins, by version number.
+          best=""
+          bestver=""
+          for candidate in /Applications/Xcode*.app; do
+            [ -d "$candidate" ] || continue
+            version="$(DEVELOPER_DIR="$candidate/Contents/Developer" xcodebuild -version 2>/dev/null | head -n 1 || true)"
+            case "$version" in
+              "Xcode "[0-9]*) ;;
+              *) continue ;;
+            esac
+            ver="${version#Xcode }"
+            if [ -z "$bestver" ] || [ "$(printf '%s\n%s\n' "$bestver" "$ver" | sort -V | tail -n 1)" = "$ver" ]; then
+              best="$candidate"
+              bestver="$ver"
+            fi
+          done
+          if [ -z "$best" ]; then
+            echo "::error::No Xcode found in /Applications"
             exit 1
           fi
-          sudo xcode-select -s "$xcode"
-          xcodebuild -version
+          echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$best/Contents/Developer" xcodebuild -version
       - name: Generate the Xcode project
         if: steps.ready.outputs.go == 'true'
         env:
@@ -196,7 +242,18 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
           HOMEBREW_NO_ENV_HINTS: '1'
         run: |
-          brew install xcodegen
+          if ! command -v xcodegen > /dev/null; then
+            if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
+              # A pinned release, checksum-verified: no Homebrew on a self-hosted Mac.
+              zip="$RUNNER_TEMP/xcodegen.zip"
+              curl -fsSL -o "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+              echo "$XCODEGEN_SHA256  $zip" | shasum -a 256 -c -
+              unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen-dist"
+              export PATH="$RUNNER_TEMP/xcodegen-dist/xcodegen/bin:$PATH"
+            else
+              brew install xcodegen
+            fi
+          fi
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
         if: steps.ready.outputs.go == 'true'
@@ -227,6 +284,16 @@ jobs:
           p12pass="$(/usr/bin/openssl rand -hex 24)"
           /usr/bin/openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/certificate.pem" -out "$dir/signing.p12" -passout "pass:$p12pass"
           keychain="$RUNNER_TEMP/signing.keychain-db"
+          # A cancelled earlier run on this runner can leave its keychain behind: take it off the
+          # search list and delete it, then save the user's list for the cleanup to restore.
+          existing=()
+          while IFS= read -r k; do
+            k="$(printf '%s' "$k" | sed -e 's/^ *"//' -e 's/" *$//')"
+            if [ -n "$k" ] && [ "$k" != "$keychain" ]; then existing+=("$k"); fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${existing[@]}"
+          if [ -e "$keychain" ]; then security delete-keychain "$keychain" 2> /dev/null || rm -f "$keychain"; fi
+          security list-keychains -d user > "$RUNNER_TEMP/keychains.before"
           pass="$(/usr/bin/openssl rand -hex 24)"
           security create-keychain -p "$pass" "$keychain"
           security set-keychain-settings -lut 3600 "$keychain"
@@ -234,8 +301,6 @@ jobs:
           security import "$dir/signing.p12" -k "$keychain" -P "$p12pass" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$keychain" > /dev/null
           # Keep the login keychain on the search list too (Xcode looks there for Apple's intermediates).
-          existing=()
-          while IFS= read -r k; do existing+=("$(echo "$k" | tr -d '" ')"); done < <(security list-keychains -d user)
           security list-keychains -d user -s "$keychain" "${existing[@]}"
           rm -f "$dir/key.pem" "$dir/signing.p12"
           cat "$dir/profiles.json"
@@ -332,9 +397,24 @@ jobs:
       - name: Remove the key, keychain and profiles
         if: always()
         run: |
+          # Restore the user's keychain search list, then delete ours. Other users' keychains are never touched.
+          if [ -f "$RUNNER_TEMP/keychains.before" ]; then
+            restore=()
+            while IFS= read -r k; do
+              k="$(printf '%s' "$k" | sed -e 's/^ *"//' -e 's/" *$//')"
+              if [ -n "$k" ]; then restore+=("$k"); fi
+            done < "$RUNNER_TEMP/keychains.before"
+            if [ "${#restore[@]}" -gt 0 ]; then security list-keychains -d user -s "${restore[@]}" || true; fi
+          fi
           if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true; fi
-          rm -rf "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/signing"
-          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision
+          # Only the profiles this run made, by UUID: other profiles on a shared Mac stay.
+          if [ -f "$RUNNER_TEMP/signing/profile-uuids" ]; then
+            while IFS= read -r uuid; do
+              [ -n "$uuid" ] || continue
+              rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
+            done < "$RUNNER_TEMP/signing/profile-uuids"
+          fi
+          rm -rf "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/signing" "$RUNNER_TEMP/keychains.before"
 
   notes:
     name: TestFlight notes (the commit)

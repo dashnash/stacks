@@ -72,6 +72,11 @@ export function createApi({ keyId, issuerId, privateKeyPem, fetchImpl = fetch })
 }
 
 /** The apps to set up, from stacks.config.json. */
+/** One profile UUID per line: the files a release run wrote, so its cleanup removes only those. */
+export function profileUuids(profiles) {
+  return profiles.map((p) => `${p.uuid}\n`).join('');
+}
+
 export function appsFromConfig(config) {
   return Object.entries(config.environments)
     .filter(([, env]) => env.native?.iosBundleId)
@@ -332,6 +337,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       },
     });
     writeFileSync(join(out, 'profiles.json'), JSON.stringify(Object.fromEntries(profiles.map((p) => [p.bundleId, p.name]))));
+    writeFileSync(join(out, 'profile-uuids'), profileUuids(profiles));
     for (const dir of profileDirs) {
       mkdirSync(dir, { recursive: true });
       for (const p of profiles) writeFileSync(join(dir, `${p.uuid}.mobileprovision`), Buffer.from(p.content, 'base64'));
