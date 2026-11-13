@@ -205,3 +205,60 @@ platform checks it against Apple's public keys. People who choose **Hide My Emai
   and re-run it.
 - Inviting other people: TestFlight → **External Testing** (needs Apple's Beta App Review once per
   version), or add them to your team in App Store Connect as internal testers.
+- **Optional: a Mac as the iOS runner.** Setting the repository variable `MACOS_RUNNER` to
+  `["self-hosted","macOS","ARM64","stacks-ios"]` moves the two macOS jobs to a self-hosted runner
+  on that Mac; unsetting it moves them back to GitHub's `macos-26`. Setup and the on/off switch:
+  [Build on a local Mac](#build-on-a-local-mac-optional). Until the variable is set, nothing changes.
+
+## Build on a local Mac (optional)
+
+Runs the two macOS jobs of `.github/workflows/ios.yml` on a Mac you own, to stop spending macOS
+minutes (GitHub bills them at 10×). The switch is `scripts/mac-runner.sh`, installed as the command
+`stacks-runner`. Each job routes through the repository variable `MACOS_RUNNER`: unset means GitHub's
+`macos-26`; set means this Mac.
+
+**Once, by hand**
+
+1. Create a standard (not admin) macOS user `ci`. Log in as `ci` once, open Xcode and accept the
+   licence and the components.
+2. As `ci`, in **Settings → Actions → Runners → New self-hosted runner → macOS / ARM64**, download the
+   runner into `~ci/actions-runner`, then run GitHub's `./config.sh --url https://github.com/dashnash/stacks --token <from the page> --labels stacks-ios`
+   and `./svc.sh install && ./svc.sh start`.
+3. Create a fine-grained token for `dashnash/stacks` only, with **Variables: read and write** and
+   **Administration: read**.
+4. As an admin on the Mac, run `scripts/mac-runner.sh install`. It asks for the token and then
+   links `/usr/local/bin/stacks-runner`, stores the token, builds the sleep watcher and installs
+   it for `ci`. Running it again updates everything in place.
+
+**Commands**
+
+| Command | Who | What it does |
+| --- | --- | --- |
+| `stacks-runner status` | anyone | Shows whether the service runs, what GitHub sees, and where `MACOS_RUNNER` points. Exit 2 if it points here but the runner is offline. |
+| `stacks-runner on` | a repo admin, with their own `gh` login | Starts the service (asks for an admin password), waits up to 2 minutes for GitHub to see the runner online, then sets `MACOS_RUNNER`. |
+| `stacks-runner off [--now] [--stop]` | anyone on the Mac | Unsets `MACOS_RUNNER` first, so new jobs go to GitHub at once. Then waits up to 45 minutes for a running job (`--now` skips the wait). `--stop` also stops the service, and asks first if a job is still running. |
+| `stacks-runner uninstall` | an admin | Reverses `install`, and runs `off`. |
+
+`off` uses the caller's `gh` login if GitHub accepts it, and otherwise the stored token. That is
+why anyone on the Mac can switch it off: non-admin users don't need to stop `ci`'s service.
+
+**What the sleep watcher does**
+
+When the Mac goes to sleep or powers off, a small watcher running as `ci` runs `stacks-runner off --now`,
+so GitHub stops sending iOS jobs to a Mac that can't run them. It logs to `~ci/Library/Logs/stacks-runner.log`.
+It only runs if `ci` is logged in (or the LaunchAgent is loaded for `ci`).
+
+**The token**
+
+The fine-grained token lives in `/Library/Application Support/stacks-runner/token`, owned by root,
+group `staff`, mode `0640`. Any local user can read it. That is accepted because it can only change
+which runner the iOS jobs use. It never goes in the repo or an issue. Rotate it by running `install`
+again.
+
+**On a shared Mac**
+
+- Release jobs sign with the distribution certificate in a temporary keychain. The job restores
+  the user's keychain search list and deletes only what it made.
+- Provisioning profiles are removed by UUID, so other profiles on the Mac are left alone.
+- Xcode is found per job and set with `DEVELOPER_DIR`; the Mac's `xcode-select` is never changed.
+- Swift packages are cached in `~ci/Library/Caches/stacks-ios-spm`.

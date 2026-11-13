@@ -31,6 +31,10 @@ jobs:
           args: -color
       - name: Import rule
         run: node scripts/check-imports.mjs
+      - name: Mac runner switch (shellcheck and fake-GitHub tests)
+        run: |
+          shellcheck scripts/mac-runner.sh scripts/mac-runner.test.sh
+          bash scripts/mac-runner.test.sh
       - name: PR paths (app PRs change one app; anything else is platform work)
         if: github.event_name == 'pull_request'
         env:

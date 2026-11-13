@@ -15,6 +15,9 @@ share sheet, universal links, and later push and device features. Spec: `docs/NA
 
 ## On a Mac
 
+The release and simulator jobs can run on a Mac you own instead of GitHub's: see
+[docs/IOS_SETUP.md, Build on a local Mac](../../docs/IOS_SETUP.md#build-on-a-local-mac-optional).
+
 ```bash
 brew install xcodegen
 ```
