@@ -43,10 +43,10 @@ jobs:
           set -euo pipefail
           account="$(aws sts get-caller-identity --query Account --output text)"
           creds="$(aws sts assume-role --role-arn "arn:aws:iam::${account}:role/cdk-stktest-lookup-role-${account}-us-east-1" --role-session-name zone-lookup --query Credentials --output json)"
-          export AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<<"$creds")"
-          export AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<<"$creds")"
-          export AWS_SESSION_TOKEN="$(jq -r .SessionToken <<<"$creds")"
-          ids="$(node scripts/lookup-zones.mjs)"
+          key="$(jq -r .AccessKeyId <<<"$creds")"
+          secret="$(jq -r .SecretAccessKey <<<"$creds")"
+          token="$(jq -r .SessionToken <<<"$creds")"
+          ids="$(AWS_ACCESS_KEY_ID="$key" AWS_SECRET_ACCESS_KEY="$secret" AWS_SESSION_TOKEN="$token" node scripts/lookup-zones.mjs)"
           echo "ids=${ids}" >> "$GITHUB_OUTPUT"
 
   build:
