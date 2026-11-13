@@ -35,6 +35,20 @@ accounts, roles and every app's data stay where they are.
 dig +short NS dashnash.ninja
 ```
 
+- [ ] Nothing but the apps on `main` uses the old certificate. The deploy only moves stacks built
+      from `main`; anything else on the old certificate (a branch preview, a stack for an app that
+      left `apps/`) keeps it in use and its hostname on the old domain. On staging two branch previews
+      (Wishlist, Potluck) did exactly that and had to be deleted. Every distribution listed should be
+      a production app on `main` (comment `stacks prod <slug>`):
+
+```bash
+aws acm list-certificates --query "CertificateSummaryList[?DomainName=='*.iamdashnash.com'].CertificateArn" --output text
+```
+
+```bash
+aws acm describe-certificate --certificate-arn <that ARN> --query Certificate.InUseBy
+```
+
 ## 1. Merge PR 2
 
 `deploy.yml` runs: the zones job looks up `dashnash.ninja`, then staging (no changes), then production
