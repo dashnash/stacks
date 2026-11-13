@@ -22,9 +22,9 @@ accounts, roles and every app's data stay where they are.
       installs under `ninja.dashnash.stacks.test`, signs in with Google, opens universal links in the app and gets push.
 - [ ] **Google Cloud console**, the web OAuth client: `https://auth.dashnash.ninja` is an authorised
       JavaScript origin (keep the old ones until step 5).
-- [ ] **Google Cloud console**: an iOS OAuth client for `ninja.dashnash.stacks`; its ID replaces
-      `PLACEHOLDER-production-ios-client…` in `environments.production.native.googleIosClientIds`
-      (`stacks.config.json`), then `node scripts/ios-xcconfig.mjs` (commit both on the PR branch).
+- [x] **Google Cloud console**: an iOS OAuth client for `ninja.dashnash.stacks`, its ID in
+      `environments.production.native.googleIosClientIds` (`stacks.config.json`) and
+      `native/ios/Config/Production.xcconfig` (done in PR 2).
 - [ ] **App Store Connect**: the **DashyHQ** app record for `ninja.dashnash.stacks` exists, and
       `ios-provision.yml` has run on `main` since (bundle ID with Associated Domains + Push, TestFlight group).
 - [ ] **APNs**: the existing key is a team key (Certificates, Identifiers & Profiles → Keys: "Apple
