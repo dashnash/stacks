@@ -93,6 +93,8 @@ class DemoSocket implements SocketLike {
   onerror: SocketLike['onerror'] = null;
   private readonly subs = new Map<string, string>();
   private closed = false;
+  /** The message being handled; the next one waits for it. */
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly bus: DemoRealtimeBus,
@@ -102,7 +104,11 @@ class DemoSocket implements SocketLike {
   }
 
   send(raw: string): void {
-    void this.handle(JSON.parse(raw) as { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } });
+    const msg = JSON.parse(raw) as { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } };
+    // One message at a time, in the order sent: each awaits an async authorize (WebCrypto), so
+    // handling them concurrently let a later message's reply overtake an earlier one's.
+    // A failure doesn't stall the socket, and still surfaces as an unhandled rejection, as before.
+    this.queue = this.queue.then(() => this.handle(msg)).catch((e: unknown) => void Promise.reject(e));
   }
 
   private async handle(msg: { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } }) {
