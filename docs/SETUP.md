@@ -25,8 +25,9 @@ wildcard certificate (`*.<rootDomain>`) and the `auth.` and app hostnames in tha
 empty, stacks still synth and deploy on CloudFront's own domains, which is only useful for smoke tests.
 
 With `"hostedZoneId": "lookup"` the deploy workflows resolve the zone by `hostedZoneName` before
-synth (`scripts/lookup-zones.mjs`, through the read-only `cdk-stktest-lookup-role`; it fails unless
-exactly one public zone has that name) and pass it as `-c hostedZoneIds=<name>=<id>`. Synth without
+synth (`scripts/lookup-zones.mjs`, through the read-only `cdk-stktest-lookup-role`; Node only, so the
+runner needs no AWS CLI; it fails unless exactly one public zone has that name) and pass it as
+`-c hostedZoneIds=<name>=<id>`. Synth without
 it (sessions, `ci.yml`) uses the placeholder `ZLOOKUPPLACEHOLDER`, which is never deployed:
 deploy builds pass `-c requireZones=true`.
 
