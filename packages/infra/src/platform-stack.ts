@@ -88,6 +88,10 @@ export class PlatformStack extends cdk.Stack {
           validation: acm.CertificateValidation.fromDns(zone),
         })
       : undefined;
+    // Retained, so a domain move (which replaces it) never waits on deleting the old one: the app
+    // distributions still use it until their stacks deploy, after this one (docs/DOMAIN_MOVE.md
+    // deletes it by hand afterwards).
+    certificate?.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
     if (certificate) new ssm.StringParameter(this, 'CertificateArnParam', { parameterName: ssmNames(envName).certificateArn, stringValue: certificate.certificateArn });
 
     // 2. Users, grants, master sessions, codes, notifications, the central audit feed.

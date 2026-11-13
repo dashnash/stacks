@@ -43,6 +43,9 @@ distribution):
 
 1. `stacks-prod-platform`: the new certificate (`*.dashnash.ninja`), `auth.dashnash.ninja` and the bare
    domain move to the new zone; the old `auth.iamdashnash.com` / `iamdashnash.com` records and aliases go.
+   The old `*.iamdashnash.com` certificate is **left in place** (the platform certificate is retained):
+   the app distributions still use it until step 2, and deleting it then would make CloudFormation
+   retry once a minute while nothing could release it. That happened on staging; step 5 deletes it.
 2. Every `stacks-prod-app-<slug>`: `<slug>.dashnash.ninja`; the old records and aliases go.
 3. `stacks-prod-legacy-redirect` (depends on all of the above): `iamdashnash.com` + `*.iamdashnash.com`.
 
@@ -120,9 +123,9 @@ works again too.
       `com.dashyhq.stacks.test`) from TestFlight testing.
 - [ ] Google Cloud console: drop `https://auth.iamdashnash.com` and `https://auth.test.iamdashnash.com`
       from the web client's origins, and delete the two old iOS clients.
-- [ ] ACM (us-east-1): delete the old wildcard certificates (`*.iamdashnash.com`,
-      `*.test.iamdashnash.com`) if CloudFormation left them behind (it can't delete one still in use
-      during the move); they show **In use: No**.
+- [ ] ACM (us-east-1): delete the old wildcard certificate `*.iamdashnash.com` (the platform stack
+      retains replaced certificates; staging's `*.test.iamdashnash.com` was deleted during its move).
+      It shows **In use: No**.
 
 ```bash
 aws acm list-certificates --query "CertificateSummaryList[?contains(DomainName, 'iamdashnash')].[DomainName,CertificateArn,InUse]" --output table
