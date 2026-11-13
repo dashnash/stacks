@@ -20,7 +20,7 @@ check() { # name, condition-exit-status
 # A fresh fake Mac and GitHub for each scenario.
 setup() {
   FAKE=$(mktemp -d)
-  mkdir -p "$FAKE/bin" "$FAKE/runner" "$FAKE/xcode/Xcode_26.0.app/Contents/Developer"
+  mkdir -p "$FAKE/bin" "$FAKE/runner" "$FAKE/xcode/Xcode_26.0.app/Contents/Developer" "$FAKE/xcode/Xcode.app/Contents/Developer"
   : > "$FAKE/calls"
   cat > "$FAKE/runner/svc.sh" <<'SVC'
 #!/usr/bin/env bash
@@ -48,7 +48,10 @@ SUDO
 
   cat > "$FAKE/bin/xcodebuild" <<'XB'
 #!/usr/bin/env bash
-echo "Xcode 26.0"
+case "$DEVELOPER_DIR" in
+  *Xcode.app*) echo "Xcode 27.2" ;;
+  *) echo "Xcode 26.0" ;;
+esac
 XB
 
   # The fake GitHub. Token "caller-token" works only when FAKE_CALLER_OK=1; "file-token" always works.
@@ -158,6 +161,7 @@ setup
 FAKE_ONLINE_AFTER=2
 run on
 check "on: succeeds once the runner is online" "$([ "$RC" = 0 ] && echo 0 || echo 1)"
+check "on: picks the newest Xcode (27.2 over 26.0)" "$(grep -q "Xcode: $FAKE/xcode/Xcode.app/Contents/Developer" <<< "$OUT" && echo 0 || echo 1)"
 check "on: starts the service when it is stopped" "$(grep -q '^svc start' "$FAKE/calls" && echo 0 || echo 1)"
 check "on: sets the variable to the self-hosted labels" "$([ "$(variable)" = '["self-hosted","macOS","ARM64","stacks-ios"]' ] && echo 0 || echo 1)"
 check "on: sets the variable only after GitHub saw the runner online (poll 2)" "$(grep -E 'PATCH|POST' "$FAKE/calls" | grep -q 'polls=[2-9]' && echo 0 || echo 1)"

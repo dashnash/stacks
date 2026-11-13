@@ -114,17 +114,24 @@ require_admin() {
   [ "$(jq -r .permissions.admin "$BODY_FILE")" = true ] || die "only a repo admin can switch the runner on"
 }
 
-# Prints the first Xcode 26 developer directory. The runner's own job checks again as ci.
+# Prints the developer directory of the newest installed Xcode, by version number (the job picks the same one as ci).
 find_xcode() {
-  local candidate version
-  for candidate in "$XCODE_APPS"/Xcode_26*.app "$XCODE_APPS"/Xcode*.app; do
+  local candidate version ver best="" bestver=""
+  for candidate in "$XCODE_APPS"/Xcode*.app; do
     [ -d "$candidate" ] || continue
     version=$(DEVELOPER_DIR="$candidate/Contents/Developer" xcodebuild -version 2> /dev/null | head -n 1 || true)
     case "$version" in
-      "Xcode 26"*) echo "$candidate/Contents/Developer"; return 0 ;;
+      "Xcode "[0-9]*) ;;
+      *) continue ;;
     esac
+    ver=${version#Xcode }
+    if [ -z "$bestver" ] || [ "$(printf '%s\n%s\n' "$bestver" "$ver" | sort -V | tail -n 1)" = "$ver" ]; then
+      best=$candidate
+      bestver=$ver
+    fi
   done
-  return 1
+  [ -n "$best" ] || return 1
+  echo "$best/Contents/Developer"
 }
 
 service_running() { pgrep -u "$RUNNER_USER" -f 'Runner.Listener' > /dev/null 2>&1; }
@@ -176,7 +183,7 @@ cmd_status() {
 cmd_on() {
   require_admin
   local xcode
-  xcode=$(find_xcode) || die "no usable Xcode 26 in $XCODE_APPS"
+  xcode=$(find_xcode) || die "no Xcode found in $XCODE_APPS"
   echo "Xcode: $xcode"
   if service_running; then
     echo "Runner service: already running"

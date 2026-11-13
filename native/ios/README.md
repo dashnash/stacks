@@ -27,7 +27,7 @@ node scripts/ios-xcconfig.mjs && xcodegen generate --spec native/ios/project.yml
 ```
 
 Schemes: **DashyHQ Test** (staging, `*.test.iamdashnash.com`) and **DashyHQ** (production; Run uses
-Debug with staging settings, Archive uses Production). Needs Xcode 26 (iOS 26 is the minimum).
+Debug with staging settings, Archive uses Production). Needs Xcode 26 or newer (iOS 26 is the minimum).
 Native Google sign-in answers "isn't set up in this build yet" until `googleIosClientIds` is in
 `stacks.config.json`; the first entry for an environment is that app's iOS client.
 
