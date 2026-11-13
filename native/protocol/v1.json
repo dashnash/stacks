@@ -25,7 +25,7 @@
       "v": 1,
       "name": "share",
       "args": {
-        "url": "https://hello.iamdashnash.com/"
+        "url": "https://hello.dashnash.ninja/"
       }
     },
     "ok": {
@@ -99,7 +99,7 @@
       "result": {
         "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
         "env": "production",
-        "bundleId": "com.dashyhq.stacks",
+        "bundleId": "ninja.dashnash.stacks",
         "deviceName": "Dash's iPhone"
       }
     },
@@ -125,7 +125,7 @@
       "doc": "The system share sheet.",
       "origins": "any",
       "args": {
-        "url": "https://hello.iamdashnash.com/",
+        "url": "https://hello.dashnash.ninja/",
         "text": "Come say hi",
         "title": "Hello Board"
       },

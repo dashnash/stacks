@@ -60,7 +60,7 @@ export const DEMO_APPS: AppManifest[] = [
 ];
 
 /** The demo's pretend iOS app (tests put a fake app on the page that registers with it). */
-export const DEMO_IOS_BUNDLE_ID = 'com.dashyhq.stacks.demo';
+export const DEMO_IOS_BUNDLE_ID = 'ninja.dashnash.stacks.demo';
 
 export const DEMO_PEOPLE = [
   { email: 'dash@demo.stacks', name: 'Dash Nash', blurb: 'platform super-admin' },

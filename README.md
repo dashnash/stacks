@@ -8,7 +8,7 @@ A platform for quickly building a collection of small web apps on AWS that share
 - **shared infrastructure and SDKs**, so a new app is bootstrapped by scripts and the `/new-app`
   Claude Code skill, with full freedom over its UX.
 
-The MOFO Book Club Portal is the reference app and app #1 (mofobookklub.iamdashnash.com).
+The MOFO Book Club Portal is the reference app and app #1 (mofobookklub.dashnash.ninja).
 
 Status: Phases 1-3 live in production (platform, access grid, Book Club). Next: Phase 4, the
 `/new-app` skill. See [docs/PLATFORM_SPEC.md](docs/PLATFORM_SPEC.md) and

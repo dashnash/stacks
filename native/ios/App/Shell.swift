@@ -8,7 +8,7 @@ import WebKit
 @MainActor
 final class Shell: NSObject, ObservableObject {
     static let fallbackSettings = ShellSettings(
-        policy: NavigationPolicy(rootDomain: "iamdashnash.com"),
+        policy: NavigationPolicy(rootDomain: "dashnash.ninja"),
         googleClientID: "",
         googleServerClientID: "",
         appVersion: "0",
@@ -20,7 +20,7 @@ final class Shell: NSObject, ObservableObject {
     let router: BridgeRouter
     let push: PushRegistrar
 
-    /// Why the last page didn't load (shown as "Can't reach Stacks" with a retry), or nil.
+    /// Why the last page didn't load (shown as "Can't reach DashyHQ" with a retry), or nil.
     @Published var loadError: String?
     @Published var failedURL: URL?
     /// The web needs a newer app than this one.

@@ -7,14 +7,22 @@
  *
  * Apps listed in an environment's `holdApps` (stacks.config.json) are left out of that environment.
  *   -c ci=true                  only the one-time CI/OIDC stack (deployed by hand with admin credentials)
+ *   -c hostedZoneIds=<name>=<id>,...   IDs for zones the config marks `hostedZoneId: "lookup"`
+ *                               (the deploy workflows look them up with scripts/lookup-zones.mjs)
+ *   -c requireZones=true        fail instead of synthesizing a placeholder zone ID (deploy builds)
+ *
+ * The full synth (no `app`/`only`) also has `stacks-<env>-legacy-redirect` when the environment has
+ * `legacyRedirects`; it depends on every other stack, so `cdk deploy --all` deploys it last, once
+ * they have left the old names.
  *
  * It never does CDK context lookups, so synth needs no AWS credentials; values that live in AWS
- * (the certificate ARN) are read from SSM by CloudFormation at deploy time.
+ * (the certificate ARN) are read from SSM by CloudFormation at deploy time, and zone IDs come
+ * from context (a placeholder without it).
  */
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as cdk from 'aws-cdk-lib';
-import { AppStack, CiStack, loadStacksConfig, PlatformStack, type EnvName } from '@stacks/infra';
+import { AppStack, CiStack, LegacyRedirectStack, loadStacksConfig, parseZoneIds, PlatformStack, resolveZoneIds, type EnvName } from '@stacks/infra';
 import { discoverApps } from '../lib/apps';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -23,19 +31,22 @@ const app = new cdk.App();
 
 const envName = (app.node.tryGetContext('env') ?? 'staging') as EnvName;
 if (envName !== 'staging' && envName !== 'production') throw new Error('-c env must be staging or production');
+const env = resolveZoneIds(config.environments[envName], parseZoneIds(app.node.tryGetContext('hostedZoneIds')), String(app.node.tryGetContext('requireZones')) === 'true');
 
 if (app.node.tryGetContext('ci') === 'true') {
   new CiStack(app, 'stacks-ci', { githubRepo: config.githubRepo, githubSubjectPrefix: config.githubSubjectPrefix, region: config.region });
 } else if (app.node.tryGetContext('only') === 'platform') {
-  new PlatformStack(app, { envName, env: config.environments[envName], region: config.region, repoRoot });
+  new PlatformStack(app, { envName, env, region: config.region, repoRoot });
 } else {
   const only = app.node.tryGetContext('app') as string | undefined;
-  if (!only) new PlatformStack(app, { envName, env: config.environments[envName], region: config.region, repoRoot });
-  const held = new Set(config.environments[envName].holdApps ?? []);
+  const platform = only ? undefined : new PlatformStack(app, { envName, env, region: config.region, repoRoot });
+  const held = new Set(env.holdApps ?? []);
   if (only && held.has(only)) throw new Error(`"${only}" is on hold for ${envName} (holdApps in stacks.config.json)`);
   const apps = discoverApps(repoRoot).filter((a) => (!only || a.manifest.slug === only) && !held.has(a.manifest.slug));
   if (only && !apps.length) throw new Error(`No app "${only}" in apps/`);
-  for (const a of apps) {
-    new AppStack(app, { manifest: a.manifest, envName, env: config.environments[envName], region: config.region, repoRoot, appDir: a.dir });
+  const appStacks = apps.map((a) => new AppStack(app, { manifest: a.manifest, envName, env, region: config.region, repoRoot, appDir: a.dir }));
+  if (platform && env.legacyRedirects?.length) {
+    const redirect = new LegacyRedirectStack(app, { envName, env, region: config.region });
+    for (const s of [platform, ...appStacks]) redirect.addStackDependency(s, 'takes over the old names only after they have left them');
   }
 }

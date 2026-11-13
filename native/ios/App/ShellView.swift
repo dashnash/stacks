@@ -24,7 +24,7 @@ private struct WebViewContainer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-/// "Can't reach Stacks", with what failed and a retry (pull to refresh works too).
+/// "Can't reach DashyHQ", with what failed and a retry (pull to refresh works too).
 private struct OfflineView: View {
     let message: String
     let url: URL?
@@ -33,7 +33,7 @@ private struct OfflineView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "wifi.exclamationmark").font(.system(size: 44)).foregroundStyle(.secondary)
-            Text("Can't reach Stacks").font(.title2.bold())
+            Text("Can't reach DashyHQ").font(.title2.bold())
             Text(message).multilineTextAlignment(.center).foregroundStyle(.secondary)
             if let host = url?.host { Text(host).font(.footnote.monospaced()).foregroundStyle(.tertiary) }
             Button("Try again", action: retry).buttonStyle(.borderedProminent)

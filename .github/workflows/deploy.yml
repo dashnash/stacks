@@ -2,7 +2,7 @@ name: Deploy
 
 # Every merge to main: all of staging first (platform, then every app), so a broken change stops
 # there; then the production platform, then every production app. CloudFormation skips stacks with
-# no changes. Apps on hold for an environment (holdApps in stacks.config.json) are left out of it.
+# no changes. Zones marked "lookup" in stacks.config.json are resolved first (zones job). Apps on hold for an environment (holdApps in stacks.config.json) are left out of it.
 on:
   push:
     branches: [main]
@@ -15,7 +15,42 @@ permissions:
   contents: read
 
 jobs:
+  # Zones marked "lookup" in stacks.config.json, resolved by name (read-only, through staging's
+  # CDK lookup role) and handed to synth. Everything here is main's code; nothing is deployed.
+  zones:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      ids: ${{ steps.lookup.outputs.ids }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Look up hosted zones
+        id: lookup
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          creds="$(aws sts assume-role --role-arn "arn:aws:iam::${account}:role/cdk-stktest-lookup-role-${account}-us-east-1" --role-session-name zone-lookup --query Credentials --output json)"
+          key="$(jq -r .AccessKeyId <<<"$creds")"
+          secret="$(jq -r .SecretAccessKey <<<"$creds")"
+          token="$(jq -r .SessionToken <<<"$creds")"
+          ids="$(AWS_ACCESS_KEY_ID="$key" AWS_SECRET_ACCESS_KEY="$secret" AWS_SESSION_TOKEN="$token" node scripts/lookup-zones.mjs)"
+          echo "ids=${ids}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: zones
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +66,11 @@ jobs:
         run: VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build
       - name: Synth
         working-directory: infra
+        env:
+          HOSTED_ZONE_IDS: ${{ needs.zones.outputs.ids }}
         run: |
-          npx cdk synth -q -c env=production -o ../cdk.out
-          npx cdk synth -q -c env=staging -o ../cdk.out-staging
+          npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
+          npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
       - uses: actions/upload-artifact@v4
         with:
           name: cdk-out
@@ -65,7 +102,7 @@ jobs:
           aws-region: us-east-1
       - name: Platform first (apps read its certificate from SSM)
         run: npx cdk deploy --app cdk.out-staging stacks-test-platform --require-approval never
-      - name: Apps
+      - name: Apps (then the legacy-domain redirects, which depend on them)
         run: npx cdk deploy --app cdk.out-staging --all --require-approval never --concurrency 4 --outputs-file outputs-staging.json
       - name: Summary
         run: |
@@ -94,7 +131,7 @@ jobs:
           aws-region: us-east-1
       - name: Platform first (apps read its certificate from SSM)
         run: npx cdk deploy --app cdk.out stacks-prod-platform --require-approval never
-      - name: Apps
+      - name: Apps (then the legacy-domain redirects, which depend on them)
         run: npx cdk deploy --app cdk.out --all --require-approval never --concurrency 4 --outputs-file outputs.json
       - name: Summary
         run: |

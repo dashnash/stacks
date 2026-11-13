@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- DashyHQ app icon master: an original, flat two-tone shuriken. Edit this, then run
+       node scripts/render-icons.mjs to remake the PNGs and the portal favicon. -->
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1024">
+      <stop offset="0" stop-color="#ff9a6e"/>
+      <stop offset="1" stop-color="#f26b5b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- each blade: a lit side and a shaded side -->
+  <path d="M607.8 154.6 L512 512 L424.0 359.6 Z M869.4 607.8 L512 512 L664.4 424.0 Z M416.2 869.4 L512 512 L600.0 664.4 Z M154.6 416.2 L512 512 L359.6 600.0 Z" fill="#3b3684"/>
+  <path d="M607.8 154.6 L664.4 424.0 L512 512 Z M869.4 607.8 L600.0 664.4 L512 512 Z M416.2 869.4 L359.6 600.0 L512 512 Z M154.6 416.2 L424.0 359.6 L512 512 Z" fill="#1d1a48"/>
+  <!-- the centre hole shows the background through it -->
+  <circle cx="512" cy="512" r="66" fill="url(#bg)"/>
+</svg>

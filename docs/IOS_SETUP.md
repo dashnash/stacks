@@ -55,8 +55,8 @@ lets you download it only once; keep it somewhere safe, or revoke it and make a 
 ## 4. Register the bundle IDs (the workflow does it)
 
 [Actions → iOS provision](https://github.com/dashnash/stacks/actions/workflows/ios-provision.yml) →
-**Run workflow** (branch `main`; leave the email empty for now). It registers `com.dashyhq.stacks`
-and `com.dashyhq.stacks.test` with Associated Domains, then says the two app records are missing:
+**Run workflow** (branch `main`; leave the email empty for now). It registers `ninja.dashnash.stacks`
+and `ninja.dashnash.stacks.test` with Associated Domains, then says the two app records are missing:
 that's step 5. Running it again never duplicates anything.
 
 ## 5. Create the two apps in App Store Connect (by hand: Apple has no API for this)
@@ -65,8 +65,8 @@ that's step 5. Running it again never duplicates anything.
 
 | Name | Primary language | Bundle ID (pick from the list) | SKU |
 | --- | --- | --- | --- |
-| DashyHQ | English (U.S.) | `com.dashyhq.stacks` | `dashyhq` |
-| DashyHQ Test | English (U.S.) | `com.dashyhq.stacks.test` | `dashyhq-test` |
+| DashyHQ | English (U.S.) | `ninja.dashnash.stacks` | `dashyhq` |
+| DashyHQ Test | English (U.S.) | `ninja.dashnash.stacks.test` | `dashyhq-test` |
 
 Platform iOS; User Access **Full Access**. (The App Store name must be unique worldwide; if "DashyHQ"
 is taken, pick another name here. The name on the home screen comes from the build, not from this.)
@@ -87,8 +87,8 @@ in the **same project as the platform's web client** (`880697273676-…`) → **
 
 | Name | Bundle ID |
 | --- | --- |
-| DashyHQ (iOS) | `com.dashyhq.stacks` |
-| DashyHQ Test (iOS) | `com.dashyhq.stacks.test` |
+| DashyHQ (iOS) | `ninja.dashnash.stacks` |
+| DashyHQ Test (iOS) | `ninja.dashnash.stacks.test` |
 
 Leave App Store ID and Team ID empty. Copy each **Client ID** (`…apps.googleusercontent.com`).
 Same project matters: the app asks Google for a token addressed to the web client, which only works
@@ -102,8 +102,8 @@ for clients in its project.
 In `stacks.config.json`:
 
 ```json
-"production": { …, "native": { "appleTeamId": "A1B2C3D4E5", "iosBundleId": "com.dashyhq.stacks", "googleIosClientIds": ["<DashyHQ (iOS) client ID>"], "minShellVersion": "1.0.0" } },
-"staging":    { …, "native": { "appleTeamId": "A1B2C3D4E5", "iosBundleId": "com.dashyhq.stacks.test", "googleIosClientIds": ["<DashyHQ Test (iOS) client ID>"], "minShellVersion": "1.0.0" } }
+"production": { …, "native": { "appleTeamId": "A1B2C3D4E5", "iosBundleId": "ninja.dashnash.stacks", "googleIosClientIds": ["<DashyHQ (iOS) client ID>"], "minShellVersion": "1.0.0" } },
+"staging":    { …, "native": { "appleTeamId": "A1B2C3D4E5", "iosBundleId": "ninja.dashnash.stacks.test", "googleIosClientIds": ["<DashyHQ Test (iOS) client ID>"], "minShellVersion": "1.0.0" } }
 ```
 
 The first `googleIosClientIds` entry of an environment is that app's client; the platform also
@@ -131,7 +131,7 @@ once Apple has processed them; the first build of each app may ask you to confir
 
 Check, in DashyHQ Test: sign in with Google in one tap, open two apps with no second prompt, pull to
 refresh, airplane mode shows "Can't reach Stacks" with a retry, and a link to
-`https://hello.test.iamdashnash.com` tapped in Messages opens in the app. Then DashyHQ. That is the
+`https://hello.test.dashnash.ninja` tapped in Messages opens in the app. Then DashyHQ. That is the
 N2 gate.
 
 ## 9. Push notifications: the APNs key (once; secret)
@@ -172,15 +172,15 @@ environment:
 
 | Description | Identifier |
 | --- | --- |
-| DashyHQ Test (web) | `com.dashyhq.stacks.test.web` |
-| DashyHQ (web) | `com.dashyhq.stacks.web` |
+| DashyHQ Test (web) | `ninja.dashnash.stacks.test.web` |
+| DashyHQ (web) | `ninja.dashnash.stacks.web` |
 
 2. Open each one → tick **Sign in with Apple** → **Configure**:
 
 | Services ID | Primary App ID | Domains and Subdomains | Return URLs |
 | --- | --- | --- | --- |
-| `com.dashyhq.stacks.test.web` | `com.dashyhq.stacks.test` | `auth.test.iamdashnash.com` | `https://auth.test.iamdashnash.com/` |
-| `com.dashyhq.stacks.web` | `com.dashyhq.stacks` | `auth.iamdashnash.com` | `https://auth.iamdashnash.com/` |
+| `ninja.dashnash.stacks.test.web` | `ninja.dashnash.stacks.test` | `auth.test.dashnash.ninja` | `https://auth.test.dashnash.ninja/` |
+| `ninja.dashnash.stacks.web` | `ninja.dashnash.stacks` | `auth.dashnash.ninja` | `https://auth.dashnash.ninja/` |
 
    **Next** → **Done** → **Continue** → **Save**.
 3. In `stacks.config.json`, set `"appleServicesId"` in each environment (a small PR; a Claude

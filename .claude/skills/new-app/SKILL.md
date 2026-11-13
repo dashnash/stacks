@@ -34,7 +34,7 @@ git fetch origin main && git checkout -b app/<slug>/initial origin/main
 ```
 
 Pick the slug in step 1 first (lowercase letters, digits, dashes, 3-30 characters; it becomes
-`<slug>.iamdashnash.com`). If this session must use a branch it was given, use that one instead.
+`<slug>.dashnash.ninja`). If this session must use a branch it was given, use that one instead.
 App branches (`app/<slug>/…`) are checked in CI: they may change only `apps/<slug>/`.
 
 ## 1. Interview → `app.manifest.json` + `BRIEF.md`
@@ -140,7 +140,7 @@ gh api "repos/dashnash/stacks/actions/workflows/deploy-test.yml/runs?per_page=1"
 Use `gh api` (REST), not `gh workflow run` / `gh run watch`: cloud sessions block GitHub's GraphQL
 API, which those commands use.
 
-When it's green, the app is at `https://<slug>.test.iamdashnash.com` (staging `rootDomain` in
+When it's green, the app is at `https://<slug>.test.dashnash.ninja` (staging `rootDomain` in
 `stacks.config.json`). It uses the real Google sign-in and the test platform's data, which is
 separate from production. If the run fails, read only the failing job's log
 (`gh api repos/dashnash/stacks/actions/jobs/<job id>/logs | tail -60`; job ids from
@@ -154,7 +154,7 @@ roles, what it tracks, the test-site link, and anything someone must do by hand 
 secret's `aws ssm put-parameter` command from `docs/SETUP.md` §7: Dash runs those, never the
 creator). Commit `apps/<slug>/.stacks/usage.json` with it. `npm run app-usage -- <slug> ship`.
 
-Tell the creator, plainly: once the PR is merged the app is live at `https://<slug>.iamdashnash.com`,
+Tell the creator, plainly: once the PR is merged the app is live at `https://<slug>.dashnash.ninja`,
 listed in the catalog, with them as its owner; they manage who gets in from the app's account menu
 (Manage access).
 

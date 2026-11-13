@@ -24,7 +24,8 @@ function Header() {
   return (
     <header className="topbar">
       <a href="#/" className="brand">
-        Stacks
+        <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={24} height={24} className="brand-mark" />
+        DashyHQ
       </a>
       <nav className="nav">
         <a href="#/" aria-current={route.path === '/' ? 'page' : undefined}>
@@ -57,7 +58,7 @@ function Header() {
 function Footer() {
   return (
     <footer className="foot">
-      <span>© {new Date().getFullYear()} Stacks</span>
+      <span>© {new Date().getFullYear()} DashyHQ</span>
       <a href="#/">All apps</a>
       <BuildVersion className="build" />
       <AppVersion className="build" />

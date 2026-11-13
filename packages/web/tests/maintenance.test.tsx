@@ -9,7 +9,7 @@ describe('maintenance', () => {
   it('replaces the app with a notice while the API answers 503 MAINTENANCE, and comes back on retry', async () => {
     let down = true;
     const fetch = vi.fn(async () =>
-      down ? json(503, { error: 'Stacks is being upgraded. Back in a few minutes.', code: 'MAINTENANCE' }) : json(200, { user: { id: 'u_a', email: 'a@x.dev', name: 'A' }, role: 'MEMBER', canManageAccess: false }),
+      down ? json(503, { error: 'DashyHQ is being upgraded. Back in a few minutes.', code: 'MAINTENANCE' }) : json(200, { user: { id: 'u_a', email: 'a@x.dev', name: 'A' }, role: 'MEMBER', canManageAccess: false }),
     );
     render(
       <StacksProvider client={createClient({ fetch: fetch as unknown as typeof globalThis.fetch })} silentSignIn={false}>

@@ -130,7 +130,11 @@ export async function accessManagers(deps: PlatformDeps, manifest: AppManifest):
 async function deliver(deps: PlatformDeps, user: PlatformUser, build: (badge: number, device: Device) => PushMessage | Promise<PushMessage>): Promise<void> {
   const push = deps.push;
   if (!push) return;
-  const devices = await listDevices(deps, user.id);
+  // Phones registered by another iOS app (e.g. one under a bundle ID this environment has since
+  // moved away from) are forgotten, not pushed: their app points at the old domain.
+  const all = await listDevices(deps, user.id);
+  const devices = all.filter((d) => d.bundleId === deps.config.iosBundleId);
+  await Promise.all(all.filter((d) => !devices.includes(d)).map((d) => deleteDevice(deps, d)));
   if (!devices.length) return;
   const badge = await badgeCount(deps, user);
   await Promise.all(
@@ -177,7 +181,7 @@ export async function pushNotification(deps: PlatformDeps, userId: string, n: { 
     const user = await getUser(deps, userId);
     if (!user) return;
     const muted = !!n.app && (user.mutedApps ?? []).includes(n.app);
-    const title = n.app ? ((await listApps(deps)).find((a) => a.manifest.slug === n.app)?.manifest.name ?? 'Stacks') : 'Stacks';
+    const title = n.app ? ((await listApps(deps)).find((a) => a.manifest.slug === n.app)?.manifest.name ?? 'DashyHQ') : 'DashyHQ';
     await deliver(deps, user, async (badge, device) => {
       if (muted) return { badge };
       const message: PushMessage = { alert: { title, body: n.text }, badge, url: absoluteLink(deps, n.link) ?? `${deps.config.authOrigin}/#/notifications`, ...(n.app ? { threadId: n.app } : {}) };

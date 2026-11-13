@@ -1,5 +1,8 @@
 # Book Club cut-over
 
+> **Historical.** The domain has since moved from `iamdashnash.com` to `dashnash.ninja` (#42); the old
+> addresses below only redirect now.
+
 > **Done on 2026-11-08.** Steps 1-5 are complete. Remaining: step 6 (retire the old site) after
 > 2026-12-08. Kept as the pattern for migrating other existing apps.
 

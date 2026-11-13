@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { createAppleVerifier } from '../src/apple';
 import { createPlatformHarness } from './helpers';
 
-const BUNDLE = 'com.dashyhq.stacks.test';
-const SERVICES = 'com.dashyhq.stacks.test.web';
+const BUNDLE = 'ninja.dashnash.stacks.test';
+const SERVICES = 'ninja.dashnash.stacks.test.web';
 
 async function keys() {
   const { publicKey, privateKey } = await generateKeyPair('RS256');

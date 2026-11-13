@@ -66,16 +66,16 @@ describe('PlatformStack', () => {
   });
 
   it('tells the Lambda the web Services ID for Sign in with Apple, and lets the portal load Apple JS', () => {
-    const t = synth({ ...env, appleServicesId: 'com.dashyhq.stacks.test.web' });
-    t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ APPLE_SERVICES_ID: 'com.dashyhq.stacks.test.web' }) } });
+    const t = synth({ ...env, appleServicesId: 'ninja.dashnash.stacks.test.web' });
+    t.hasResourceProperties('AWS::Lambda::Function', { Environment: { Variables: Match.objectLike({ APPLE_SERVICES_ID: 'ninja.dashnash.stacks.test.web' }) } });
     expect(PORTAL_CSP).toContain('https://appleid.cdn-apple.com');
     expect(PORTAL_CSP).toMatch(/frame-src[^;]*https:\/\/appleid\.apple\.com/);
   });
 
   it('lets the Lambda read the APNs key from its own secrets path, decrypting only through SSM', () => {
-    const t = synth({ ...env, native: { appleTeamId: '47ZUZ59AHR', iosBundleId: 'com.dashyhq.stacks.test', googleIosClientIds: [], minShellVersion: '1.0.0' } });
+    const t = synth({ ...env, native: { appleTeamId: '47ZUZ59AHR', iosBundleId: 'ninja.dashnash.stacks.test', googleIosClientIds: [], minShellVersion: '1.0.0' } });
     t.hasResourceProperties('AWS::Lambda::Function', {
-      Environment: { Variables: Match.objectLike({ PLATFORM_SECRETS_PREFIX: '/stacks/test/secrets/platform/', IOS_BUNDLE_ID: 'com.dashyhq.stacks.test', APPLE_TEAM_ID: '47ZUZ59AHR' }) },
+      Environment: { Variables: Match.objectLike({ PLATFORM_SECRETS_PREFIX: '/stacks/test/secrets/platform/', IOS_BUNDLE_ID: 'ninja.dashnash.stacks.test', APPLE_TEAM_ID: '47ZUZ59AHR' }) },
     });
     const policies = JSON.stringify(t.findResources('AWS::IAM::Policy'));
     expect(policies).toContain(':parameter/stacks/test/secrets/platform/*');

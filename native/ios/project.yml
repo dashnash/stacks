@@ -33,7 +33,7 @@ targets:
     platform: iOS
     sources:
       - path: App
-        excludes: ["Info.plist", "DashyHQ.entitlements"]
+        excludes: ["Info.plist", "DashyHQ.entitlements", "Icon/**"]
     dependencies:
       - package: StacksShellCore
       - package: GoogleSignIn

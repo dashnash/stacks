@@ -200,7 +200,7 @@ export function MaintenanceNotice({ onRetry }: { onRetry: () => void }) {
   return (
     <main role="main" style={{ maxWidth: '32rem', margin: '20vh auto', padding: '0 16px', fontFamily: 'system-ui, sans-serif', textAlign: 'center' }}>
       <h1 style={{ fontSize: '1.5rem' }}>Back in a few minutes</h1>
-      <p>Stacks is being upgraded. Nothing you saved is lost.</p>
+      <p>DashyHQ is being upgraded. Nothing you saved is lost.</p>
       <button type="button" onClick={onRetry}>
         Try again
       </button>
