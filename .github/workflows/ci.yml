@@ -33,6 +33,8 @@ jobs:
         run: node scripts/check-imports.mjs
       - name: Mac runner switch (shellcheck and fake-GitHub tests)
         run: |
+          # Not on every runner image (the homelab image doesn't ship it).
+          command -v shellcheck > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
           shellcheck scripts/mac-runner.sh scripts/mac-runner.test.sh
           bash scripts/mac-runner.test.sh
       - name: PR paths (app PRs change one app; anything else is platform work)
