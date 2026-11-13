@@ -73,3 +73,5 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 }
+
+// Runner verification: no behaviour change (ios-runner-verify branch, closed after the run).
