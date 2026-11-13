@@ -12,7 +12,7 @@
       "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
       "maintenance": false,
-      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "ninja.dashnash.stacks", "googleIosClientIds": ["PLACEHOLDER-production-ios-client.apps.googleusercontent.com"], "minShellVersion": "1.0.0" }
+      "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "ninja.dashnash.stacks", "googleIosClientIds": ["880697273676-fs422l6u5usnjprfa4hhlui3ad2c53ge.apps.googleusercontent.com"], "minShellVersion": "1.0.0" }
     },
     "staging": {
       "rootDomain": "test.dashnash.ninja",
