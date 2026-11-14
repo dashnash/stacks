@@ -10,6 +10,9 @@
  *   -c hostedZoneIds=<name>=<id>,...   IDs for zones the config marks `hostedZoneId: "lookup"`
  *                               (the deploy workflows look them up with scripts/lookup-zones.mjs)
  *   -c requireZones=true        fail instead of synthesizing a placeholder zone ID (deploy builds)
+ *   -c requireGameImage=true    fail when an app with the gameServer module has no built image
+ *                               (`npm run build-game-images`); without it synth uses a placeholder
+ *                               tarball, so it works on a machine without Docker (never deploy that)
  *
  * The full synth (no `app`/`only`) also has `stacks-<env>-legacy-redirect` when the environment has
  * `legacyRedirects`; it depends on every other stack, so `cdk deploy --all` deploys it last, once
@@ -44,7 +47,8 @@ if (app.node.tryGetContext('ci') === 'true') {
   if (only && held.has(only)) throw new Error(`"${only}" is on hold for ${envName} (holdApps in stacks.config.json)`);
   const apps = discoverApps(repoRoot).filter((a) => (!only || a.manifest.slug === only) && !held.has(a.manifest.slug));
   if (only && !apps.length) throw new Error(`No app "${only}" in apps/`);
-  const appStacks = apps.map((a) => new AppStack(app, { manifest: a.manifest, envName, env, region: config.region, repoRoot, appDir: a.dir }));
+  const requireGameImage = String(app.node.tryGetContext('requireGameImage')) === 'true';
+  const appStacks = apps.map((a) => new AppStack(app, { manifest: a.manifest, envName, env, region: config.region, repoRoot, appDir: a.dir, requireGameImage }));
   if (platform && env.legacyRedirects?.length) {
     const redirect = new LegacyRedirectStack(app, { envName, env, region: config.region });
     for (const s of [platform, ...appStacks]) redirect.addStackDependency(s, 'takes over the old names only after they have left them');
