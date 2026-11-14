@@ -65,9 +65,11 @@ describe('Hello Board UI (on the demo backend)', () => {
     expect(await max.findByText('Live')).toBeInTheDocument();
     expect(max.getByLabelText('Shared counter')).toHaveTextContent('0');
 
+    // +1 is disabled until its POST returns, and a click doesn't wait for that: let each one finish.
     await userEvent.click(olive.getByText('+1'));
+    await expect.poll(() => (olive.getByText('+1') as HTMLButtonElement).disabled).toBe(false);
     await userEvent.click(olive.getByText('+1'));
-    expect(olive.getByLabelText('Shared counter')).toHaveTextContent('2');
+    await expect.poll(() => olive.getByLabelText('Shared counter').textContent).toBe('2');
     await expect.poll(() => max.getByLabelText('Shared counter').textContent).toBe('2');
 
     await userEvent.click(max.getByText('Wave 👋'));

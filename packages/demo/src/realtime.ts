@@ -20,6 +20,7 @@ export class DemoRealtimeBus implements Realtime {
   private readonly tab = randomToken();
   private readonly sockets = new Set<DemoSocket>();
   private readonly broadcast: BroadcastChannel | null;
+  private closed = false;
 
   constructor(
     slug: string,
@@ -62,6 +63,7 @@ export class DemoRealtimeBus implements Realtime {
 
   /** Stop listening to other tabs (tests). */
   close(): void {
+    this.closed = true;
     this.broadcast?.close();
     for (const s of this.sockets) s.close();
   }
@@ -70,7 +72,8 @@ export class DemoRealtimeBus implements Realtime {
   send(channel: string, event: string): void {
     this.local(channel, event);
     // After the current task, so the route that published has saved its data for the other tab to read.
-    setTimeout(() => this.broadcast?.postMessage({ channel, event, tab: this.tab } satisfies Wire), 0);
+    // Skipped if the bus closed meanwhile: posting on a closed channel throws.
+    setTimeout(() => !this.closed && this.broadcast?.postMessage({ channel, event, tab: this.tab } satisfies Wire), 0);
   }
 
   private local(channel: string, event: string): void {
@@ -93,6 +96,8 @@ class DemoSocket implements SocketLike {
   onerror: SocketLike['onerror'] = null;
   private readonly subs = new Map<string, string>();
   private closed = false;
+  /** The message being handled; the next one waits for it. */
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly bus: DemoRealtimeBus,
@@ -102,7 +107,11 @@ class DemoSocket implements SocketLike {
   }
 
   send(raw: string): void {
-    void this.handle(JSON.parse(raw) as { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } });
+    const msg = JSON.parse(raw) as { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } };
+    // One message at a time, in the order sent: each awaits an async authorize (WebCrypto), so
+    // handling them concurrently let a later message's reply overtake an earlier one's.
+    // A failure doesn't stall the socket, and still surfaces as an unhandled rejection, as before.
+    this.queue = this.queue.then(() => this.handle(msg)).catch((e: unknown) => void Promise.reject(e));
   }
 
   private async handle(msg: { type: string; id?: string; channel?: string; events?: string[]; authorization?: { Authorization?: string } }) {
