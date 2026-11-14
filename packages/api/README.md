@@ -59,7 +59,32 @@ await deps.platform.notify(userId, 'Your pick won', url); // their platform inbo
 `GET /health`, `GET /auth/login?return=/path`, `GET /auth/callback`, `GET /auth/session`,
 `POST /auth/logout`, `GET /stacks/account` (account menu data), `GET /stacks/members` (members),
 `GET /stacks/access` (`members`, `pending`, `blocked`) + `PUT /stacks/access/:userId {role|null|"BLOCKED"}`
-(approvers: the app's own access page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`).
+(approvers: the app's own access page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`),
+`POST /stacks/client-error` (browser errors from `@stacks/web`; logged, never stored).
+
+## Logs and error refs
+
+Every request is logged for you as one JSON line (`type: "request"`: method, route pattern, status,
+`durationMs`, the signed-in `userId`). You only add lines for things you want to find later:
+
+```ts
+import { log } from '@stacks/api';
+
+log.info('Reminder sent', { listId, count });   // extra fields: ids and counts
+log.warn('Geocoder slow', { ms });
+log.error('Could not notify', err);              // an Error (also as a field) logs as { name, message, stack }
+```
+
+- Each line carries `type` (`app` for yours), `level`, `app`, `env`, `build` and, inside a request,
+  `requestId`, `ref`, `route`, `userId`. No plumbing: the request's context follows your `await`s.
+- **Never log** an email, a display name, a request or response body, cookies, headers or a query
+  string. Ids (`u_…`, your own record ids) are fine.
+- An error you don't catch is a 500 with `{ error, code: 'INTERNAL', ref }`; its stack is logged as
+  a `type: "error"` line. `@stacks/web` shows the person "(ref 3f9a2c1b)", and the owner finds the
+  request and trace with it (`docs/DEBUGGING.md`). Throwing an `HttpError` (4xx) logs no error line.
+- Outside Lambda (tests, the demo) info lines are not printed. In tests, collect lines with
+  `captureLogs()` from `@stacks/testing`.
+- Use `log`, not `console.*`, in API code: only `log` lines have the fields the dashboard reads.
 
 ## Lambda entry (`apps/<slug>/api/index.ts`)
 

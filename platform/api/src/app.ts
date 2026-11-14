@@ -6,12 +6,14 @@ import {
   clearCookie,
   cookie,
   forbidden,
+  logClientError,
   maintenance,
   MAINTENANCE_OPEN_PATHS,
   notFound,
   optionalString,
   randomToken,
   Router,
+  setLogApp,
   sha256Hex,
   unauthorized,
   type Item,
@@ -59,7 +61,8 @@ type AppEntry = RegisteredApp & { status: 'live' | 'archived' };
 
 /** The Platform API: portal sign-in, the app handshake (`/authorize`, `/token`), catalog, access grid, audit. */
 export function createPlatformApp(deps: PlatformDeps) {
-  const router = new Router().before((_method, path) => {
+  setLogApp('platform');
+  const router = new Router({ app: 'platform' }).before((_method, path) => {
     if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
   });
   const portalUrl = (hash = '/') => `${deps.config.authOrigin}/#${hash}`;
@@ -167,6 +170,13 @@ export function createPlatformApp(deps: PlatformDeps) {
 
   router
     .add('GET', '/health', async () => ({ body: { ok: true, platform: true } }))
+    // Browser errors from the portal, sent by @stacks/web (signed in or out). Logged, never stored.
+    .add('POST', '/stacks/client-error', async (req) => {
+      csrf(req);
+      await readPortalSession(deps, req.cookies[PORTAL_COOKIE]).catch(() => null);
+      if (!logClientError(req.body)) throw badRequest('Error report is too large');
+      return { status: 204 };
+    })
     .add('GET', '/config', async () => ({
       body: { googleClientId: deps.config.googleClientId, rootDomain: deps.config.rootDomain, appleServicesId: deps.config.appleServicesId ?? null },
     }))

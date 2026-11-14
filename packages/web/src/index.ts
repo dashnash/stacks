@@ -7,6 +7,8 @@ export type { AsyncState } from './hooks';
 export { Avatar, ErrorNote, initials, lockPageScroll, Modal, RequestAccess, Spinner } from './components';
 export { firstName, formatDateTime, formatShortDate, timeAgo } from './format';
 export { BuildVersion } from './BuildVersion';
+export { ErrorBoundary, ErrorReporting, installErrorReporting, MAX_ERROR_REPORTS, reportError } from './errors';
+export type { ErrorReport, ErrorSource, PostError } from './errors';
 export { AccountMenu, AccountMenuView, DemoControlsContext, useAccountMenu } from './AccountMenu';
 export type { AccountData, AccountMenuViewProps, AccountState, DemoControls, MenuItem } from './AccountMenu';
 export { useChannel } from './useChannel';

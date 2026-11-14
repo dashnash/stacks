@@ -11,9 +11,11 @@ import {
   REALTIME_NAMESPACE,
   SERVER_SENDER,
   SESSION_COOKIE,
+  setLogSink,
   type AppDeps,
   type AppRoutes,
   type AuditEvent,
+  type LogLine,
   type PlatformClient,
   type AccountData,
   type AppAccess,
@@ -223,4 +225,19 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
 export function cookieValue(setCookies: string[], name: string): string | undefined {
   const c = setCookies.find((s) => s.startsWith(`${name}=`));
   return c ? decodeURIComponent(c.slice(name.length + 1).split(';')[0]!) : undefined;
+}
+
+/**
+ * Collect the log lines written from here on (request lines, errors, the app's own `log.info`),
+ * instead of printing them. Call `stop()` when done.
+ *
+ *   const logs = captureLogs();
+ *   await t.call('GET', '/notes', { as: 'ann@test' });
+ *   expect(logs.lines.at(-1)).toMatchObject({ type: 'request', route: '/api/notes', status: 200 });
+ *   logs.stop();
+ */
+export function captureLogs(): { lines: LogLine[]; stop: () => void } {
+  const lines: LogLine[] = [];
+  const stop = setLogSink((_level, line) => void lines.push(line));
+  return { lines, stop };
 }

@@ -1,3 +1,4 @@
+import { log } from '@stacks/api';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -43,7 +44,7 @@ export class SsmAppRegistry implements AppRegistry, AppSessionRevoker {
         const manifest = parseManifest(JSON.parse(v.manifest ?? 'null'), `${prefix}${slug}/manifest`);
         apps.push({ manifest, tableName: v.table, credential: () => this.credential(slug) });
       } catch (err) {
-        console.error(`Skipping app ${slug}: bad registry entry`, err);
+        log.error('Skipping an app: bad registry entry', { forApp: slug, error: err });
       }
     }
     this.cache = { at: Date.now(), apps };

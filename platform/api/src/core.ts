@@ -1,5 +1,5 @@
 import { canManageAccess, roleDef, type AppManifest } from '@stacks/manifest';
-import { conflict, forbidden, notFound, randomToken, sanitize, sha256Hex, badRequest, type Item, ConditionFailedError } from '@stacks/api';
+import { conflict, forbidden, log, notFound, setLogUser, randomToken, sanitize, sha256Hex, badRequest, type Item, ConditionFailedError } from '@stacks/api';
 import {
   isPlatformAdmin,
   keys,
@@ -217,6 +217,7 @@ export async function readPortalSession(deps: PlatformDeps, token: string | unde
     return null;
   }
   if (idle > DAY_MS) await deps.store.put({ ...s, lastUsedAt: now.toISOString(), expiresAt: expiryFor(now) });
+  setLogUser(user.id);
   return user;
 }
 
@@ -231,7 +232,7 @@ export async function signOutEverywhere(deps: PlatformDeps, userId: string): Pro
   const sessions = await deps.store.queryGsi1(`USERSESSIONS#${userId}`);
   await Promise.all(sessions.map((s) => deps.store.delete(s.PK, s.SK)));
   const grants = await grantsForUser(deps, userId);
-  await Promise.all(grants.filter((g) => holdsRole(g.role)).map((g) => deps.appSessions.endUserSessions(g.app, userId).catch((err) => console.error(`Could not end ${g.app} sessions`, err))));
+  await Promise.all(grants.filter((g) => holdsRole(g.role)).map((g) => deps.appSessions.endUserSessions(g.app, userId).catch((err) => log.error('Could not end app sessions', { forApp: g.app, error: err }))));
   // Signed out on every device, so no device gets their notifications any more.
   await removeAllDevices(deps, userId);
 }
@@ -452,7 +453,7 @@ export async function storeAudit(deps: PlatformDeps, e: PlatformAuditEvent): Pro
     const clean = { ...e, details: e.details ? (sanitize(e.details) as Record<string, unknown>) : undefined };
     await deps.store.put({ PK: monthKey(e.at), SK: `${e.at}#${e.app}#${e.id}`, ...clean });
   } catch (err) {
-    console.error('Could not record audit event', err);
+    log.error('Could not record audit event', err);
   }
 }
 

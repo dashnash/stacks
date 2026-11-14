@@ -1,3 +1,4 @@
+import { log } from './log';
 import type { AppDeps, StacksUser } from './model';
 import type { Item } from './store';
 
@@ -63,8 +64,8 @@ export async function recordAudit(
     ...(event.details && Object.keys(event.details).length ? { details: event.details } : {}),
   };
   await Promise.all([
-    deps.store.put({ PK: monthKey(at), SK: `${at}#${id}`, ...record }).catch((err) => console.error('Could not record audit event', err)),
-    deps.platform.recordAudit(record).catch((err) => console.error('Could not mirror audit event to the platform', err)),
+    deps.store.put({ PK: monthKey(at), SK: `${at}#${id}`, ...record }).catch((err) => log.error('Could not record audit event', err)),
+    deps.platform.recordAudit(record).catch((err) => log.error('Could not mirror audit event to the platform', err)),
   ]);
 }
 

@@ -1,4 +1,5 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import { currentLogScope, writeLog } from './log';
 
 /** An error that becomes a JSON response `{ error, code }` with its status. */
 export class HttpError extends Error {
@@ -40,15 +41,19 @@ export function toResponse(result: RouteResult): APIGatewayProxyResultV2 {
   return {
     statusCode: result.status ?? 200,
     headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(result.body ?? {}),
+    // 204 has no body by definition.
+    body: result.status === 204 ? '' : JSON.stringify(result.body ?? {}),
     ...cookies,
   };
 }
 
+/** `HttpError`s answer as they are; anything else is a 500 with a `ref`, logged with its stack as an `error` line. */
 export function errorResponse(err: unknown): APIGatewayProxyResultV2 {
   if (err instanceof HttpError) return toResponse({ status: err.status, body: { error: err.message, code: err.code } });
-  console.error('Unhandled error', err);
-  return toResponse({ status: 500, body: { error: 'Internal server error', code: 'INTERNAL' } });
+  // The person sees the ref; the owner pastes it into the "Find by ref" query (docs/DEBUGGING.md).
+  const ref = currentLogScope()?.ref;
+  writeLog('error', 'error', 'Unhandled error', err);
+  return toResponse({ status: 500, body: { error: 'Internal server error', code: 'INTERNAL', ...(ref ? { ref } : {}) } });
 }
 
 /** Read a required, non-empty string field from a parsed JSON body. */

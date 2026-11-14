@@ -43,7 +43,7 @@ function DemoBridge({ demo, startAs, children }: { demo: Demo; startAs: string |
 export function DemoApp({ demo, startAs, children }: { demo: Demo; startAs?: string | null; children: ReactNode }) {
   const initial = useMemo(() => (startAs !== undefined ? startAs : asFromUrl()), [startAs]);
   return (
-    <StacksProvider client={demo.client} navigator={demo.navigator} silentSignIn={false}>
+    <StacksProvider client={demo.client} navigator={demo.navigator} silentSignIn={false} errorReporting="console">
       <DemoBridge demo={demo} startAs={initial}>
         {children}
       </DemoBridge>

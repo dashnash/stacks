@@ -1,6 +1,7 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStacks } from './auth';
+import { ApiError } from './client';
 
 /*
  * Headless primitives: behavior and accessibility only. Every element takes `className`/`style`
@@ -123,11 +124,13 @@ export function Modal({
   );
 }
 
+/** An error as a line of text. A server failure (500) ends with its ref: "Internal server error (ref 3f9a2c1b)". */
 export function ErrorNote({ error, className, style }: Styled & { error?: Error | string | null }) {
   if (!error) return null;
   return (
     <p role="alert" className={className} style={style}>
       {typeof error === 'string' ? error : error.message}
+      {error instanceof ApiError && error.ref ? ` (ref ${error.ref})` : ''}
     </p>
   );
 }
