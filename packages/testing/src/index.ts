@@ -3,6 +3,9 @@ import {
   createSession,
   createStacksApp,
   fixtureUserId,
+  gamesOff,
+  roomKeys,
+  STUN_ONLY,
   envelope,
   eventsOf,
   isChannelName,
@@ -18,9 +21,13 @@ import {
   type AccountData,
   type AppAccess,
   type AppMember,
+  type Games,
+  type IceServer,
   type Realtime,
   type RealtimeConnection,
+  type RoomServerRecord,
   type StacksUser,
+  type Store,
 } from '@stacks/api';
 import { hasModule, type AppManifest } from '@stacks/manifest';
 
@@ -44,6 +51,64 @@ export class FakeRealtime implements Realtime {
   /** The data published on one channel, oldest first. */
   on(channel: string): unknown[] {
     return this.published.filter((p) => p.channel === channel).map((p) => p.data);
+  }
+}
+
+/**
+ * `deps.games` for API tests: no servers, just a record of which rooms were started and stopped,
+ * and ways to play the server's part (`open`, `end`, `crash`).
+ */
+export class FakeGames implements Games {
+  /** Room ids, in the order the API started / stopped their servers. */
+  readonly started: string[] = [];
+  readonly stopped: string[] = [];
+  /** The key tickets are signed with here (to check them with `verifyGameTicket`). */
+  readonly gameKey = 'test-game-key';
+  /** Set to a TURN server list to play "the platform has a TURN key"; null is STUN only. */
+  turn: IceServer[] | null = null;
+  /** Make the next `start` fail (ECS out of capacity, say). */
+  failNextStart = false;
+  private readonly alive = new Set<string>();
+
+  constructor(private readonly store: Store) {}
+
+  async start(roomId: string): Promise<void> {
+    if (this.failNextStart) {
+      this.failNextStart = false;
+      throw new Error('FakeGames: start failed');
+    }
+    this.started.push(roomId);
+    this.alive.add(roomId);
+  }
+  async stop(roomId: string): Promise<void> {
+    this.stopped.push(roomId);
+    this.alive.delete(roomId);
+  }
+  async running(roomIds: string[]): Promise<Set<string>> {
+    return new Set(roomIds.filter((id) => this.alive.has(id)));
+  }
+  async key(): Promise<string> {
+    return this.gameKey;
+  }
+  async iceServers(): Promise<IceServer[]> {
+    return this.turn ? [...STUN_ONLY, ...this.turn] : STUN_ONLY;
+  }
+  async missingKeys(): Promise<string[]> {
+    return this.turn ? [] : ['CLOUDFLARE_TURN_KEY_ID', 'CLOUDFLARE_TURN_API_TOKEN'];
+  }
+
+  /** What the room's server does once it is up: marks the room open. */
+  async open(roomId: string): Promise<void> {
+    await this.store.put({ ...roomKeys.server(roomId), status: 'open', openedAt: new Date(0).toISOString() } satisfies RoomServerRecord & { PK: string; SK: string });
+  }
+  /** What the room's server does when the game ends by itself: writes results, marks it ended, exits. */
+  async end(roomId: string, reason = 'idle', results?: unknown): Promise<void> {
+    await this.store.put({ ...roomKeys.server(roomId), status: 'ended', reason, ...(results !== undefined ? { results } : {}) } satisfies RoomServerRecord & { PK: string; SK: string });
+    this.alive.delete(roomId);
+  }
+  /** The server dies without a word (its task is gone). */
+  crash(roomId: string): void {
+    this.alive.delete(roomId);
   }
 }
 
@@ -162,6 +227,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
   const store = new MemoryStore();
   const platform = new FakePlatform();
   const realtime = new FakeRealtime();
+  const games = new FakeGames(store);
   let id = 0;
   let clock = new Date('2026-01-01T00:00:00Z').getTime();
   const base: AppDeps = {
@@ -174,6 +240,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
     now: () => new Date((clock += 1000)),
     newId: () => `id${++id}`,
     realtime: hasModule(opts.manifest, 'realtime') ? realtime : realtimeOff(opts.manifest.slug),
+    games: hasModule(opts.manifest, 'gameServer') ? games : gamesOff(opts.manifest.slug),
     ...(opts.manifest.secrets?.length ? { secret: async (name: string) => opts.secrets?.[name] } : {}),
   };
   const deps = opts.extend ? opts.extend(base) : (base as D);
@@ -216,7 +283,7 @@ export function createTestHarness<D extends AppDeps = AppDeps>(opts: {
     clock += ms;
   };
 
-  return { app, call, deps, store, platform, realtime, sessionFor, advance };
+  return { app, call, deps, store, platform, realtime, games, sessionFor, advance };
 }
 
 /** The value a `Set-Cookie` header sets for `name`, or undefined. */

@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { canManageAccess, hasModule, type AppManifest } from '@stacks/manifest';
 import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
+import { gamesOff, registerGameRoutes } from './games';
 import { badRequest, forbidden, HttpError, maintenance, MAINTENANCE_OPEN_PATHS, unauthorized, type RouteResult } from './http';
 import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
@@ -80,7 +81,12 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   const realtimeOn = hasModule(manifest, 'realtime');
   // Callers that predate the module (or leave it out) get the "turn it on" stand-in.
   (deps as AppDeps).realtime ??= realtimeOff(manifest.slug);
+  const gamesOn = hasModule(manifest, 'gameServer');
+  if (gamesOn && !realtimeOn) throw new Error(`${manifest.slug}: the "gameServer" module needs "realtime" in "modules" too`);
+  (deps as AppDeps).games ??= gamesOff(manifest.slug);
   const channels = new ChannelRegistry<Viewer<D>>();
+  /** Set once the gameServer module has declared its `room/*` channels: apps can't add their own under it. */
+  let roomChannelsTaken = false;
   const knownRoles = new Set(manifest.roles.map((r) => r.id));
   const router = new Router().before((_method, path) => {
     if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
@@ -171,6 +177,9 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     realtime: {
       channel(pattern, guards) {
         if (!realtimeOn) throw new Error(`realtime.channel("${pattern}"): add "realtime" to "modules" in ${manifest.slug}'s app.manifest.json`);
+        if (roomChannelsTaken && /^room\/\*(\/|$)/.test(pattern)) {
+          throw new Error(`realtime.channel("${pattern}"): the gameServer module owns "room/*" channels; pick another prefix (e.g. "lobby/*")`);
+        }
         channels.channel(pattern, guards);
         return api.realtime;
       },
@@ -220,7 +229,11 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       if (required.length && deps.secret) {
         for (const name of required) if (!(await deps.secret(name).catch(() => undefined))) missing.push(name);
       }
-      return { body: { ok: true, app: manifest.slug, ...(missing.length ? { missingSecrets: missing } : {}) } };
+      // Platform keys the app's modules use that nobody has stored yet (the TURN key for game servers).
+      const missingKeys = gamesOn ? await Promise.resolve(deps.games.missingKeys?.() ?? []).catch(() => []) : [];
+      return {
+        body: { ok: true, app: manifest.slug, ...(missing.length ? { missingSecrets: missing } : {}), ...(missingKeys.length ? { missingPlatformKeys: missingKeys } : {}) },
+      };
     })
     // Step 2 of the handshake: send the browser to the platform with a PKCE challenge.
     .add('GET', '/auth/login', async (req) => {
@@ -352,6 +365,12 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       };
       return { body };
     });
+  }
+
+  // Game rooms: the built-in /rooms routes and the signaling channels.
+  if (gamesOn) {
+    registerGameRoutes(api);
+    roomChannelsTaken = true;
   }
 
   opts.routes(api);

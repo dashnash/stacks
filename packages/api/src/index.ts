@@ -45,6 +45,8 @@ export {
   REALTIME_NAMESPACE,
   realtimeOff,
   SERVER_SENDER,
+  openHmacToken,
+  signHmacToken,
   signRealtimeToken,
   TOKEN_TTL_SECONDS,
   verifyRealtimeToken,
@@ -62,3 +64,23 @@ export type {
   RealtimeEnvelope,
   RealtimeTokenResponse,
 } from './realtime';
+export {
+  declareRoomChannels,
+  ENDED_ROOM_TTL_DAYS,
+  gameRooms,
+  gamesOff,
+  newRoomCode,
+  normalizeRoomCode,
+  playerChannelId,
+  registerGameRoutes,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  roomChannels,
+  roomKeys,
+  signGameTicket,
+  STUN_ONLY,
+  TICKET_TTL_SECONDS,
+  TURN_KEY_NAMES,
+  verifyGameTicket,
+} from './games';
+export type { GamePlayerInfo, Games, GameTicket, IceCandidateInit, IceServer, JoinResponse, Room, RoomServerRecord, RoomStatus, ToPlayerSignal, ToServerSignal } from './games';

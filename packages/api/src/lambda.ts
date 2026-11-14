@@ -7,7 +7,9 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { hasModule, type AppManifest } from '@stacks/manifest';
 import { createStacksApp, type AppRoutes } from './app';
 import { DynamoStore } from './dynamo-store';
+import { gamesOff, type Games } from './games';
 import type { AppDeps } from './model';
+import type { Store } from './store';
 import { HttpPlatformClient } from './platform';
 import { realtimeOff, type Realtime } from './realtime';
 import { appSyncRealtime, realtimeKeyReader } from './realtime-aws';
@@ -22,8 +24,9 @@ function env(name: string): string {
 export function defaultDeps(manifest: AppManifest): AppDeps {
   const secrets = new SecretsManagerClient({});
   let credential: Promise<string> | undefined;
+  const store = new DynamoStore(env('TABLE_NAME'));
   return {
-    store: new DynamoStore(env('TABLE_NAME')),
+    store,
     config: { appOrigin: env('STACKS_APP_ORIGIN'), authOrigin: env('STACKS_AUTH_ORIGIN'), maintenance: process.env.STACKS_MAINTENANCE === '1' },
     platform: new HttpPlatformClient({
       baseUrl: env('STACKS_PLATFORM_URL'),
@@ -40,6 +43,7 @@ export function defaultDeps(manifest: AppManifest): AppDeps {
     now: () => new Date(),
     newId: () => randomUUID(),
     realtime: defaultRealtime(manifest),
+    games: defaultGames(manifest, store),
     ...(manifest.secrets?.length ? { secret: appSecrets(manifest) } : {}),
   };
 }
@@ -54,6 +58,37 @@ function defaultRealtime(manifest: AppManifest): Realtime {
     region: process.env.AWS_REGION ?? 'us-east-1',
     key: realtimeKeyReader({ secretId: env('STACKS_REALTIME_KEY_ARN') }),
   });
+}
+
+/**
+ * Game servers as `AppStack` wires them (`STACKS_GAME_*`), or the "turn it on" stand-in. The ECS
+ * client loads on first use, so apps without the module never pay for it.
+ */
+function defaultGames(manifest: AppManifest, store: Store): Games {
+  if (!hasModule(manifest, 'gameServer')) return gamesOff(manifest.slug);
+  let games: Promise<Games> | undefined;
+  const load = () =>
+    (games ??= import('./games-aws').then(({ awsGames }) =>
+      awsGames({
+        app: manifest.slug,
+        store,
+        clusterArn: env('STACKS_GAME_CLUSTER_ARN'),
+        taskDefinition: env('STACKS_GAME_TASK_DEFINITION'),
+        containerName: env('STACKS_GAME_CONTAINER'),
+        subnetIds: env('STACKS_GAME_SUBNET_IDS').split(','),
+        securityGroupId: env('STACKS_GAME_SECURITY_GROUP'),
+        key: realtimeKeyReader({ secretId: env('STACKS_GAME_KEY_ARN') }),
+        ...(process.env.STACKS_GAME_TURN_PREFIX ? { turnPrefix: process.env.STACKS_GAME_TURN_PREFIX } : {}),
+      }),
+    ));
+  return {
+    start: async (roomId) => (await load()).start(roomId),
+    stop: async (roomId) => (await load()).stop(roomId),
+    running: async (roomIds) => (await load()).running(roomIds),
+    key: async () => (await load()).key(),
+    iceServers: async (ttl) => (await load()).iceServers(ttl),
+    missingKeys: async () => (await load()).missingKeys?.() ?? [],
+  };
 }
 
 const SECRET_TTL_MS = 5 * 60_000;

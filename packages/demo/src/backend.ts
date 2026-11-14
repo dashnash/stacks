@@ -3,6 +3,7 @@ import {
   createSession,
   createStacksApp,
   fixtureUserId,
+  gamesOff,
   MemoryStore,
   realtimeOff,
   SESSION_COOKIE,
@@ -175,6 +176,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),
     realtime: realtime ?? realtimeOff(opts.manifest.slug),
+    games: gamesOff(opts.manifest.slug),
   };
   demoPlatform.needsEmail = !!opts.manifest.needsEmail;
   const deps = opts.extend ? opts.extend(base) : (base as D);

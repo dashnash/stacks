@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canManageAccess, parseManifest, validateManifest, type AppManifest } from '../src/index';
+import { canManageAccess, gameServerSettings, parseManifest, validateManifest, type AppManifest } from '../src/index';
 
 const valid: AppManifest = {
   slug: 'book-club',
@@ -63,6 +63,49 @@ describe('validateManifest', () => {
     expect(errorsFor({ visibility: 'public', defaultRole: undefined })[0]).toMatch(/defaultRole/);
     expect(errorsFor({ visibility: 'public', defaultRole: 'ADMIN' })[0]).toMatch(/approver/);
     expect(errorsFor({ visibility: 'public' })).toEqual([]);
+  });
+
+  describe('gameServer module', () => {
+    it('needs realtime', () => {
+      expect(errorsFor({ modules: ['realtime', 'gameServer'] })).toEqual([]);
+      expect(errorsFor({ modules: ['gameServer'] })[0]).toMatch(/"gameServer" module needs "realtime"/);
+    });
+
+    it('takes limits within range and fills in the defaults', () => {
+      const m = { modules: ['realtime', 'gameServer'], gameServer: { maxRooms: 2, maxPlayers: 16, idleMinutes: 1, maxHours: 0.25, cpu: 512, memory: 1024 } };
+      expect(errorsFor(m)).toEqual([]);
+      expect(gameServerSettings({})).toEqual({ maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, cpu: 256, memory: 512 });
+      expect(gameServerSettings({ gameServer: { maxPlayers: 4 } })).toMatchObject({ maxPlayers: 4, maxRooms: 4 });
+      // A bigger CPU brings the least memory Fargate pairs with it.
+      expect(gameServerSettings({ gameServer: { cpu: 1024 } })).toMatchObject({ cpu: 1024, memory: 2048 });
+    });
+
+    it.each([
+      [{ maxRooms: 0 }, /maxRooms must be a whole number from 1 to 10/],
+      [{ maxRooms: 11 }, /maxRooms/],
+      [{ maxPlayers: 1 }, /maxPlayers must be a whole number from 2 to 16/],
+      [{ maxPlayers: 17 }, /maxPlayers/],
+      [{ maxPlayers: 2.5 }, /maxPlayers/],
+      [{ idleMinutes: 0 }, /idleMinutes must be a whole number from 1 to 60/],
+      [{ idleMinutes: 61 }, /idleMinutes/],
+      [{ maxHours: 0.1 }, /maxHours must be a number from 0.25 to 4/],
+      [{ maxHours: 5 }, /maxHours/],
+      [{ cpu: 128 }, /cpu must be one of 256, 512, 1024/],
+      [{ memory: 256 }, /memory must be one of 512, 1024, 2048/],
+      [{ memory: 4096 }, /memory/],
+      [{ cpu: 1024, memory: 512 }, /memory must be at least 2048 with cpu 1024/],
+      [{ maxPlayers: '8' }, /maxPlayers/],
+      [{ warmPool: 1 }, /unknown setting "warmPool"/],
+    ])('rejects out-of-range limits: %j', (gameServer, message) => {
+      const errors = errorsFor({ modules: ['realtime', 'gameServer'], gameServer });
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(message);
+    });
+
+    it('rejects settings without the module', () => {
+      expect(errorsFor({ modules: ['realtime'], gameServer: { maxRooms: 2 } })[0]).toMatch(/settings need "gameServer" in "modules"/);
+      expect(errorsFor({ modules: ['realtime', 'gameServer'], gameServer: [] })[0]).toMatch(/must be an object/);
+    });
   });
 
   it('rejects duplicate roles, unknown modules, unknown fields and unsafe CSP sources', () => {
