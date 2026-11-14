@@ -290,6 +290,21 @@ describe('RealtimeHub', () => {
     expect(server.last.closed).toBe(true);
   });
 
+  it('opens a channel for publishing only: no subscribe in the token or on the wire, live once it can publish', async () => {
+    const hub = new RealtimeHub(fakeApi(), { random: () => 1 });
+    const statuses: ChannelStatus[] = [];
+    const stop = hub.add({ channel: 'room/r1/to-server', publish: true, echo: false, listen: false, onEvent: () => undefined, onStatus: (s) => statuses.push(s) }, 'u_1:MEMBER');
+    await flush();
+    expect(tokens).toEqual([{ subscribe: [], publish: ['room/r1/to-server'] }]);
+    expect(server.last.of('subscribe')).toEqual([]);
+    expect(statuses.at(-1)).toBe('live');
+    await hub.publish('room/r1/to-server', { t: 'offer' });
+    expect(server.last.of('publish')[0]).toMatchObject({ channel: '/app/room/r1/to-server' });
+    stop();
+    await flush();
+    expect(server.last.closed).toBe(true);
+  });
+
   it('stays offline when the token is refused', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const hub = new RealtimeHub(fakeApi({ refuse: true }));
