@@ -314,7 +314,8 @@ describe('GameRoomClient', () => {
     expect(t.peers).toHaveLength(1);
     peer.setState('disconnected');
     await vi.advanceTimersByTimeAsync(3000);
-    await t.flush();
+    // (Fake timers turn a 0 ms timer set inside a timer into 1 ms.)
+    await vi.advanceTimersByTimeAsync(1);
     expect(t.peers).toHaveLength(2);
     await t.answer();
     t.peers[1]!.channels.events!.onclose!({});
