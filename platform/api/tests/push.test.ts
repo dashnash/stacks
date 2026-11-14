@@ -273,3 +273,55 @@ describe('APNs', () => {
     expect(await unset.send(device, { badge: 1 })).toBe('failed');
   });
 });
+
+describe('APNs connection (a real local HTTP/2 server)', () => {
+  async function server(handler: (stream: import('node:http2').ServerHttp2Stream) => void) {
+    const { createServer } = await import('node:http2');
+    let sessions = 0;
+    const open = new Set<import('node:http2').ServerHttp2Session>();
+    const srv = createServer();
+    srv.on('session', (sess) => {
+      sessions++;
+      open.add(sess);
+      sess.on('close', () => open.delete(sess));
+    });
+    srv.on('stream', (stream) => handler(stream));
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as { port: number }).port;
+    const url = `http://127.0.0.1:${port}`;
+    return { hosts: { production: url, sandbox: url }, sessions: () => sessions, close: () =>
+        new Promise<void>((r) => {
+          for (const sess of open) sess.destroy(); // the client keeps its session alive on purpose
+          srv.close(() => r());
+        }),
+    };
+  }
+
+  it('settles a push Apple never answers within its timeout, instead of hanging the request', async () => {
+    const srv = await server(() => {}); // never responds
+    const { http2Post } = await import('../src/apns');
+    const post = http2Post({ hosts: srv.hosts, timeoutMs: 200 });
+    const started = Date.now();
+    await expect(post('production', '/3/device/x', {}, '{}')).resolves.toEqual({ status: 0, body: 'timeout' });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    await srv.close();
+  });
+
+  it('reads Apple\'s answer, and reuses a busy session but replaces one idle long enough to be dead', async () => {
+    const srv = await server((stream) => {
+      stream.respond({ ':status': 410 });
+      stream.end('{"reason":"Unregistered"}');
+    });
+    const { http2Post } = await import('../src/apns');
+    let clock = 1_000_000;
+    const post = http2Post({ hosts: srv.hosts, idleMs: 30_000, now: () => clock });
+    expect(await post('production', '/3/device/x', {}, '{}')).toEqual({ status: 410, body: '{"reason":"Unregistered"}' });
+    clock += 5_000;
+    await post('production', '/3/device/x', {}, '{}');
+    expect(srv.sessions()).toBe(1); // reused
+    clock += 60_000; // e.g. the Lambda was frozen in between
+    await post('production', '/3/device/x', {}, '{}');
+    expect(srv.sessions()).toBe(2); // a fresh session
+    await srv.close();
+  });
+});
