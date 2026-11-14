@@ -183,31 +183,25 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   };
   const realtime = hasModule(opts.manifest, 'realtime') ? new DemoRealtimeBus(opts.manifest.slug, reloadShared) : null;
   // Game rooms: other tabs write to the shared data at any time (a room's server lives in one tab,
-  // its players' API calls in another), so every write here is saved at once and each request and
-  // each server write starts from what is saved.
+  // its players' API calls in another). So with the module on, every write is one step that can't
+  // lose another tab's: take what is saved, apply the change, save (all in one turn, and
+  // localStorage is shared synchronously). Requests also start from what is saved.
   const gamesOn = !!realtime && hasModule(opts.manifest, 'gameServer');
   const shared: Store = {
     get: (pk, sk) => store.get(pk, sk),
     query: (pk, prefix) => store.query(pk, prefix),
     queryGsi1: (pk, o) => store.queryGsi1(pk, o),
-    async put(item, o) {
-      await store.put(item, o);
-      save(key, store);
-    },
-    async delete(pk, sk) {
-      await store.delete(pk, sk);
-      save(key, store);
-    },
-  };
-  const serverStore: Store = {
-    ...shared,
-    async put(item, o) {
+    put(item, o) {
       reloadShared();
-      await shared.put(item, o);
+      const done = store.put(item, o);
+      save(key, store);
+      return done;
     },
-    async delete(pk, sk) {
+    delete(pk, sk) {
       reloadShared();
-      await shared.delete(pk, sk);
+      const done = store.delete(pk, sk);
+      save(key, store);
+      return done;
     },
   };
   const games = gamesOn
@@ -215,7 +209,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
         slug: opts.manifest.slug,
         ...(opts.game ? { game: opts.game } : {}),
         settings: gameServerSettings(opts.manifest),
-        store: serverStore,
+        store: shared,
         bus: realtime!,
         ...(opts.gameStartDelayMs !== undefined ? { startDelayMs: opts.gameStartDelayMs } : {}),
       })
