@@ -92,6 +92,27 @@ export class CiStack extends cdk.Stack {
         // The `realtime` module: an app's API Lambda publishes to its own AppSync Event API over
         // HTTP (SigV4). The app stack scopes each grant to that one API.
         new iam.PolicyStatement({ sid: 'RealtimePublish', actions: ['appsync:EventConnect', 'appsync:EventPublish'], resources: ['*'] }),
+        // The `gameServer` module (#44). An app's API Lambda starts and stops one Fargate task per
+        // room and finds out whether it is still there; the task subscribes to its room's signaling
+        // channels; its execution role pulls the app's image. The app stack scopes each grant to
+        // the app's own task definition, cluster, roles and Event API.
+        new iam.PolicyStatement({
+          sid: 'GameServerTasks',
+          actions: ['ecs:RunTask', 'ecs:StopTask', 'ecs:DescribeTasks', 'ecs:TagResource', 'ec2:DescribeNetworkInterfaces'],
+          resources: ['*'],
+        }),
+        new iam.PolicyStatement({
+          sid: 'GameServerPassTaskRoles',
+          actions: ['iam:PassRole'],
+          resources: [stagingRoles],
+          conditions: { StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } },
+        }),
+        new iam.PolicyStatement({ sid: 'GameServerSignaling', actions: ['appsync:EventSubscribe'], resources: ['*'] }),
+        new iam.PolicyStatement({
+          sid: 'GameServerImagePull',
+          actions: ['ecr:GetAuthorizationToken', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'],
+          resources: ['*'],
+        }),
         new iam.PolicyStatement({ sid: 'NeverProduction', effect: iam.Effect.DENY, actions: ['*'], resources: ['*'], conditions: prodTagged }),
       ],
     });
@@ -114,6 +135,40 @@ export class CiStack extends cdk.Stack {
         // namespace, API keys and Lambda authorizer config). Production deploys with the default
         // bootstrap policy, which already covers this.
         new iam.PolicyStatement({ sid: 'RealtimeEventApis', actions: ['appsync:*'], resources: ['*'] }),
+        // The `gameServer` module (#44): the shared VPC (public subnets, internet gateway, no NAT)
+        // and ECS cluster in the platform stack; per app a task definition, a security group, a
+        // metric filter + alarm on long-running tasks; one SNS topic for those alarms. Production
+        // deploys with the default bootstrap policy (AdministratorAccess), which covers all of it.
+        new iam.PolicyStatement({
+          sid: 'GameServerNetwork',
+          actions: ['ec2:*'],
+          resources: ['vpc', 'subnet', 'internet-gateway', 'route-table', 'security-group', 'security-group-rule'].map(
+            (type) => `arn:${this.partition}:ec2:${this.region}:${this.account}:${type}/*`,
+          ),
+        }),
+        // EC2 Describe* calls cannot be scoped to a resource.
+        new iam.PolicyStatement({ sid: 'GameServerNetworkRead', actions: ['ec2:Describe*'], resources: ['*'] }),
+        new iam.PolicyStatement({ sid: 'GameServerEcs', actions: ['ecs:*'], resources: ['*'] }),
+        // The first ECS cluster in an account creates the ECS service-linked role.
+        new iam.PolicyStatement({
+          sid: 'GameServerEcsServiceRole',
+          actions: ['iam:CreateServiceLinkedRole'],
+          resources: [`arn:${this.partition}:iam::${this.account}:role/aws-service-role/ecs.amazonaws.com/*`],
+          conditions: { StringEquals: { 'iam:AWSServiceName': 'ecs.amazonaws.com' } },
+        }),
+        new iam.PolicyStatement({
+          sid: 'GameServerAlarmTopic',
+          actions: ['sns:*'],
+          resources: [`arn:${this.partition}:sns:${this.region}:${this.account}:stacks-test-*`],
+        }),
+        new iam.PolicyStatement({
+          sid: 'GameServerAlarms',
+          actions: [
+            'cloudwatch:PutMetricAlarm', 'cloudwatch:DeleteAlarms', 'cloudwatch:DescribeAlarms',
+            'cloudwatch:TagResource', 'cloudwatch:UntagResource', 'cloudwatch:ListTagsForResource',
+          ],
+          resources: ['*'],
+        }),
         new iam.PolicyStatement({
           sid: 'StagingParameters',
           actions: ['ssm:PutParameter', 'ssm:DeleteParameter', 'ssm:AddTagsToResource'],
