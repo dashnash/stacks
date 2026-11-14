@@ -27,21 +27,37 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         shell.push.didFail(error)
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound, .badge]
+    // The completion-handler forms, finished on the main actor. iOS's completion handlers update
+    // UIKit (the app snapshot, state restoration) and assert they're called on the main thread; the
+    // `async` forms finish on a background thread and crashed on opening a notification (TestFlight
+    // crash 2026-11-14: NSAssertionHandler in _performBlockAfterCATransactionCommitSynchronizes).
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        Task { @MainActor in completionHandler([.banner, .list, .sound, .badge]) }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        // Read what's needed here (plain values), then do the work and finish on the main actor.
         let info = response.notification.request.content.userInfo
-        if let action = PushAction.action(forIdentifier: response.actionIdentifier) {
-            let token = PushAction.token(from: info)
-            let fallback = Push.url(from: info)
-            let host = await MainActor.run { self.shell.settings.policy.authHost }
-            await Self.send(action: action, token: token, authHost: host, fallback: fallback)
-            return
+        let action = PushAction.action(forIdentifier: response.actionIdentifier)
+        let token = PushAction.token(from: info)
+        let url = Push.url(from: info)
+        Task { @MainActor in
+            if let action {
+                await Self.send(action: action, token: token, authHost: self.shell.settings.policy.authHost, fallback: url)
+            } else if let url {
+                self.shell.open(url)
+            }
+            completionHandler()
         }
-        guard let url = Push.url(from: info) else { return }
-        await MainActor.run { self.shell.open(url) }
     }
 
     /// A button press, straight to the platform (the web view stays closed). If it can't be sent, a
