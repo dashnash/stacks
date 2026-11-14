@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { appsFromConfig, ascToken, createApi, freshProfiles, noteBuilds, GROUP_NAME, leftoverCertificates, missingApps, profileName, profileUuids, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
+import { appsFromConfig, ascToken, crashReports, createApi, freshProfiles, noteBuilds, GROUP_NAME, leftoverCertificates, missingApps, profileName, profileUuids, provision, releaseSigning, revokeCertificate } from '../../../scripts/asc-provision.mjs';
 
 type Row = { id: string; type: string; attributes: Record<string, any>; rel?: Record<string, string> };
 
@@ -281,4 +281,28 @@ describe('App Store Connect provisioning', () => {
     expect(profileUuids([])).toBe('');
   });
 
+  it('reads the newest shared TestFlight crash reports with their logs, never the tester\'s email', async () => {
+    const calls: string[] = [];
+    const api = async (_m: string, path: string) => {
+      calls.push(path);
+      if (path.startsWith('/v1/apps?')) return { data: [{ id: 'app-1', attributes: { bundleId: apps[1]!.bundleId } }] };
+      if (path.startsWith('/v1/apps/app-1/betaFeedbackCrashSubmissions')) {
+        return {
+          data: [
+            { id: 'c1', attributes: { createdDate: '2026-11-14T02:50:00Z', appBuildVersion: '6101', deviceModel: 'iPhone17,1', osVersion: '26.1', comment: 'tapped request notification', email: 'tester@example.com' } },
+            { id: 'c2', attributes: { createdDate: '2026-11-13T10:00:00Z', appBuildVersion: '5901' } },
+          ],
+        };
+      }
+      if (path === '/v1/betaFeedbackCrashSubmissions/c1/crashLog') return { data: { attributes: { logText: 'Exception Type: EXC_BREAKPOINT' } } };
+      throw new Error(`GET ${path} → 404 Not Found`);
+    };
+    const reports = await crashReports(api, apps[1], 3);
+    expect(reports).toEqual([
+      { id: 'c1', created: '2026-11-14T02:50:00Z', build: '6101', device: 'iPhone17,1', os: '26.1', comment: 'tapped request notification', log: 'Exception Type: EXC_BREAKPOINT' },
+      expect.objectContaining({ id: 'c2', log: expect.stringMatching(/could not fetch the crash log/) }),
+    ]);
+    expect(JSON.stringify(reports)).not.toContain('tester@example.com');
+    expect(calls[1]).toContain('sort=-createdDate&limit=3');
+  });
 });
