@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./lambda": "./src/lambda.ts",
-    "./realtime-authorizer": "./src/realtime-authorizer.ts"
+    "./realtime-authorizer": "./src/realtime-authorizer.ts",
+    "./realtime-aws": "./src/realtime-aws.ts",
+    "./dynamo-store": "./src/dynamo-store.ts"
   },
   "scripts": {
     "test": "vitest run",

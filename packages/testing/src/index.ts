@@ -291,3 +291,6 @@ export function cookieValue(setCookies: string[], name: string): string | undefi
   const c = setCookies.find((s) => s.startsWith(`${name}=`));
   return c ? decodeURIComponent(c.slice(name.length + 1).split(';')[0]!) : undefined;
 }
+
+export { playGame } from './game';
+export type { PlayGameOptions, TestPlayer } from './game';

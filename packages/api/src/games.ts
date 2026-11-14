@@ -205,12 +205,17 @@ export function signGameTicket(key: string, ticket: GameTicket): Promise<string>
   return signHmacToken(TICKET_PREFIX, key, ticket);
 }
 
-/** The claims of a genuine, unexpired ticket for `roomId`, or null. */
-export async function verifyGameTicket(key: string, token: unknown, roomId: string, nowMs: number): Promise<GameTicket | null> {
+/** The claims of a ticket this key signed, whatever its room or expiry, or null (forged or malformed). */
+export async function readGameTicket(key: string, token: unknown): Promise<GameTicket | null> {
   const t = (await openHmacToken(TICKET_PREFIX, key, token)) as Partial<GameTicket> | null;
   if (!t || typeof t.roomId !== 'string' || typeof t.userId !== 'string' || typeof t.name !== 'string' || typeof t.exp !== 'number') return null;
-  if (t.roomId !== roomId || t.exp * 1000 <= nowMs) return null;
   return { roomId: t.roomId, userId: t.userId, name: t.name, exp: t.exp };
+}
+
+/** The claims of a genuine, unexpired ticket for `roomId`, or null. */
+export async function verifyGameTicket(key: string, token: unknown, roomId: string, nowMs: number): Promise<GameTicket | null> {
+  const t = await readGameTicket(key, token);
+  return t && t.roomId === roomId && t.exp * 1000 > nowMs ? t : null;
 }
 
 // --- Rooms -----------------------------------------------------------------------------------------

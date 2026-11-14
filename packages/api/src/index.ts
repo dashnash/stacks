@@ -72,6 +72,7 @@ export {
   newRoomCode,
   normalizeRoomCode,
   playerChannelId,
+  readGameTicket,
   registerGameRoutes,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
