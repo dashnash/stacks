@@ -276,6 +276,80 @@ describe('CiStack', () => {
     });
   });
 
+  describe('gameServer module permissions (#44)', () => {
+    const template = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+    const statements = (policyName: string): Array<Record<string, any>> => {
+      const found = Object.values(template.findResources('AWS::IAM::ManagedPolicy', { Properties: { ManagedPolicyName: policyName } }));
+      expect(found).toHaveLength(1);
+      return found[0]!.Properties.PolicyDocument.Statement;
+    };
+    const statement = (policyName: string, sid: string) => {
+      const s = statements(policyName).find((x) => x.Sid === sid);
+      expect(s, `${policyName} ${sid}`).toBeDefined();
+      return s!;
+    };
+    const neverProduction = { Sid: 'NeverProduction', Effect: 'Deny', Action: '*', Resource: '*', Condition: { StringEquals: { 'aws:ResourceTag/stacks:env': 'production' } } };
+
+    it('lets staging deploys manage VPC resources, scoped by resource type', () => {
+      const s = statement('stacks-test-cfn-exec', 'GameServerNetwork');
+      expect(s).toMatchObject({ Effect: 'Allow', Action: 'ec2:*' });
+      const resources = JSON.stringify(s.Resource);
+      for (const type of ['vpc', 'subnet', 'internet-gateway', 'route-table', 'security-group', 'security-group-rule']) expect(resources).toContain(`:${type}/*`);
+      expect(s.Resource).toHaveLength(6);
+      expect(resources).not.toContain('instance');
+      expect(statement('stacks-test-cfn-exec', 'GameServerNetworkRead')).toMatchObject({ Effect: 'Allow', Action: 'ec2:Describe*', Resource: '*' });
+    });
+
+    it('lets staging deploys manage ECS, and create only the ECS service-linked role', () => {
+      expect(statement('stacks-test-cfn-exec', 'GameServerEcs')).toMatchObject({ Effect: 'Allow', Action: 'ecs:*', Resource: '*' });
+      const slr = statement('stacks-test-cfn-exec', 'GameServerEcsServiceRole');
+      expect(slr).toMatchObject({ Effect: 'Allow', Action: 'iam:CreateServiceLinkedRole', Condition: { StringEquals: { 'iam:AWSServiceName': 'ecs.amazonaws.com' } } });
+      expect(JSON.stringify(slr.Resource)).toContain('role/aws-service-role/ecs.amazonaws.com/*');
+    });
+
+    it('lets staging deploys manage the alarm topic (stacks-test-* only) and CloudWatch alarms', () => {
+      const topic = statement('stacks-test-cfn-exec', 'GameServerAlarmTopic');
+      expect(topic).toMatchObject({ Effect: 'Allow', Action: 'sns:*' });
+      expect(JSON.stringify(topic.Resource)).toContain(':stacks-test-*');
+      expect(statement('stacks-test-cfn-exec', 'GameServerAlarms').Action).toEqual(
+        expect.arrayContaining(['cloudwatch:PutMetricAlarm', 'cloudwatch:DeleteAlarms', 'cloudwatch:DescribeAlarms']),
+      );
+    });
+
+    it('lets staging deploys pass only stacks-test-* roles', () => {
+      const s = statement('stacks-test-cfn-exec', 'ManageStagingRoles');
+      expect(s.Action).toContain('iam:PassRole');
+      expect(JSON.stringify(s.Resource)).toContain('role/stacks-test-*');
+    });
+
+    it('lets app Lambdas run, stop and describe tasks and read their network interfaces', () => {
+      expect(statement('stacks-test-boundary', 'GameServerTasks')).toMatchObject({
+        Effect: 'Allow',
+        Action: ['ecs:RunTask', 'ecs:StopTask', 'ecs:DescribeTasks', 'ecs:TagResource', 'ec2:DescribeNetworkInterfaces'],
+      });
+    });
+
+    it('lets app Lambdas pass stacks-test-* roles to ECS tasks and nothing else', () => {
+      const s = statement('stacks-test-boundary', 'GameServerPassTaskRoles');
+      expect(s).toMatchObject({ Effect: 'Allow', Action: 'iam:PassRole', Condition: { StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } } });
+      expect(JSON.stringify(s.Resource)).toContain('role/stacks-test-*');
+      // The only PassRole in the boundary is the conditioned one.
+      const passers = statements('stacks-test-boundary').filter((x) => x.Effect === 'Allow' && JSON.stringify(x.Action).includes('iam:'));
+      expect(passers.map((x) => x.Sid)).toEqual(['GameServerPassTaskRoles']);
+    });
+
+    it('lets game servers subscribe to their signaling channels and pull their image', () => {
+      expect(statement('stacks-test-boundary', 'GameServerSignaling')).toMatchObject({ Effect: 'Allow', Action: 'appsync:EventSubscribe' });
+      expect(statement('stacks-test-boundary', 'GameServerImagePull').Action).toEqual(
+        expect.arrayContaining(['ecr:GetAuthorizationToken', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer']),
+      );
+    });
+
+    it('still denies everything tagged production in both policies', () => {
+      for (const policy of ['stacks-test-cfn-exec', 'stacks-test-boundary']) expect(statement(policy, 'NeverProduction')).toEqual(neverProduction);
+    });
+  });
+
   it('trusts the immutable subject claim when the repo uses one', () => {
     const app = new cdk.App();
     const template = Template.fromStack(
