@@ -33,6 +33,7 @@ import {
   type EnvName,
 } from './config';
 import { buildCsp } from './csp';
+import { addApiMetricFilters, logGroupName } from './monitoring';
 
 /**
  * CloudFront viewer-request function: every extension-less path serves index.html; files (with a
@@ -79,6 +80,8 @@ export interface AppStackProps {
   contentDir?: string;
   /** Extra environment variables for the app's Lambda. */
   environment?: Record<string, string>;
+  /** The commit being deployed, stamped on every log line (`STACKS_BUILD_SHA`). The deploy workflows pass it. */
+  buildSha?: string;
 }
 
 /**
@@ -105,6 +108,9 @@ export class AppStack extends cdk.Stack {
 
     const isProd = envName === 'production';
     const slug = manifest.slug;
+    const tag = envTag(envName);
+    // What every log line is stamped with (@stacks/api `log`).
+    const logEnv = { STACKS_ENV_TAG: tag, STACKS_APP_SLUG: slug, ...(props.buildSha ? { STACKS_BUILD_SHA: props.buildSha } : {}) };
     const origin = appOrigin(env, slug);
     const auth = authOrigin(env);
     cdk.Tags.of(this).add('stacks:env', envName);
@@ -140,6 +146,12 @@ export class AppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
+    const apiLogs = new logs.LogGroup(this, 'ApiLogs', {
+      logGroupName: logGroupName(tag, slug),
+      retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    addApiMetricFilters(this, apiLogs, tag);
     this.handler = new nodejs.NodejsFunction(this, 'ApiHandler', {
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
@@ -149,12 +161,13 @@ export class AppStack extends cdk.Stack {
       depsLockFilePath: path.join(props.repoRoot, 'package-lock.json'),
       memorySize: 512,
       timeout: cdk.Duration.seconds(20),
-      logGroup: new logs.LogGroup(this, 'ApiLogs', {
-        retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-      }),
+      // Named, so the environment's dashboard and saved queries can find it; JSON, so each line
+      // the SDK writes is a queryable object (packages/infra/src/monitoring.ts).
+      logGroup: apiLogs,
+      loggingFormat: lambda.LoggingFormat.JSON,
       bundling: { minify: true, sourceMap: true, target: 'node22' },
       environment: {
+        ...logEnv,
         TABLE_NAME: this.table.tableName,
         STACKS_APP_ORIGIN: origin,
         STACKS_AUTH_ORIGIN: auth,
@@ -235,11 +248,13 @@ export class AppStack extends cdk.Stack {
         memorySize: 256,
         timeout: cdk.Duration.seconds(5),
         logGroup: new logs.LogGroup(this, 'RealtimeAuthorizerLogs', {
+          logGroupName: logGroupName(tag, slug, 'realtime-authorizer'),
           retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),
+        loggingFormat: lambda.LoggingFormat.JSON,
         bundling: { minify: true, sourceMap: true, target: 'node22' },
-        environment: { STACKS_REALTIME_KEY_ARN: key.secretArn, STACKS_REALTIME_NAMESPACE: REALTIME_NAMESPACE, NODE_OPTIONS: '--enable-source-maps' },
+        environment: { ...logEnv, STACKS_REALTIME_KEY_ARN: key.secretArn, STACKS_REALTIME_NAMESPACE: REALTIME_NAMESPACE, NODE_OPTIONS: '--enable-source-maps' },
       });
       key.grantRead(authorizer);
       key.grantRead(this.handler);
