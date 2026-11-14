@@ -29,6 +29,8 @@ describe('PlatformStack', () => {
     const t = synth();
     t.hasResourceProperties('AWS::CertificateManager::Certificate', { DomainName: '*.test.example.com', SubjectAlternativeNames: ['test.example.com'] });
     t.hasResourceProperties('AWS::SSM::Parameter', { Name: '/stacks/test/certificate-arn' });
+    // Replacing it (a new rootDomain) must not try to delete the old one while app distributions use it.
+    t.hasResource('AWS::CertificateManager::Certificate', { DeletionPolicy: 'Retain', UpdateReplacePolicy: 'Retain' });
   });
 
   it('serves the portal at auth.<domain> and the bare domain, with sign-in routes going to the API', () => {

@@ -472,7 +472,7 @@ Phase 3 build notes:
 
 - [x] `templates/app/` and `tools/new-app` (`npm run new-app -- <slug>`)
 - [x] The skill (`.claude/skills/new-app`): interview, scaffold, build, verify (`npm run verify-app`), stage, ship; per-step usage log (`npm run app-usage`)
-- [ ] Domain move to `dashnash.ninja` (#42): staging, shared code, legacy redirects, DashyHQ portal branding and the ninja icon done; production flip next (`docs/DOMAIN_MOVE.md`)
+- [x] Domain move to `dashnash.ninja` (#42): staging and production, legacy redirects for `iamdashnash.com`, DashyHQ portal branding and the shuriken icon; runbook `docs/DOMAIN_MOVE.md` (cleanup, its step 5, still to do)
 - [ ] Remaining modules: uploads, scheduled jobs (email deferred until an app needs it, with SES production access)
 - [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
 - [ ] Eval run on the 4 reference apps, usage logged
