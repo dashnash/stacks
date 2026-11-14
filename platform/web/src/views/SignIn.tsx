@@ -4,6 +4,9 @@ import { ErrorNote, useAsync } from '@stacks/web';
 import { appleAvailable, signInWithApple } from '../apple';
 import { loadGoogle, safeNext, usePortal } from '../portal';
 
+/** Both sign-in buttons are this wide (px); Google's renders at it, the others match in CSS. */
+const SIGNIN_BUTTON_WIDTH = 280;
+
 /** Step 4 of the handshake: sign in, then continue to `next` (back into /authorize) or the catalog. */
 export function SignIn({ next }: { next?: string }) {
   const { api, signInMethod, refresh, status } = usePortal();
@@ -72,7 +75,8 @@ export function SignIn({ next }: { next?: string }) {
       });
       // Match the page: Google's dark button on a dark page, its outlined one on a light page.
       const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-      window.google.accounts.id.renderButton(button.current, { theme: dark ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
+      // Same size as the Apple button beside it (.signin-option: 280 × 40, pill).
+      window.google.accounts.id.renderButton(button.current, { theme: dark ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: SIGNIN_BUTTON_WIDTH });
       window.google.accounts.id.prompt();
     })().catch((err: Error) => setError(err.message));
     return () => {
@@ -87,17 +91,22 @@ export function SignIn({ next }: { next?: string }) {
       <p className="muted">
         {target ? 'Sign in once to open the app. Every other app on this platform will know you too.' : `One ${showApple ? 'Google or Apple' : 'Google'} sign-in for every app here. No new password.`}
       </p>
-      {signInMethod.kind === 'google' && inApp ? (
-        <button type="button" className="button" onClick={() => void signInInApp()}>
-          Continue with Google
-        </button>
-      ) : signInMethod.kind === 'google' ? (
-        <div ref={button} className="google-button" />
-      ) : null}
-      {showApple && (
-        <button type="button" className="button apple-button" onClick={() => void apple()}>
-          Continue with Apple
-        </button>
+      {signInMethod.kind === 'google' && (
+        // One column, same width and height, same wording ("Continue with …").
+        <div className="signin-options">
+          {inApp ? (
+            <button type="button" className="button signin-option google-option" onClick={() => void signInInApp()}>
+              Continue with Google
+            </button>
+          ) : (
+            <div ref={button} className="google-button" />
+          )}
+          {showApple && (
+            <button type="button" className="button signin-option apple-button" onClick={() => void apple()}>
+              Continue with Apple
+            </button>
+          )}
+        </div>
       )}
       {signInMethod.kind === 'google' ? null : (
         <div className="stack">
