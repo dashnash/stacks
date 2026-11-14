@@ -1,0 +1,38 @@
+name: iOS feedback
+
+# The newest TestFlight crash reports testers shared (TestFlight → Share crash), with their crash
+# logs, printed in this run's log and summary so they can be read without App Store Connect.
+# Uses the App Store Connect key in the ios-release environment (main only); never prints testers'
+# emails.
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: How many of the newest crash reports per app (1-20)
+        required: false
+        default: '3'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  crashes:
+    name: TestFlight crash reports
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    environment: ios-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch crash reports
+        shell: bash # -eo pipefail: a failure isn't hidden by tee
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          COUNT: ${{ inputs.count }}
+        run: node scripts/asc-provision.mjs --crashes "$COUNT" | tee -a "$GITHUB_STEP_SUMMARY"

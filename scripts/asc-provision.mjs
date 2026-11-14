@@ -24,6 +24,8 @@
  * <out-dir>/certificate-id, <out-dir>/profiles.json (`{ bundleId: profileName }`) and the profiles
  * into each <profile-dir>.
  * `--revoke-certificate <id>`: a run that failed before uploading revokes its own.
+ * `--crashes [n]` (the iOS feedback workflow): prints the newest n (default 3) TestFlight crash
+ * reports for each app, with their crash logs. Testers' emails are never printed.
  * `--what-to-test <build>` (after the upload, WHAT_TO_TEST): waits for that build of each app to
  * appear in App Store Connect and sets its TestFlight "What to Test" note (the commit it was built
  * from: TestFlight's build numbers can only be numbers).
@@ -261,6 +263,36 @@ export async function releaseSigning(api, apps, csrPem, { log = () => {}, onCert
   return { certificate, profiles };
 }
 
+/**
+ * The newest TestFlight crash reports testers shared for an app (TestFlight → Share crash), each
+ * with its crash log: `[{ id, created, build, device, os, comment, log }]`. Never the tester's email.
+ */
+export async function crashReports(api, app, limit = 3) {
+  const record = ((await api('GET', `/v1/apps?filter[bundleId]=${q(app.bundleId)}`)).data ?? []).find((a) => a.attributes?.bundleId === app.bundleId);
+  if (!record) return [];
+  const subs = (await api('GET', `/v1/apps/${record.id}/betaFeedbackCrashSubmissions?sort=-createdDate&limit=${limit}&include=build`)).data ?? [];
+  const out = [];
+  for (const s of subs.slice(0, limit)) {
+    const a = s.attributes ?? {};
+    let log = '';
+    try {
+      log = (await api('GET', `/v1/betaFeedbackCrashSubmissions/${s.id}/crashLog`)).data?.attributes?.logText ?? '';
+    } catch (err) {
+      log = `(could not fetch the crash log: ${err.message})`;
+    }
+    out.push({
+      id: s.id,
+      created: a.createdDate ?? '',
+      build: a.buildBundleId ? `${a.buildBundleId} ${a.appBuildVersion ?? ''}`.trim() : (a.appBuildVersion ?? s.relationships?.build?.data?.id ?? ''),
+      device: [a.deviceModel, a.deviceFamily].filter(Boolean).join(' '),
+      os: a.osVersion ?? '',
+      comment: a.comment ?? '',
+      log,
+    });
+  }
+  return out;
+}
+
 /** The build with this build number (CFBundleVersion) of an app, once App Store Connect lists it. */
 export async function findBuild(api, app, version) {
   const record = ((await api('GET', `/v1/apps?filter[bundleId]=${q(app.bundleId)}`)).data ?? []).find((a) => a.attributes?.bundleId === app.bundleId);
@@ -341,6 +373,22 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const dir of profileDirs) {
       mkdirSync(dir, { recursive: true });
       for (const p of profiles) writeFileSync(join(dir, `${p.uuid}.mobileprovision`), Buffer.from(p.content, 'base64'));
+    }
+    process.exit(0);
+  }
+  const crashes = args('--crashes');
+  if (crashes) {
+    const n = Math.min(Math.max(parseInt(crashes[0] ?? '3', 10) || 3, 1), 20);
+    for (const app of appsFromConfig(config)) {
+      const reports = await crashReports(api, app, n);
+      console.log(`\n## ${app.name} (${app.bundleId}): ${reports.length} crash report(s)`);
+      for (const r of reports) {
+        console.log(`\n### ${r.created}  build ${r.build}  ${r.device}  iOS ${r.os}`);
+        if (r.comment) console.log(`Tester's note: ${r.comment}`);
+        console.log('```');
+        console.log(r.log || '(no crash log attached)');
+        console.log('```');
+      }
     }
     process.exit(0);
   }
