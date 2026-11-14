@@ -240,7 +240,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | --- | --- | --- |
 | `@stacks/api` | `Router`, `requireRole()` guards from the manifest, `run()` with auto-audit, `HttpError` helpers and validators, `Store` + `DynamoStore` + `MemoryStore`, `Deps` injection, Lambda handler, platform client (`me`, grants, notify), structured `log` with request context and error refs, `/stacks/client-error` | `utils/router.ts`, `http.ts`, `store.ts`, `dynamo-store.ts`, `deps.ts`, `handler.ts` |
 | `@stacks/web` | `StacksProvider`, `useAuth`, `useApi`, `createApi`, runtime `config.json`, `useAsync`, hash routing, formatters, headless `Modal`, `Spinner`, `ErrorNote` (shows the error ref), `Avatar`, `RequestAccess`, browser error reporting and `ErrorBoundary` | `lib/auth.tsx`, `api.ts`, `config.ts`, `useAsync.ts`, `route.ts`, `format.ts`, `components/ui.tsx` |
-| `@stacks/infra` | `PlatformApp` construct: S3 + OAC, CloudFront, SPA rewrite, CSP and security headers, HTTP API with throttling, arm64 Node 22 Lambda, single table with GSI1 + TTL, log retention, cache policy, `config.json` writer, module resources | `infra/lib/book-club-stack.ts` |
+| `@stacks/infra` | `PlatformApp` construct: S3 + OAC, CloudFront, SPA rewrite, CSP and security headers, HTTP API with throttling, arm64 Node 22 Lambda, single table with GSI1 + TTL, log retention, cache policy, `config.json` writer, module resources, named JSON log groups with metric filters, the environment dashboard and saved queries (`Monitoring`) | `infra/lib/book-club-stack.ts` |
 | `@stacks/testing` | `MemoryStore` fakes, persona sign-in, integration helpers, Playwright smoke helper | `backend/tests/helpers.ts`, `frontend/tests/fakes.tsx` |
 | `@stacks/demo` | Runs the app's real API in the browser on `MemoryStore` with seeded personas; single-file demo build | `frontend/src/demo/*`, `scripts/inline-demo.mjs` |
 | App template | Build-hash footer (`<BuildVersion />`, required), ToS and privacy templates, Open Graph tags, favicon set, `/public/*` convention, landing page | `build-info.ts`, `public/*.html` |
@@ -318,7 +318,25 @@ AWS-native only (CloudWatch), no third-party tracker, no alerts.
   or out; at most 5 per page load). The API writes one `type: "client-error"` line with the user id
   and the browser's build, and stores nothing. Stacks are logged as sent (minified); there is no
   source-map symbolication. The demo reports nothing.
-- **No tracing** (X-Ray) and **no alerts** (alarms, SNS, push, email).
+- **Log groups** are named `/stacks/<prod|test>/<slug>/api` (the platform: `platform`) and
+  `/stacks/<prod|test>/<slug>/realtime-authorizer`, and use Lambda's JSON log format, which nests
+  the line under `message` (queries and filters read `message.<field>`). Retention is unchanged:
+  1 week on staging, 1 month on production (the platform's: 3 months).
+- **Metrics**: metric filters on each API log group publish `Requests`, `ServerErrors` (request
+  lines with status ≥ 500), `UnhandledErrors`, `ClientErrors` (browser errors) and `DurationMs` to
+  the namespace `Stacks/<prod|test>` with the dimension `app`.
+- **Dashboard**: exactly one per environment, `stacks-prod` and `stacks-test`, built in the
+  platform stack (never one per app). Graphs use `SEARCH` over the namespace, so a new app shows up
+  with no platform deploy: requests, server and unhandled errors, browser errors and p95 duration
+  per app; Lambda errors, throttles and duration and DynamoDB throttles for the environment's
+  stacks; and two log tables, "Latest errors" and "Slowest requests". API Gateway's own metrics
+  are left out: they carry only an API id, so they cannot be limited to one environment.
+- **Saved queries** (Logs Insights, folder `stacks-<prod|test>/`): Find by ref, Latest errors,
+  Browser errors, Slowest requests, One user's trail, One app's requests. The log tables and the
+  saved queries list each app's API log group by name (CloudWatch cannot select log groups by
+  prefix there), so a new app joins them on the next platform deploy.
+- **No tracing** (X-Ray) and **no alerts** (alarms, SNS, push, email). How to use all of it:
+  `docs/DEBUGGING.md`.
 
 ## Repo layout
 
@@ -511,7 +529,7 @@ Gate: a non-technical user builds one app end to end in a single Claude Code ses
 **Phase 5 — Hardening (after milestone 1)**
 
 - [ ] Per-PR preview stacks
-- [ ] Cost and usage dashboard per app
+- [ ] Cost and usage dashboard per app (separate from the troubleshooting dashboard of "Monitoring", #75, which is done; still open)
 - [ ] Template and SDK tuning from eval results
 
 ## Open questions
