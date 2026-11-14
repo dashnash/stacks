@@ -89,7 +89,13 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
 .card.narrow { max-width: 520px; margin: 0 auto; }
-.google-button { min-height: 44px; margin: 16px 0; display: inline-block; color-scheme: light; }
+.google-button { min-height: 40px; display: inline-block; color-scheme: light; }
+/* Sign-in choices: one column, every button 280 × 40 (Google's own renders at the same size). */
+.signin-options { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 16px 0; }
+.signin-options > .google-button { width: 280px; max-width: 100%; }
+.signin-option { box-sizing: border-box; width: 280px; max-width: 100%; height: 40px; padding: 0 16px; font-size: 0.95rem; }
+.google-option { background: #fff; color: #1f1f1f; border-color: #747775; }
+@media (prefers-color-scheme: dark) { .google-option { background: #131314; color: #e3e3e3; border-color: #8e918f; } }
 .google-button iframe { color-scheme: light; background: transparent; }
 
 .catalog-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -150,7 +156,7 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 /* Settings › Sign-in methods */
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list > li { margin: 0; }
-.apple-button { background: #000; color: #fff; border-color: #000; margin-top: 12px; }
+.apple-button { background: #000; color: #fff; border-color: #000; }
 @media (prefers-color-scheme: dark) { .apple-button { background: #fff; color: #000; border-color: #fff; } }
 .plain-fieldset { border: 0; padding: 0; margin: 0; }
 .row-gap.tight { margin: 0; gap: 8px; }
