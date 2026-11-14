@@ -5,7 +5,7 @@
  * route (so channel guards still apply). Events also cross to other demo tabs of the same app
  * over a `BroadcastChannel`, so two personas side by side see each other live.
  */
-import { authorizeRealtime, envelope, eventsOf, isChannelName, MAX_EVENT_BYTES, randomToken, REALTIME_NAMESPACE, SERVER_SENDER, type Realtime, type RealtimeConnection } from '@stacks/api';
+import { authorizeRealtime, envelope, eventsOf, isChannelName, MAX_EVENT_BYTES, openEnvelope, randomToken, REALTIME_NAMESPACE, SERVER_SENDER, type Realtime, type RealtimeConnection } from '@stacks/api';
 import type { SocketLike } from '@stacks/web';
 
 interface Wire {
@@ -19,6 +19,8 @@ export class DemoRealtimeBus implements Realtime {
   private readonly key = randomToken('demo-key-');
   private readonly tab = randomToken();
   private readonly sockets = new Set<DemoSocket>();
+  /** Server-side listeners (the demo's game servers), by full channel. */
+  private readonly taps = new Map<string, Set<(data: unknown) => void>>();
   private readonly broadcast: BroadcastChannel | null;
   private closed = false;
 
@@ -41,6 +43,18 @@ export class DemoRealtimeBus implements Realtime {
     if (!isChannelName(channel)) throw new Error(`"${channel}" is not a channel name`);
     const events = eventsOf(data).map((d) => envelope(d, SERVER_SENDER));
     for (const e of events) this.send(`/${REALTIME_NAMESPACE}/${channel}`, e);
+  }
+
+  /**
+   * Listen on a channel as a server would (no token: this is the app's own back end, like the game
+   * server's IAM subscription). Gets the data of every event, from this tab or another.
+   */
+  tap(channel: string, onEvent: (data: unknown) => void): () => void {
+    const full = `/${REALTIME_NAMESPACE}/${channel}`;
+    let set = this.taps.get(full);
+    if (!set) this.taps.set(full, (set = new Set()));
+    set.add(onEvent);
+    return () => void set!.delete(onEvent);
   }
 
   async connection(): Promise<RealtimeConnection> {
@@ -78,6 +92,11 @@ export class DemoRealtimeBus implements Realtime {
 
   private local(channel: string, event: string): void {
     for (const s of this.sockets) s.deliver(channel, event);
+    const taps = this.taps.get(channel);
+    if (taps?.size) {
+      const data = openEnvelope(event)?.d;
+      for (const tap of [...taps]) tap(data);
+    }
   }
 
   authorize(token: string, operation: string, channel?: string): Promise<boolean> {
