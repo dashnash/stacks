@@ -55,30 +55,63 @@ export function apnsOutcome(status: number, body: string): 'ok' | 'gone' | 'fail
 
 type Post = (env: Device['env'], path: string, headers: Record<string, string>, body: string) => Promise<{ status: number; body: string }>;
 
-/** One HTTP/2 POST to APNs (kept-alive session per environment). */
-function http2Post(): Post {
-  const sessions = new Map<string, ClientHttp2Session>();
+/**
+ * HTTP/2 POSTs to APNs, one kept-alive session per environment.
+ *
+ * Two traps in a Lambda: (1) between invocations the container is frozen, so a session idle for a
+ * while may be dead without any error event, and a request on it hangs; such a session is replaced.
+ * (2) a request cancelled on timeout emits `close`, not `end`; it settles on whichever comes first,
+ * so a slow push can never hold up the request that caused it.
+ */
+export function http2Post(opts: { hosts?: Record<Device['env'], string>; timeoutMs?: number; idleMs?: number; now?: () => number } = {}): Post {
+  const hosts = opts.hosts ?? HOSTS;
+  const timeoutMs = opts.timeoutMs ?? 4_000;
+  const idleMs = opts.idleMs ?? 30_000;
+  const now = opts.now ?? Date.now;
+  const sessions = new Map<string, { s: ClientHttp2Session; usedAt: number }>();
+  const drop = (env: string, s: ClientHttp2Session) => {
+    if (sessions.get(env)?.s === s) sessions.delete(env);
+    if (!s.destroyed) s.destroy();
+  };
   const session = (env: Device['env']) => {
-    const existing = sessions.get(env);
-    if (existing && !existing.closed && !existing.destroyed) return existing;
-    const s = connect(HOSTS[env]);
-    s.on('error', () => sessions.delete(env));
-    s.on('goaway', () => sessions.delete(env));
+    const hit = sessions.get(env);
+    if (hit && !hit.s.closed && !hit.s.destroyed && now() - hit.usedAt < idleMs) {
+      hit.usedAt = now();
+      return hit.s;
+    }
+    if (hit) drop(env, hit.s);
+    const s = connect(hosts[env]);
+    s.on('error', () => drop(env, s));
+    s.on('goaway', () => drop(env, s));
+    s.on('close', () => drop(env, s));
     s.unref();
-    sessions.set(env, s);
+    sessions.set(env, { s, usedAt: now() });
     return s;
   };
   return (env, path, headers, body) =>
     new Promise((resolve, reject) => {
-      const req = session(env).request({ [constants.HTTP2_HEADER_METHOD]: 'POST', [constants.HTTP2_HEADER_PATH]: path, ...headers });
+      const s = session(env);
+      let settled = false;
       let status = 0;
       let data = '';
+      const settle = (finish: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        finish();
+      };
+      const req = s.request({ [constants.HTTP2_HEADER_METHOD]: 'POST', [constants.HTTP2_HEADER_PATH]: path, ...headers });
+      const timer = setTimeout(() => {
+        settle(() => resolve({ status: 0, body: 'timeout' }));
+        req.close(constants.NGHTTP2_CANCEL);
+        drop(env, s); // a session that stalls once isn't trusted again
+      }, timeoutMs);
       req.setEncoding('utf8');
-      req.setTimeout(10_000, () => req.close(constants.NGHTTP2_CANCEL));
       req.on('response', (h) => (status = Number(h[constants.HTTP2_HEADER_STATUS])));
       req.on('data', (chunk: string) => (data += chunk));
-      req.on('end', () => resolve({ status, body: data }));
-      req.on('error', reject);
+      req.on('end', () => settle(() => resolve({ status, body: data })));
+      req.on('close', () => settle(() => resolve({ status, body: data || 'closed' })));
+      req.on('error', (err) => settle(() => reject(err)));
       req.end(body);
     });
 }

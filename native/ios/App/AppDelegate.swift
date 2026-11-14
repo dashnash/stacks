@@ -61,30 +61,40 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     /// A button press, straight to the platform (the web view stays closed). If it can't be sent, a
-    /// local notification says so and opens the request when tapped; the platform itself notifies
-    /// about presses it refuses.
+    /// local notification says why and opens the request when tapped; the platform itself notifies
+    /// about presses it refuses (4xx).
     nonisolated private static func send(action: String, token: String?, authHost: String, fallback: URL?) async {
-        guard let token, let device = DeviceKeychain.credentials, let url = PushAction.url(authHost: authHost, deviceId: device.id),
+        guard let token else {
+            return await couldNotSend(fallback, title: "Open the request to answer it", body: "This notification can't be answered from the lock screen.")
+        }
+        guard let device = DeviceKeychain.credentials else {
+            return await couldNotSend(fallback, title: "Open DashyHQ once", body: "This phone isn't set up for quick answers yet. Open DashyHQ, then answer the request there.")
+        }
+        guard let url = PushAction.url(authHost: authHost, deviceId: device.id),
               let body = try? PushAction.body(secret: device.secret, token: token, action: action)
-        else { return await couldNotSend(fallback) }
+        else { return await couldNotSend(fallback, title: "Couldn't send that", body: "Open the request to answer it.") }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
-        request.timeoutInterval = 20
+        request.timeoutInterval = 30
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             // 4xx: the platform refused it and sends its own notification saying why.
-            if let http = response as? HTTPURLResponse, http.statusCode >= 500 { await couldNotSend(fallback) }
+            if let http = response as? HTTPURLResponse, http.statusCode >= 500 {
+                await couldNotSend(fallback, title: "DashyHQ had a problem (\(http.statusCode))", body: "It may still have gone through. Open the request to check.")
+            }
+        } catch let error as URLError where error.code == .timedOut {
+            await couldNotSend(fallback, title: "DashyHQ took too long to answer", body: "It may still have gone through. Open the request to check.")
         } catch {
-            await couldNotSend(fallback)
+            await couldNotSend(fallback, title: "Couldn't reach DashyHQ", body: "Check your connection, then open the request to answer it.")
         }
     }
 
-    nonisolated private static func couldNotSend(_ url: URL?) async {
+    nonisolated private static func couldNotSend(_ url: URL?, title: String, body: String) async {
         let content = UNMutableNotificationContent()
-        content.title = "Couldn't reach Stacks"
-        content.body = "Open the request to answer it."
+        content.title = title
+        content.body = body
         if let url { content.userInfo = ["url": url.absoluteString] }
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }

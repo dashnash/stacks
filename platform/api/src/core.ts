@@ -355,9 +355,14 @@ export async function setGrant(
   }
   // Their open sessions carry the old role: end them so the next request picks up the new one.
   if (holdsRole(from)) await deps.appSessions.endUserSessions(manifest.slug, userId);
-  if (from === PENDING && holdsRole(role)) await notify(deps, userId, { text: `You now have access to ${manifest.name}.`, link: `https://${manifest.slug}.${deps.config.rootDomain}/`, app: manifest.slug });
-  // A request was handled: one fewer waiting on every approver's badge.
-  if (from === PENDING) await syncBadges(deps, await accessManagers(deps, manifest));
+  // A request was handled: tell the requester, and drop it from every approver's badge (together,
+  // so a slow push to one person doesn't hold up the other).
+  if (from === PENDING) {
+    await Promise.all([
+      holdsRole(role) ? notify(deps, userId, { text: `You now have access to ${manifest.name}.`, link: `https://${manifest.slug}.${deps.config.rootDomain}/`, app: manifest.slug }) : undefined,
+      accessManagers(deps, manifest).then((ids) => syncBadges(deps, ids)),
+    ]);
+  }
   const action = role === BLOCKED ? 'grant.block' : from === BLOCKED ? 'grant.unblock' : role === null ? 'grant.remove' : 'grant.set';
   await audit(deps, actor, manifest.slug, { action, label: shownName(target), details: { userId, from, to: role, ...(opts.via ? { via: opts.via } : {}) } });
   return next;
