@@ -20,6 +20,12 @@ createRoot(el).render(<DemoApp demo={demo}><App /></DemoApp>);
   `useChannel` works unchanged; tokens come from the app's real token route, so guards apply. Open
   two demo tabs as different personas (`?as=`) to see events cross between them (`BroadcastChannel`;
   the receiving tab also reloads the shared demo data). `demo.realtime` is the bus (or null).
+- **Game rooms** (module `gameServer`): pass `game` (your `defineGame` from `game/server.ts`) in the
+  options and rooms run in the page: the tab that creates a room is its server, and players in any
+  demo tab of the app reach it with the real signaling and a `BroadcastChannel` in place of WebRTC,
+  so `useGameRoom` runs unchanged and two personas can play side by side (`?as=`). Closing or
+  reloading the creator's tab ends the room. `gameStartDelayMs` (default 1200) is how long
+  "starting" lasts. `demo.games` is the `DemoGames`; `demo.close()` stops everything (tests).
 - The persona switcher and Reset live in the account menu ("Demo: try the app as").
 - Every app exports `App` and `demoOptions()` from `web/src/demo/setup.ts`; the demo entry and
   `tools/app-conformance` both use it.

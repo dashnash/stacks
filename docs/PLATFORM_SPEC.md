@@ -59,6 +59,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Book Club | Migrates as app #1 with its data; current members and roles pre-loaded into the grid; members sign in once more |
 | Audience | Different groups per app, up to a few dozen users at first |
 | Realtime (#51, 2026-11-11) | `realtime` module: one AppSync Event API per app that turns it on (managed fan-out, no idle cost, ~$1 per million events). Server and client publish, channels declared with guards, short-lived HMAC tokens checked by a Lambda authorizer. Game input goes over WebRTC data channels (#44); realtime only carries their setup |
+| Game servers (#44, 2026-11-14) | `gameServer` module: server-authoritative rooms, one on-demand arm64 Fargate task per room on a shared VPC with public subnets (no NAT, no load balancer, no warm pool), players connected over WebRTC data channels to the task's public IP; the `realtime` module only signals. Peer hosting (players connected to each other, one of them the host) was considered and rejected: no authority, host migration, and worse NAT traversal. The image is built in the credential-free build job and deployed as a tarball |
 
 ## Architecture
 
@@ -256,6 +257,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | `scheduledJobs` | EventBridge schedules declared in the manifest invoke named handlers | new |
 | `email` | SES sending from `no-reply@<domain>` with templates; off by default, needs SES production access | new |
 | `realtime` | Live events to open browsers (and the iOS app's web view): the API publishes (`deps.realtime.publish`), pages listen with `useChannel` and may publish on channels whose guards allow it. Every channel pattern is declared with guards in the API; `POST /api/realtime/token` mints a 15-minute HMAC token for exactly the channels asked for, which the Event API's Lambda authorizer checks on every connect, subscribe and publish. At most once, 4 KB per event, resync on every reconnect. Signaling and lobby for WebRTC games (#44), not their data | new (#51): one AppSync Events API per app |
+| `gameServer` | Real-time action games: rooms (code, join, list, leave, end) in the app's table, and per room a server-authoritative game server running the app's `game/server.ts` (`defineGame`) as an on-demand arm64 Fargate task. Players connect over WebRTC data channels (unreliable state, reliable events), signaled over `realtime` (required) with HMAC join tickets; Cloudflare TURN as fallback. Limits in the manifest (4 rooms, 8 players, 10 min idle, 2 h); zero idle cost | new (#44): `@stacks/game-server` |
 
 Runtime AI inference is deliberately out of v1; it can be added later as a platform-proxied module with per-app budgets.
 
@@ -380,6 +382,7 @@ Developers and Claude sessions never hold AWS credentials; anyone with push acce
 | Workflow from `main` | `deploy-test.yml` is always dispatched on `main`; the branch is only an input. The staging IAM role trusts only `repo:dashnash/stacks:environment:staging`, and the `staging` GitHub environment allows only `main`. |
 | Build and deploy split | Job 1 checks out the branch, installs, tests and synthesizes the cloud assembly with no AWS credentials (no CDK context lookups; config comes from `stacks.config.json`). Zone IDs marked `"lookup"` come from a job before it that runs only `main`'s `scripts/lookup-zones.mjs` (read-only, through staging's CDK lookup role) and passes them as `-c hostedZoneIds=…`. Job 2 alone gets credentials and runs no app code: only `cdk deploy --app <assembly>`. |
 | Assembly check | Job 2 refuses an assembly containing any stack other than `stacks-test-app-<slug>`, or IAM resources outside the allowed name patterns. |
+| Images | A game server image (`gameServer` module) is bundled and built in job 1 and travels in the assembly as a tarball. Job 2 never runs `docker build`: it only loads and pushes that tarball, and the assembly check refuses any asset that would run another command. |
 | Permissions boundary | Staging is bootstrapped with its own qualifier (`stktest`) and the execution policy `stacks-test-cfn-exec` instead of admin; every role a staging deploy creates must carry the `stacks-test-boundary` permissions boundary; both deny anything on resources tagged `stacks:env=production`, and no IAM users or keys can be created. |
 | Production | The prod role trusts only the `production` environment, which allows only `main`. |
 
@@ -475,6 +478,7 @@ Phase 3 build notes:
 - [x] Domain move to `dashnash.ninja` (#42): staging and production, legacy redirects for `iamdashnash.com`, DashyHQ portal branding and the shuriken icon; runbook `docs/DOMAIN_MOVE.md` (cleanup, its step 5, still to do)
 - [ ] Remaining modules: uploads, scheduled jobs (email deferred until an app needs it, with SES production access)
 - [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
+- [x] `gameServer` module (#44): `@stacks/game-server`, rooms API, `useGameRoom`, in-page servers in the demo; `hello`'s Live dots is the reference
 - [ ] Eval run on the 4 reference apps, usage logged
 
 Gate: a non-technical user builds one app end to end in a single Claude Code session and it is live on staging.

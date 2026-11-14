@@ -23,3 +23,22 @@ Realtime (manifest module `realtime`): `t.realtime` is a `FakeRealtime` that rec
 (`t.realtime.published` → `[{ channel, data }]`, `t.realtime.on('counter/main')` → data list) with the
 real checks (channel names, 4 KB). `POST /realtime/token` works as in production; check a token's
 claims with `verifyRealtimeToken(t.realtime.key, token, t.deps.now().getTime())`.
+
+Game rooms (manifest module `gameServer`): `t.games` is a `FakeGames`: no servers, just
+`t.games.started` / `.stopped` (room ids) and the server's part to play: `await t.games.open(roomId)`,
+`await t.games.end(roomId, 'idle', results)`, `t.games.crash(roomId)`, `t.games.turn = [...]` (a TURN
+key is set), `t.games.failNextStart = true`. Check a ticket with
+`verifyGameTicket(t.games.gameKey, ticket, roomId, nowMs)`.
+
+Test a game's rules with fake players and a fake clock:
+
+```ts
+import { playGame } from '@stacks/testing';
+const g = playGame(game, { maxPlayers: 8, idleMinutes: 10, maxHours: 2 });
+const ann = g.join('ann@test.dev');           // or { id, name }; throws "join refused: full"
+ann.input({ x: 1 }); ann.event('bump'); ann.ping(1);
+g.advance(1000);                               // game time, tick by tick; g.stall(ms) freezes the server
+ann.state; ann.states; ann.tick; ann.events; ann.roster; ann.welcome; ann.over; ann.closed; ann.pongs;
+ann.drop(); ann.rejoin(); ann.leave(); ann.raw('state', 'not json');
+g.ended; g.gone; g.logs; g.host;
+```

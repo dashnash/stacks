@@ -52,4 +52,24 @@ function App() {
   reconnects with jittered backoff; closes after the page is hidden 30 s and reconnects (with a
   resync) when it's visible again. Your own publishes don't come back unless `echo: true`. Event
   data from other browsers is untrusted: check its shape before showing it.
+- **Game rooms** (manifest module `gameServer`; rooms and routes in `@stacks/api`, the game itself in
+  `@stacks/game-server`):
+  ```tsx
+  const buffer = useMemo(() => createStateBuffer<State>(), []);        // optional smoothing
+  const room = useGameRoom<State, Input, Event>(roomId, {
+    onState: (state, meta) => buffer.push(state, meta),   // raw server state, ~tickHz times a second
+    onEvent: (e) => shake(e),                             // reliable game events
+  });
+  // room.status: 'starting' (server coming up, up to a minute) | 'connecting' | 'live' | 'ended' | 'offline'
+  // room.players, room.you, room.rttMs, room.over ({ reason, results }), room.error ('full' | 'not_found' | 'signed_out' | 'left')
+  room.sendInput({ x, y });        // unreliable: dropped unless live; send the latest, ≤ 60 a second count
+  room.sendEvent('bump');          // reliable; false unless live
+  await room.leave();              // give up your seat (unmounting only disconnects: the seat is kept 20 s)
+  const frame = buffer.sample();   // each animation frame: the state 100 ms ago, interpolated
+  ```
+  It joins (a fresh ticket per connection), does WebRTC with trickle ICE over the realtime channels,
+  keeps two data channels (`state` unreliable, `events` reliable), pings for RTT, and reconnects
+  when the connection drops. It interpolates nothing itself: `interpolate(a, b, t)` blends two states
+  (numbers lerp, list items match by `id`), `createStateBuffer({ delayMs })` does it over time. Works
+  in Safari and the iOS app's web view with no extra bridge.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

@@ -134,7 +134,33 @@ Keys are used from the app's server, so restrict them by **API** only: website (
 restrictions make every call fail, and Lambda has no fixed IP. If a provider rejects a key, the app's
 logs say why (e.g. `API_KEY_HTTP_REFERRER_BLOCKED`).
 
-## 8. Self-hosted Linux runners (optional)
+## 8. Game servers (the `gameServer` module)
+
+Nothing to set up for the module itself: the platform stack creates the shared network (a VPC with
+public subnets, an ECS cluster) and each app with the module gets its own task definition. Two
+optional things are yours:
+
+**TURN key (for players whose network blocks UDP).** Without it joins still work with STUN only, and
+`https://<slug>.<rootDomain>/api/health` lists `missingPlatformKeys`. In the Cloudflare dashboard
+create a **Realtime → TURN** key, then store its two halves once per environment (one key serves
+every app; cost about $0.05/GB after 1 TB/month free):
+
+```bash
+aws ssm put-parameter --name /stacks/prod/secrets/platform/CLOUDFLARE_TURN_KEY_ID --type SecureString --value '<key id>' --overwrite --profile admin --region us-east-1
+```
+
+```bash
+aws ssm put-parameter --name /stacks/prod/secrets/platform/CLOUDFLARE_TURN_API_TOKEN --type SecureString --value '<api token>' --overwrite --profile admin --region us-east-1
+```
+
+Use `/stacks/test/...` for staging. Apps pick it up within 5 minutes, with no deploy.
+
+**Alarm email.** Each app has an alarm for a game server running over 3 hours (rooms end themselves
+after 2). They all go to one SNS topic per environment, `stacks-prod-game-alarms` and
+`stacks-test-game-alarms`: subscribe your email to each (SNS console → Topics → Create subscription →
+Email) and confirm the message it sends.
+
+## 9. Self-hosted Linux runners (optional)
 
 Every Linux job runs on `runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}`.
 With the repository variable `LINUX_RUNNER` unset, jobs use GitHub-hosted `ubuntu-latest`. Set it
