@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { badRequest, errorResponse, HttpError, notFound, toResponse, type RouteResult } from './http';
+import { runInLogScope, writeLog, type LogScope } from './log';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -45,25 +46,50 @@ export class Router {
     return this;
   }
 
-  async handle(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+  /** `app` names the API on its log lines: the app's slug, or "platform". */
+  constructor(private readonly opts: { app?: string } = {}) {}
+
+  /**
+   * Answer one request. Everything logged while it runs carries its request id and ref, and when
+   * it finishes one `request` line is written: method, route pattern, status and duration.
+   */
+  handle(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+    const requestId = event.requestContext?.requestId || globalThis.crypto.randomUUID();
+    const scope: LogScope = { ...(this.opts.app ? { app: this.opts.app } : {}), requestId, ref: requestId.slice(0, 8), route: 'unmatched' };
+    return runInLogScope(scope, async () => {
+      const started = Date.now();
+      const response = await this.dispatch(event, scope);
+      writeLog('request', 'info', 'request', {
+        method: String(event.requestContext?.http?.method ?? '').toUpperCase(),
+        status: typeof response === 'string' ? 200 : (response.statusCode ?? 200),
+        durationMs: Date.now() - started,
+      });
+      return response;
+    });
+  }
+
+  private async dispatch(event: APIGatewayProxyEventV2, scope: LogScope): Promise<APIGatewayProxyResultV2> {
     try {
       const method = event.requestContext.http.method.toUpperCase() as HttpMethod;
       let path = event.rawPath || '/';
-      if (path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)) path = path.slice(API_PREFIX.length) || '/';
-      for (const hook of this.hooks) hook(method, path);
+      const prefixed = path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
+      if (prefixed) path = path.slice(API_PREFIX.length) || '/';
       const segments = split(path);
-
-      let pathMatched = false;
-      for (const route of this.routes) {
+      const candidates = this.routes.flatMap((route) => {
         const params = match(route.segments, segments);
-        if (!params) continue;
-        pathMatched = true;
-        if (route.method !== method) continue;
+        return params ? [{ route, params }] : [];
+      });
+      const found = candidates.find((c) => c.route.method === method);
+      // The pattern, never the raw path: ids in a path can be personal, and patterns group in metrics.
+      const named = found ?? candidates[0];
+      if (named) scope.route = `${prefixed ? API_PREFIX : ''}/${named.route.segments.join('/')}`;
+      for (const hook of this.hooks) hook(method, path);
+      if (found) {
         const headers = lowerCaseHeaders(event.headers ?? {});
-        const result = await route.handler({
+        const result = await found.route.handler({
           method,
           path,
-          params,
+          params: found.params,
           query: (event.queryStringParameters ?? {}) as Record<string, string>,
           headers,
           cookies: parseCookies(event.cookies ?? (headers.cookie ? headers.cookie.split(';') : [])),
@@ -71,7 +97,7 @@ export class Router {
         });
         return toResponse(result);
       }
-      if (pathMatched) throw new HttpError(405, 'Method not allowed', 'METHOD_NOT_ALLOWED');
+      if (candidates.length) throw new HttpError(405, 'Method not allowed', 'METHOD_NOT_ALLOWED');
       throw notFound(`No route for ${method} ${path}`);
     } catch (err) {
       return errorResponse(err);

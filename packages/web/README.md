@@ -21,7 +21,16 @@ function App() {
 ```
 
 - `api.get/post/patch/put/del(path, body?)`, `api.request(method, path, body?)`. Errors are `ApiError`
-  (`status`, `code`, `message`). A 401 flips the app to signed out.
+  (`status`, `code`, `message`, and on a 500 `ref`). A 401 flips the app to signed out.
+- **Errors:** `<ErrorNote error={error} />` shows the message and, for a server failure, its ref:
+  "Internal server error (ref 3f9a2c1b)". Always show errors with it (or show `error.ref` yourself):
+  the ref is how the owner finds the trace (`docs/DEBUGGING.md`).
+- **Error reporting (automatic, no app code):** `<StacksProvider>` reports window errors, unhandled
+  promise rejections and React render crashes to the app's API (`POST /api/stacks/client-error`),
+  which logs them with the user id and build. At most 5 per page load, each message once. A render
+  crash shows "Something went wrong" with a Reload button instead of a blank page. In the demo
+  nothing is sent (a console warning only). Optional: `<ErrorBoundary fallback={…}>` around a part
+  that may fail on its own, and `reportError(err)` for an error you caught but want the owner to see.
 - Routing: `useHashRoute()` gives `{ path, segments }` for `#/notes/7`; `matchRoute('/notes/:id', path)`.
 - Headless components (take `className`/`style`): `Modal` (Escape/backdrop close, focus, scroll lock),
   `Avatar`, `Spinner`, `ErrorNote`, `RequestAccess` (render-prop for custom UI).

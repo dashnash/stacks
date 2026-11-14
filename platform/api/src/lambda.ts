@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { GetParametersCommand, SSMClient } from '@aws-sdk/client-ssm';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { log } from '@stacks/api';
 import { DynamoStore } from '@stacks/api/lambda';
 import { createApnsSender, type ApnsKey } from './apns';
 import { createAppleVerifier } from './apple';
@@ -57,7 +58,7 @@ function apnsKey(): Promise<ApnsKey | undefined> {
     const keyId = get('APNS_KEY_ID');
     return privateKeyPem && keyId ? { privateKeyPem, keyId, teamId } : undefined;
   })().catch((err) => {
-    console.error('Could not read the APNs key', err);
+    log.error('Could not read the APNs key', err);
     apnsCache = undefined;
     return undefined;
   });

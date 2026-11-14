@@ -1,5 +1,5 @@
 import { roleDef, type AppManifest } from '@stacks/manifest';
-import { badRequest, conflict, forbidden, randomToken, sha256Hex, type Item } from '@stacks/api';
+import { badRequest, conflict, forbidden, log, randomToken, sha256Hex, type Item } from '@stacks/api';
 import {
   audit,
   getUser,
@@ -172,7 +172,7 @@ async function mergeUsers(deps: PlatformDeps, into: PlatformUser, from: Platform
       const grant: Grant = { app: p.slug, userId: into.id, role: p.result, grantedBy: 'merge', grantedAt: now, ...(requestedAt ? { requestedAt } : {}) };
       await deps.store.put({ ...keys.grant(p.slug, into.id), ...grant });
     }
-    if (holdsRole(intoGrant?.role)) await deps.appSessions.endUserSessions(p.slug, into.id).catch((err) => console.error(`Could not end ${p.slug} sessions`, err));
+    if (holdsRole(intoGrant?.role)) await deps.appSessions.endUserSessions(p.slug, into.id).catch((err) => log.error('Could not end app sessions', { forApp: p.slug, error: err }));
     await audit(deps, into, p.slug, { action: 'user.merge', label: shownName(from), details: { from: from.id, into: into.id, before: { yours: p.yours, theirs: p.theirs }, after: p.result } });
   }
 

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getNative } from '@stacks/native';
-import { ApiError, isMaintenance, MaintenanceNotice } from '@stacks/web';
+import { ApiError, ErrorReporting, isMaintenance, MaintenanceNotice, type ErrorReport } from '@stacks/web';
 import type { Me, PortalApi } from './api';
 import { syncWithApp } from './push';
 
@@ -22,6 +22,10 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
   const [me, setMe] = useState<Me | null>(null);
   const [status, setStatus] = useState<PortalContextValue['status']>('loading');
   const [maintenance, setMaintenance] = useState(false);
+
+  // Portal crashes are logged by the Platform API; the demo (personas) has no server to tell.
+  const demo = signInMethod.kind === 'personas';
+  const postError = useMemo(() => (demo ? ('console' as const) : (report: ErrorReport) => api.client.post('/stacks/client-error', report)), [api, demo]);
 
   const refresh = useCallback(async () => {
     try {
@@ -73,7 +77,11 @@ export function PortalProvider({ api, signInMethod, children }: { api: PortalApi
     }),
     [api, me, status, signInMethod, refresh],
   );
-  return <PortalContext.Provider value={value}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</PortalContext.Provider>;
+  return (
+    <PortalContext.Provider value={value}>
+      <ErrorReporting post={postError}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</ErrorReporting>
+    </PortalContext.Provider>
+  );
 }
 
 export function usePortal(): PortalContextValue {

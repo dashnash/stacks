@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, createClient, type Client, type Session } from './client';
+import { ErrorReporting, type ErrorReport } from './errors';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 
@@ -75,6 +76,7 @@ export function StacksProvider({
   navigator = browserNavigator,
   silentSignIn = true,
   platformFetch,
+  errorReporting = 'api',
 }: {
   children: ReactNode;
   /** Defaults to `createClient()`; the demo passes one backed by the in-browser API. */
@@ -87,6 +89,11 @@ export function StacksProvider({
   silentSignIn?: boolean;
   /** How the page reaches the platform for silent sign-in (tests replace it). */
   platformFetch?: typeof fetch;
+  /**
+   * Browser errors (window errors, unhandled rejections, render crashes) are posted to the app's
+   * API, which logs them: `'api'` (default). The demo passes `'console'`: logged, no call.
+   */
+  errorReporting?: 'api' | 'console';
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -107,6 +114,8 @@ export function StacksProvider({
       }),
     [client],
   );
+
+  const postError = useMemo(() => (errorReporting === 'console' ? ('console' as const) : (report: ErrorReport) => api.post('/stacks/client-error', report)), [api, errorReporting]);
 
   /** Ask the platform whether the person is signed in there; if so, start an app session. */
   const trySilent = useCallback(async (): Promise<Session | null> => {
@@ -189,7 +198,11 @@ export function StacksProvider({
     [status, session, api, accessNotice, refresh, navigator],
   );
 
-  return <StacksContext.Provider value={value}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</StacksContext.Provider>;
+  return (
+    <StacksContext.Provider value={value}>
+      <ErrorReporting post={postError}>{maintenance ? <MaintenanceNotice onRetry={() => void refresh()} /> : children}</ErrorReporting>
+    </StacksContext.Provider>
+  );
 }
 
 /** True for the API's 503 while the platform is in maintenance. */

@@ -1,3 +1,4 @@
+import { log } from '@stacks/api';
 import { connect, constants, type ClientHttp2Session } from 'node:http2';
 import { createPrivateKey, sign } from 'node:crypto';
 import type { Device, PushMessage, PushSender } from './model';
@@ -49,7 +50,7 @@ export function apnsOutcome(status: number, body: string): 'ok' | 'gone' | 'fail
     /* not JSON */
   }
   if (status === 400 && (reason === 'BadDeviceToken' || reason === 'DeviceTokenNotForTopic')) return 'gone';
-  console.error(`APNs ${status} ${reason || body}`);
+  log.error('APNs refused a push', { status, reason: reason || body });
   return 'failed';
 }
 
