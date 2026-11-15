@@ -687,11 +687,9 @@ describe('CiStack', () => {
       expect(passers.map((x) => x.Sid)).toEqual(['GameServerPassTaskRoles']);
     });
 
-    it('lets game servers subscribe to their signaling channels and pull their image', () => {
+    it('lets game servers subscribe to their signaling channels, and pull nothing from ECR (they run a public image)', () => {
       expect(statement('stacks-test-boundary', 'GameServerSignaling')).toMatchObject({ Effect: 'Allow', Action: 'appsync:EventSubscribe' });
-      expect(statement('stacks-test-boundary', 'GameServerImagePull').Action).toEqual(
-        expect.arrayContaining(['ecr:GetAuthorizationToken', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer']),
-      );
+      expect(JSON.stringify(statements('stacks-test-boundary'))).not.toContain('ecr:');
     });
 
     it('still denies everything tagged production in both policies', () => {

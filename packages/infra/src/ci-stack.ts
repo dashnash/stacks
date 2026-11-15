@@ -94,7 +94,7 @@ export class CiStack extends cdk.Stack {
         new iam.PolicyStatement({ sid: 'RealtimePublish', actions: ['appsync:EventConnect', 'appsync:EventPublish'], resources: ['*'] }),
         // The `gameServer` module (#44). An app's API Lambda starts and stops one Fargate task per
         // room and finds out whether it is still there; the task subscribes to its room's signaling
-        // channels; its execution role pulls the app's image. The app stack scopes each grant to
+        // channels. (Tasks run a public image: no ECR pulls.) The app stack scopes each grant to
         // the app's own task definition, cluster, roles and Event API.
         new iam.PolicyStatement({
           sid: 'GameServerTasks',
@@ -108,11 +108,6 @@ export class CiStack extends cdk.Stack {
           conditions: { StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } },
         }),
         new iam.PolicyStatement({ sid: 'GameServerSignaling', actions: ['appsync:EventSubscribe'], resources: ['*'] }),
-        new iam.PolicyStatement({
-          sid: 'GameServerImagePull',
-          actions: ['ecr:GetAuthorizationToken', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'],
-          resources: ['*'],
-        }),
         new iam.PolicyStatement({ sid: 'NeverProduction', effect: iam.Effect.DENY, actions: ['*'], resources: ['*'], conditions: prodTagged }),
       ],
     });

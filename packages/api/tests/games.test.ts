@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createTestHarness, memberFor } from '@stacks/testing';
+import { captureLogs, createTestHarness } from '@stacks/testing';
 import type { AppManifest } from '@stacks/manifest';
 import {
   createStacksApp,
@@ -105,10 +105,11 @@ describe('rooms', () => {
   it('answers 503 and leaves nothing behind when the server will not start', async () => {
     const t = harness();
     t.games.failNextStart = true;
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const logs = captureLogs();
     const res = await t.call('POST', '/rooms', { as: ann, body: {} });
-    err.mockRestore();
+    logs.stop();
     expect(res.status).toBe(503);
+    expect(logs.lines).toContainEqual(expect.objectContaining({ level: 'error', message: 'Game server not started' }));
     expect((await t.call('GET', '/rooms', { as: ann })).body.rooms).toEqual([]);
     expect([...t.store.items.values()].filter((i) => i.PK.startsWith('ROOMCODE#'))).toEqual([]);
   });
@@ -187,11 +188,12 @@ describe('joining', () => {
     const t = harness();
     const room = await openRoom(t);
     t.games.iceServers = () => Promise.reject(new Error('cloudflare down'));
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const logs = captureLogs();
     const res = await t.call('POST', `/rooms/${room.id}/join`, { as: bob });
-    err.mockRestore();
+    logs.stop();
     expect(res.status).toBe(200);
     expect(res.body.iceServers).toEqual(STUN_ONLY);
+    expect(logs.lines).toContainEqual(expect.objectContaining({ level: 'warn', message: 'TURN credentials unavailable; joining with STUN only' }));
   });
 });
 
