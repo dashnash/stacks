@@ -17,7 +17,6 @@
     "werift": "^0.27.0"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
     "@stacks/testing": "*",
     "@stacks/manifest": "*",
     "@smithy/signature-v4": "^5.7.5"

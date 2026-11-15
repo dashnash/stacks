@@ -65,6 +65,10 @@ defaults; see `@stacks/manifest` for the ranges. Over `maxRooms`, creating a roo
 - Ports: each connected player uses one UDP port from 40000-40019 (20 ports). A 16-player room where
   more than four players reconnect at the same instant can briefly run out; those players retry.
 
+To check that a game bundles and starts: `cd infra && npx cdk synth -c env=staging -c app=<slug>`
+writes it to `cdk.out/asset.<hash>.mjs`; `node` on that file stops at "Missing required environment
+variable STACKS_ROOM_ID" (it needs a real task's environment past that point).
+
 ## Test a game
 
 ```ts
@@ -95,16 +99,19 @@ page: pass `game` in `demoOptions()`.
   candidates are in the SDP) on `room/<id>/to/<player>`. Data channels: `state` (`ordered: false,
   maxRetransmits: 0`) and `events` (reliable). Message shapes: `src/protocol.ts`.
 - **WebRTC library: `werift`** (pure TypeScript), not `node-datachannel`. Why: it bundles with
-  esbuild into the one server file, so the image is Node 22 plus one file with no native build and
-  no `RUN` step (it builds for arm64 on any runner without emulation, and nothing from a branch
-  executes at build time); the same code runs in the test suite (a real loopback connection in
+  esbuild into the one server file, so a room runs on stock Node 22 with nothing to compile or
+  install (no image of its own: see below); the same code runs in the test suite (a real loopback connection in
   `tests/werift.test.ts`). It supports unreliable channels and a fixed UDP port range
   (`icePortRange`). Trade-off: its DTLS/SCTP run in JavaScript, which is fine for a room of 16 at
   20-60 Hz with small messages; a game pushing far more data would want libdatachannel.
 - The task binds its VPC address and learns its public one by STUN (`stun.cloudflare.com`,
   `stun.l.google.com`), so its candidates carry the public IP and a port from the range.
-- Image: `packages/game-server/Dockerfile` + the bundle from `npm run build-game-images -- <slug>`
-  (`--bundle-only` skips Docker). CI builds it in the credential-free build job and hands CDK a
-  tarball; deploy jobs only load and push it.
+- **No image of its own.** Every room runs the official Node 22 image (ECR Public, pinned by digest
+  in `packages/infra/src/game-bundle.ts`), which Fargate pulls inside AWS. The app's game is one
+  bundled file (this runtime plus `game/server.ts`, built at synth by `bundleGameServer`) uploaded as
+  a CDK file asset, like a Lambda's code: deterministic, so it is uploaded again only when the game
+  changes. When the API starts a room it passes a 15-minute signed link to it
+  (`STACKS_GAME_BUNDLE_URL`); the container's start command fetches it (four tries) and runs it.
+  So deploys carry ~5 MB per game, not an image, and nothing in CI needs Docker.
 - Logs: one JSON line per entry in the app's game log group; a `heartbeat` line every minute with
   `uptimeSeconds` and `players`.

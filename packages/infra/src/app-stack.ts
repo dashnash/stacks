@@ -17,12 +17,12 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { gameServerSettings, hasModule, secretParameterName, type AppManifest } from '@stacks/manifest';
 import {
   aasaRoute,
@@ -41,6 +41,7 @@ import {
   type EnvName,
 } from './config';
 import { buildCsp } from './csp';
+import { bundleGameServer, gameBootstrapCommand, GAME_SERVER_IMAGE } from './game-bundle';
 import { addApiMetricFilters, logGroupName } from './monitoring';
 
 /**
@@ -90,34 +91,12 @@ export interface AppStackProps {
   environment?: Record<string, string>;
   /** The commit being deployed, stamped on every log line (`STACKS_BUILD_SHA`). The deploy workflows pass it. */
   buildSha?: string;
-  /**
-   * The app's game server image as a `docker save` tarball (the `gameServer` module). Default
-   * `<appDir>/game/dist/image.tar`, which `scripts/build-game-images.mjs` writes in the build job.
-   */
-  gameImageTarball?: string;
-  /**
-   * Fail when the tarball is missing (deploy builds). Otherwise a placeholder stands in, so
-   * `cdk synth` works on a machine without Docker; a stack synthesized that way must not be deployed.
-   */
-  requireGameImage?: boolean;
 }
 
 /** The container in a game server task (RunTask overrides name it). */
 export const GAME_CONTAINER_NAME = 'game';
 /** A game server task alive this long trips the app's alarm. */
 export const GAME_ALARM_AFTER_HOURS = 3;
-/** Marks a placeholder image tarball (synth without Docker). */
-export const GAME_IMAGE_PLACEHOLDER = 'stacks-game-image-placeholder';
-
-/** A stand-in tarball for synth on a machine that hasn't built the image. Never deployable. */
-function placeholderImageTarball(slug: string): string {
-  const dir = path.join(tmpdir(), 'stacks-game-image-placeholder');
-  mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${slug}.tar`);
-  writeFileSync(file, `${GAME_IMAGE_PLACEHOLDER}: run "npm run build-game-images -- ${slug}" (needs Docker) before deploying\n`);
-  return file;
-}
-
 /**
  * Everything one app needs, from its manifest: a private S3 site behind CloudFront at
  * `<slug>.<rootDomain>`, its API on the same origin at `/api/*`, one Lambda, one DynamoDB single
@@ -346,12 +325,24 @@ export class AppStack extends cdk.Stack {
         generateSecretString: { passwordLength: 64, excludePunctuation: true },
       });
 
-      let tarball = props.gameImageTarball ?? path.join(props.appDir, 'game/dist/image.tar');
-      if (!existsSync(tarball)) {
-        if (props.requireGameImage) throw new Error(`${slug}: no game server image at ${tarball}. Build it first: npm run build-game-images -- ${slug}`);
-        tarball = placeholderImageTarball(slug);
-        cdk.Annotations.of(this).addWarning(`${slug}: no game server image built; using a placeholder. Do not deploy this assembly (run "npm run build-game-images -- ${slug}" first).`);
-      }
+      // The game itself: one bundled file in the bootstrap's asset bucket (built at synth, like
+      // the Lambda's code; uploaded only when it changes). The task fetches it at start through a
+      // short-lived link the API signs (see game-bundle.ts).
+      const gameBundle = new s3assets.Asset(this, 'GameServerBundle', {
+        path: path.join(props.appDir, 'game'),
+        assetHashType: cdk.AssetHashType.OUTPUT,
+        bundling: {
+          // Never used: bundling is local (esbuild, as for the Lambdas). Required by the type.
+          image: cdk.DockerImage.fromRegistry('scratch'),
+          outputType: cdk.BundlingOutput.SINGLE_FILE,
+          local: {
+            tryBundle: (outputDir) => {
+              bundleGameServer({ repoRoot: props.repoRoot, appDir: props.appDir, outfile: path.join(outputDir, 'server.mjs') });
+              return true;
+            },
+          },
+        },
+      });
 
       const gameLogs = new logs.LogGroup(this, 'GameServerLogs', {
         logGroupName: logGroupName(tag, slug, 'game-server'),
@@ -366,7 +357,10 @@ export class AppStack extends cdk.Stack {
       });
       taskDefinition.addContainer('GameServer', {
         containerName: GAME_CONTAINER_NAME,
-        image: ecs.ContainerImage.fromTarball(tarball),
+        // The stock Node image (pinned); the start command fetches and runs the bundle.
+        image: ecs.ContainerImage.fromRegistry(GAME_SERVER_IMAGE),
+        command: gameBootstrapCommand(),
+        user: 'node',
         logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'room', logGroup: gameLogs }),
         // "Game over" goes out and results are written when ECS asks the task to stop.
         stopTimeout: cdk.Duration.seconds(30),
@@ -382,7 +376,6 @@ export class AppStack extends cdk.Stack {
           STACKS_GAME_MAX_HOURS: String(settings.maxHours),
           STACKS_GAME_PORT_MIN: String(GAME_PORT_MIN),
           STACKS_GAME_PORT_MAX: String(GAME_PORT_MAX),
-          NODE_OPTIONS: '--enable-source-maps',
         },
       });
       // The task role: the app's table, the game key, and the app's own Event API (it listens for
@@ -444,6 +437,14 @@ export class AppStack extends cdk.Stack {
       // Describe calls can't be scoped to a resource.
       this.handler.addToRolePolicy(new iam.PolicyStatement({ actions: ['ec2:DescribeNetworkInterfaces'], resources: ['*'] }));
       gameKey.grantRead(this.handler);
+      // The API signs the link the task fetches its game from: this one object, and only reads.
+      // (Not `gameBundle.grantRead`: that grants the whole asset bucket, every app's code.)
+      this.handler.addToRolePolicy(
+        new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [`arn:${this.partition}:s3:::${gameBundle.s3BucketName}/${gameBundle.s3ObjectKey}`] }),
+      );
+      this.handler.addToRolePolicy(
+        new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: ['*'], conditions: { StringEquals: { 'kms:ViaService': `s3.${this.region}.amazonaws.com` } } }),
+      );
       // The platform's TURN key (two SecureStrings an admin stores once): these two and no other platform secret.
       const turnPrefix = platformSecretsPrefix(envName);
       this.handler.addToRolePolicy(
@@ -461,6 +462,8 @@ export class AppStack extends cdk.Stack {
       this.handler.addEnvironment('STACKS_GAME_SUBNET_IDS', subnetIds);
       this.handler.addEnvironment('STACKS_GAME_SECURITY_GROUP', securityGroup.attrGroupId);
       this.handler.addEnvironment('STACKS_GAME_KEY_ARN', gameKey.secretArn);
+      this.handler.addEnvironment('STACKS_GAME_BUNDLE_BUCKET', gameBundle.s3BucketName);
+      this.handler.addEnvironment('STACKS_GAME_BUNDLE_KEY', gameBundle.s3ObjectKey);
       this.handler.addEnvironment('STACKS_GAME_TURN_PREFIX', turnPrefix);
       // RunTask names the family, so it must wait for the first revision to exist.
       this.handler.node.addDependency(taskDefinition);

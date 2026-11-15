@@ -22,8 +22,7 @@
     "build": "npm run build --workspaces --if-present",
     "new-app": "npm run new-app -w tools/new-app --",
     "verify-app": "npm run verify-app -w tools/new-app --",
-    "app-usage": "npm run app-usage -w tools/new-app --",
-    "build-game-images": "node scripts/build-game-images.mjs"
+    "app-usage": "npm run app-usage -w tools/new-app --"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

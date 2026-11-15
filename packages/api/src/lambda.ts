@@ -78,6 +78,7 @@ function defaultGames(manifest: AppManifest, store: Store): Games {
         subnetIds: env('STACKS_GAME_SUBNET_IDS').split(','),
         securityGroupId: env('STACKS_GAME_SECURITY_GROUP'),
         key: realtimeKeyReader({ secretId: env('STACKS_GAME_KEY_ARN') }),
+        bundle: { bucket: env('STACKS_GAME_BUNDLE_BUCKET'), key: env('STACKS_GAME_BUNDLE_KEY') },
         ...(process.env.STACKS_GAME_TURN_PREFIX ? { turnPrefix: process.env.STACKS_GAME_TURN_PREFIX } : {}),
       }),
     ));
