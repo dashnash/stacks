@@ -1,0 +1,87 @@
+/* A gym scoreboard: dark, chunky numbers, one lime accent. */
+:root {
+  --ink: #f1f3ec;
+  --bg: #111312;
+  --card: #1c201d;
+  --line: #2f3530;
+  --accent: #c6ff3d;
+  --muted: #9aa39b;
+  --bad: #ff6b6b;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+.page { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: 0.02em; text-transform: uppercase; font-weight: 900; }
+h3 { margin: 0 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.accent { color: var(--accent); }
+.account { --stacks-menu-accent: var(--accent); }
+.tabs { display: flex; gap: 6px; margin: 14px 0; }
+.tabs a { flex: 1; text-align: center; padding: 10px; border-radius: 10px; background: var(--card); color: var(--ink); text-decoration: none; font-weight: 700; border: 1px solid var(--line); }
+.tabs a[aria-current='page'] { background: var(--accent); color: #111; border-color: var(--accent); }
+.bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { padding: 4px 10px; border-radius: 999px; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; background: var(--line); }
+.chip-native { background: var(--accent); color: #111; }
+.chip-fake { background: #4dd0ff; color: #111; }
+.chip-web { background: #ffb84d; color: #111; }
+.chip-none { background: var(--bad); color: #111; }
+button { font: inherit; cursor: pointer; }
+.primary { background: var(--accent); color: #111; border: 0; border-radius: 999px; padding: 10px 18px; font-weight: 800; }
+.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+.ghost:disabled { opacity: 0.4; }
+.link { background: none; border: 0; color: var(--accent); padding: 2px; }
+.rates { display: flex; gap: 6px; margin-bottom: 12px; }
+.rates button { flex: 1; padding: 8px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-weight: 700; }
+.rates button[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+.meter { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+.meter > div, .readout, .graph, .kit-group { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.meter > div { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.big { font-size: 1.5rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.viz { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.level { width: 110px; height: 110px; border-radius: 50%; border: 2px solid var(--line); background: radial-gradient(circle, #233 0%, #151917 70%); position: relative; overflow: hidden; }
+.bubble { position: absolute; left: 40px; top: 40px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+.cross { position: absolute; inset: 50% auto auto 50%; width: 34px; height: 34px; margin: -17px; border: 1px dashed var(--muted); border-radius: 50%; }
+.phone-stage { width: 110px; height: 130px; perspective: 400px; display: grid; place-items: center; }
+.phone { width: 56px; height: 104px; border-radius: 12px; border: 3px solid var(--accent); background: #222; display: grid; place-items: start center; padding-top: 6px; color: var(--accent); transform-style: preserve-3d; }
+.readouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.readout dl { margin: 0; }
+.readout dl div { display: flex; justify-content: space-between; gap: 4px; }
+.readout dt { color: var(--muted); }
+.readout dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; white-space: pre; }
+.graphs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.graph { margin: 0; }
+.graph figcaption { font-size: 0.8rem; font-weight: 700; margin-bottom: 4px; }
+.graph svg { width: 100%; height: 72px; display: block; }
+.axis { stroke: var(--line); }
+.legend .k0 { color: #c6ff3d; } .legend .k1 { color: #4dd0ff; } .legend .k2 { color: #ff6b9a; }
+.kit-group { margin-bottom: 8px; }
+.kit-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.kit-group li { display: flex; align-items: center; gap: 6px; }
+.kit-group button { border-radius: 8px; border: 1px solid var(--line); background: #262b27; color: var(--ink); padding: 8px 12px; font-weight: 700; text-transform: capitalize; }
+.result { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; min-width: 2ch; }
+.result-ok { color: var(--accent); } .result-web { color: #ffb84d; }
+.result-unsupported, .result-forbidden, .result-failed, .result-cancelled { color: var(--bad); }
+.stage { position: relative; width: 100%; max-width: 420px; margin: 0 auto; touch-action: none; user-select: none; }
+.stage svg { width: 100%; height: 100%; display: block; background: #0b0d0c; border-radius: 10px; }
+.wall { fill: #56625a; }
+.hole { fill: #000; stroke: var(--accent); stroke-width: 0.06; }
+.ball { fill: #e9ecef; stroke: #fff; stroke-width: 0.04; }
+.won { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgb(0 0 0 / 70%); border-radius: 10px; }
+.won p { margin: 4px; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.error { color: var(--bad); font-weight: 700; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.foot { margin-top: 32px; text-align: center; }
+.build { color: inherit; font-family: ui-monospace, Menlo, monospace; }
+@media (max-width: 560px) {
+  .meter { grid-template-columns: repeat(3, 1fr); }
+  .readouts { grid-template-columns: repeat(2, 1fr); }
+  .graphs { grid-template-columns: 1fr; }
+  .big { font-size: 1.25rem; }
+}

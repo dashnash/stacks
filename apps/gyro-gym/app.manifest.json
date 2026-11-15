@@ -1,0 +1,19 @@
+{
+  "slug": "gyro-gym",
+  "name": "Gyro Gym",
+  "tagline": "Tilt, shake and buzz: a test bench for your phone's motion sensors.",
+  "description": "A workout for the DashyHQ app's Game kit. The Lab shows live motion readings, graphs, the real sample rate, a bubble level and a 3D phone; the Kit panel tries every haptic and screen control; the Maze is a tilt-to-roll marble game. Works in any browser, best in the DashyHQ app.",
+  "category": "Games",
+  "visibility": "public",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "PLAYER", "label": "Player" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "PLAYER",
+  "publicRoutes": ["/"],
+  "modules": [],
+  "native": ["motion", "haptics", "screen"],
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}
