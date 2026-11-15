@@ -42,11 +42,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Build game server images (apps with the gameServer module; arm64, no emulation needed)
-        run: npm run build-game-images
       - name: Synth every stack (no AWS credentials needed)
         working-directory: infra
-        # The same path as the deploy builds: the real image tarballs, not the no-Docker placeholder.
         run: |
-          npx cdk synth -q -c env=staging -c requireGameImage=true
-          npx cdk synth -q -c env=production -c requireGameImage=true
+          npx cdk synth -q -c env=staging
+          npx cdk synth -q -c env=production

@@ -345,6 +345,7 @@ describe('awsGames', () => {
       }),
     };
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ iceServers: [] }), { status: 201 }));
+    const presigned: { bucket: string; key: string; expiresIn: number }[] = [];
     const games = awsGames({
       app: 'hello',
       store,
@@ -354,16 +355,21 @@ describe('awsGames', () => {
       subnetIds: ['subnet-a', 'subnet-b'],
       securityGroupId: 'sg-1',
       key: async () => 'k',
+      bundle: { bucket: 'cdk-stktest-assets', key: 'abc123.mjs' },
+      presign: async (bucket: string, key: string, expiresIn: number) => {
+        presigned.push({ bucket, key, expiresIn });
+        return `https://${bucket}.s3.amazonaws.com/${key}?X-Amz-Expires=${expiresIn}&X-Amz-Signature=sig`;
+      },
       turnPrefix: '/stacks/test/secrets/platform/',
       ecs: ecs as never,
       ssm: ssm as never,
       fetch: fetchMock as never,
     });
-    return { games, store, sent, tasks, fetchMock, ssm };
+    return { games, store, sent, tasks, fetchMock, ssm, presigned };
   }
 
-  it('runs one tagged Fargate task per room on a public IP, with the room id in its environment', async () => {
-    const { games, sent, store } = setup();
+  it('runs one tagged Fargate task per room on a public IP, with the room id and a 15-minute link to its game', async () => {
+    const { games, sent, store, presigned } = setup();
     await games.start('room-1');
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -375,20 +381,56 @@ describe('awsGames', () => {
         count: 1,
         startedBy: 'room-1',
         networkConfiguration: { awsvpcConfiguration: { subnets: ['subnet-a', 'subnet-b'], securityGroups: ['sg-1'], assignPublicIp: 'ENABLED' } },
-        overrides: { containerOverrides: [{ name: 'game', environment: [{ name: 'STACKS_ROOM_ID', value: 'room-1' }] }] },
+        overrides: {
+          containerOverrides: [
+            {
+              name: 'game',
+              environment: [
+                { name: 'STACKS_ROOM_ID', value: 'room-1' },
+                { name: 'STACKS_GAME_BUNDLE_URL', value: 'https://cdk-stktest-assets.s3.amazonaws.com/abc123.mjs?X-Amz-Expires=900&X-Amz-Signature=sig' },
+              ],
+            },
+          ],
+        },
         propagateTags: 'TASK_DEFINITION',
         tags: [{ key: 'stacks:app', value: 'hello' }, { key: 'stacks:room', value: 'room-1' }],
       },
     });
+    expect(presigned).toEqual([{ bucket: 'cdk-stktest-assets', key: 'abc123.mjs', expiresIn: 900 }]);
     expect(await store.get(roomKeys.task('room-1').PK, 'TASK')).toMatchObject({ taskArn: expect.stringContaining('task/stacks-test-games/t1') });
   });
 
   it('fails when ECS starts nothing', async () => {
     const broken = awsGames({
       app: 'hello', store: new MemoryStore(), clusterArn: 'c', taskDefinition: 't', containerName: 'game', subnetIds: ['s'], securityGroupId: 'sg', key: async () => 'k',
+      bundle: { bucket: 'b', key: 'k.mjs' }, presign: async () => 'https://b/k.mjs',
       ecs: { send: async () => ({ tasks: [], failures: [{ reason: 'RESOURCE:CPU' }] }) } as never,
     });
     await expect(broken.start('r')).rejects.toThrow(/did not start a task.*RESOURCE:CPU/);
+  });
+
+  it('signs the link with the real presigner: GET on that object, expiring in 15 minutes', async () => {
+    const env = { ...process.env };
+    Object.assign(process.env, { AWS_ACCESS_KEY_ID: 'AKIDEXAMPLE', AWS_SECRET_ACCESS_KEY: 'secret', AWS_SESSION_TOKEN: 'session', AWS_REGION: 'us-east-1' });
+    try {
+      const sent: any[] = [];
+      const games = awsGames({
+        app: 'hello', store: new MemoryStore(), clusterArn: 'c', taskDefinition: 't', containerName: 'game', subnetIds: ['s'], securityGroupId: 'sg', key: async () => 'k',
+        bundle: { bucket: 'cdk-stktest-assets-1-us-east-1', key: 'abc123.mjs' },
+        ecs: { send: async (cmd: { input: unknown }) => (sent.push(cmd.input), { tasks: [{ taskArn: 'arn:task' }] }) } as never,
+      });
+      await games.start('room-1');
+      const url = new URL(sent[0].overrides.containerOverrides[0].environment.find((e: { name: string }) => e.name === 'STACKS_GAME_BUNDLE_URL').value);
+      expect(url.hostname).toBe('cdk-stktest-assets-1-us-east-1.s3.us-east-1.amazonaws.com');
+      expect(url.pathname).toBe('/abc123.mjs');
+      expect(url.searchParams.get('X-Amz-Expires')).toBe('900');
+      expect(url.searchParams.get('X-Amz-Credential')).toMatch(/^AKIDEXAMPLE\/\d{8}\/us-east-1\/s3\/aws4_request$/);
+      expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+      // Container overrides are capped at 8 KB: a signed link with a session token fits easily.
+      expect(JSON.stringify(sent[0].overrides).length).toBeLessThan(4096);
+    } finally {
+      process.env = env;
+    }
   });
 
   it('knows which rooms still have a server, and stops them once', async () => {

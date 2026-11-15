@@ -89,13 +89,6 @@ jobs:
           npm test -w "apps/${{ inputs.app }}"
           # The commit actually built (the branch's), for the app's footer.
           VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build -w "apps/${{ inputs.app }}"
-      # The gameServer module: the branch's game code is bundled and put in an image here, where
-      # there are no AWS credentials. It travels in cdk-out as a tarball; the deploy job only
-      # loads and pushes it (and check-assembly refuses anything else).
-      - name: Build the game server image (apps with the gameServer module)
-        env:
-          APP: ${{ inputs.app }}
-        run: npm run build-game-images -- "$APP"
       - name: Synth (no AWS credentials in this job)
         working-directory: infra
         env:
@@ -104,7 +97,7 @@ jobs:
           # The same commit as the web build, stamped on the Lambda's log lines.
           STACKS_BUILD_SHA="$(git rev-parse HEAD)"
           export STACKS_BUILD_SHA
-          npx cdk synth -q -c env=staging -c "app=${{ inputs.app }}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out
+          npx cdk synth -q -c env=staging -c "app=${{ inputs.app }}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
       - uses: actions/upload-artifact@v4
         with:
           name: cdk-out

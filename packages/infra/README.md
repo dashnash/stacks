@@ -14,15 +14,15 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   secret, `appsync:EventPublish` for the API Lambda on that API only, `realtime` endpoints in
   `config.json` and the `wss://` host in `connect-src`. Apps without it get none of these.
 - With the `gameServer` module, `AppStack` adds an arm64 Fargate task definition
-  (`stacks-<env>-app-<slug>-game`, cpu/memory from the manifest) whose image is a `docker save`
-  tarball (`gameImageTarball`, default `apps/<slug>/game/dist/image.tar`; `ContainerImage.fromTarball`),
-  its log group (`/stacks/<prod|test>/<slug>/game-server`), task and execution roles (table, game key, the app's own Event API with IAM), a
+  (`stacks-<env>-app-<slug>-game`, cpu/memory from the manifest) on the pinned public Node image
+  (`GAME_SERVER_IMAGE`) whose start command (`GAME_BOOTSTRAP_SCRIPT`) fetches and runs the app's game:
+  one file bundled at synth (`bundleGameServer`) as a file asset, read through a link the API signs
+  (`s3:GetObject` on that one object only); its log group (`/stacks/<prod|test>/<slug>/game-server`), task and execution roles (table, game key, the app's own Event API with IAM), a
   security group allowing only UDP 40000-40019 in, the `stacks-<env>-app-<slug>-game-key` secret,
   grants for the API Lambda (run/stop/describe its own tagged tasks on the shared cluster, pass the
   two roles to ECS tasks, read the two TURN parameters) and a 3-hour alarm: a metric filter on the
   server's heartbeat `uptimeSeconds` (the server logs it every minute), alarming to the environment's
-  topic. A missing tarball is a placeholder plus a warning (synth without Docker) unless
-  `requireGameImage` (`-c requireGameImage=true`, set by every CI synth). Apps without it get none.
+  topic. Apps without it get none.
 - `PlatformStack` has the shared game network: a VPC with two public subnets and an internet gateway
   (no NAT), the ECS cluster `stacks-<env>-games` and the SNS topic `stacks-<env>-game-alarms`; their
   IDs are in SSM (`ssmNames(env).game`) and app stacks read them at deploy time.
@@ -42,7 +42,7 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   depend on every other stack so it deploys last.
 - `CiStack` (`stacks-ci`): GitHub OIDC roles per environment and the staging guardrail policies.
 - `checkAssembly(dir, stack)`: the staging deploy gate (one stack, bounded roles, no asset that runs
-  a command: the only image allowed is a tarball in the assembly with CDK's own load command).
+  a command, and no container image at all: app stacks ship plain files only).
 - `buildCsp`, `loadStacksConfig` (validates zones and `legacyRedirects`), naming helpers.
 - Zones: `hostedZoneId` is a Route 53 ID or `"lookup"` (needs `hostedZoneName`). `resolveZoneIds(env,
   parseZoneIds(ctx), strict)` swaps in the IDs CI passes as `-c hostedZoneIds=<name>=<id>,…`;

@@ -1,10 +1,13 @@
 /**
  * The `gameServer` module on AWS: one Fargate task per room on the platform's shared cluster
- * (public subnets, a public IP, no load balancer), the game key from Secrets Manager and
+ * (public subnets, a public IP, no load balancer) running stock Node with the app's game fetched from
+ * S3 through a short-lived link, the game key from Secrets Manager and
  * short-lived TURN credentials from Cloudflare. Node only; loaded lazily by `lambda.ts`.
  */
 import { DescribeTasksCommand, ECSClient, RunTaskCommand, StopTaskCommand } from '@aws-sdk/client-ecs';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { STUN_ONLY, TURN_KEY_NAMES, roomKeys, type Games, type IceServer } from './games';
 import type { Item, Store } from './store';
 
@@ -20,6 +23,13 @@ export interface AwsGamesOptions {
   securityGroupId: string;
   /** Reads the game key (a Secrets Manager secret; `realtimeKeyReader` does it). */
   key: () => Promise<string>;
+  /**
+   * The app's game: one bundled file in S3 (the stack's file asset). Each task gets a short-lived
+   * link to it in `STACKS_GAME_BUNDLE_URL` and fetches it at start (the image is stock Node).
+   */
+  bundle: { bucket: string; key: string };
+  /** Signs a GET link to an S3 object. Default: the AWS SDK presigner with the Lambda's own role. */
+  presign?: (bucket: string, key: string, expiresInSeconds: number) => Promise<string>;
   /** SSM prefix of the platform's TURN key, e.g. `/stacks/test/secrets/platform/`. Unset: STUN only. */
   turnPrefix?: string;
   ecs?: Pick<ECSClient, 'send'>;
@@ -29,6 +39,8 @@ export interface AwsGamesOptions {
 }
 
 const TURN_KEY_TTL_MS = 5 * 60_000;
+/** How long a task's link to its game bundle works. A task fetches it within a minute or so of RunTask. */
+export const BUNDLE_LINK_TTL_SECONDS = 15 * 60;
 const TURN_TIMEOUT_MS = 3000;
 /** Task states that mean "gone or going". */
 const STOPPING = new Set(['DEACTIVATING', 'STOPPING', 'DEPROVISIONING', 'STOPPED', 'DELETED']);
@@ -58,6 +70,9 @@ export function awsGames(opts: AwsGamesOptions): Games {
   const ssm = opts.ssm ?? new SSMClient({});
   const doFetch = opts.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const now = opts.now ?? Date.now;
+  const presign =
+    opts.presign ??
+    ((bucket: string, key: string, expiresIn: number) => getSignedUrl(new S3Client({}), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn }));
   let turnKey: { at: number; value: Promise<{ id?: string; token?: string }> } | undefined;
 
   const readParam = (name: string) =>
@@ -85,6 +100,7 @@ export function awsGames(opts: AwsGamesOptions): Games {
     key: opts.key,
 
     async start(roomId) {
+      const bundleUrl = await presign(opts.bundle.bucket, opts.bundle.key, BUNDLE_LINK_TTL_SECONDS);
       const res = await ecs.send(
         new RunTaskCommand({
           cluster: opts.clusterArn,
@@ -94,7 +110,18 @@ export function awsGames(opts: AwsGamesOptions): Games {
           // Room ids are at most 36 characters here (`startedBy` allows 36).
           ...(roomId.length <= 36 ? { startedBy: roomId } : {}),
           networkConfiguration: { awsvpcConfiguration: { subnets: opts.subnetIds, securityGroups: [opts.securityGroupId], assignPublicIp: 'ENABLED' } },
-          overrides: { containerOverrides: [{ name: opts.containerName, environment: [{ name: 'STACKS_ROOM_ID', value: roomId }] }] },
+          overrides: {
+            containerOverrides: [
+              {
+                name: opts.containerName,
+                environment: [
+                  { name: 'STACKS_ROOM_ID', value: roomId },
+                  // Where the game is: the task's start command fetches and runs it.
+                  { name: 'STACKS_GAME_BUNDLE_URL', value: bundleUrl },
+                ],
+              },
+            ],
+          },
           // The stack's tags (stacks:env) come from the task definition; these two are the task's own.
           propagateTags: 'TASK_DEFINITION',
           tags: [
