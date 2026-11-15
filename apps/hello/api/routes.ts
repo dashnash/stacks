@@ -39,7 +39,7 @@ async function tellEveryone(deps: AppDeps, greeting: Greeting): Promise<void> {
 /** The Live panel: the server publishes the shared counter here; only it may. */
 export const COUNTER_CHANNEL = 'counter/main';
 /** The Live panel's lobby: members wave to each other here (client publishes). */
-export const LOBBY_CHANNEL = 'room/lobby';
+export const LOBBY_CHANNEL = 'lobby/main';
 export interface CounterEvent {
   n: number;
 }
@@ -65,10 +65,10 @@ async function latest(deps: AppDeps, limit: number): Promise<Greeting[]> {
 /** Hello Board's API. The same routes run in Lambda, in tests and in the browser demo. */
 export function routes(api: AppRoutes<AppDeps>) {
   // Realtime channels: every member may listen; only the server publishes the counter, and any
-  // member may wave in a room. Anything else is refused when a browser asks for a token.
+  // member may wave in the lobby. (`room/*` belongs to the gameServer module: Live dots.) Anything else is refused when a browser asks for a token.
   api.realtime
     .channel('counter/*', { subscribe: (v) => !!v.role, publish: false })
-    .channel('room/*', { subscribe: (v) => !!v.role, publish: (v) => !!v.role });
+    .channel('lobby/*', { subscribe: (v) => !!v.role, publish: (v) => !!v.role });
 
   api
     .member('GET', '/counter', async (_req, v) => ({ body: { n: await counter(v.deps) } }))

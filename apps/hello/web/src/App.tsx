@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { AccountMenu, Avatar, BuildVersion, ErrorNote, Spinner, timeAgo, useApi, useAsync, useChannel, useStacks, type ChannelStatus } from '@stacks/web';
 import type { CounterEvent, Greeting, Wave } from '../../api/routes';
 import { COUNTER_CHANNEL, LOBBY_CHANNEL, MAX_GREETING } from '../../api/routes';
+import { Play } from './Play';
 
 type PublicGreeting = Pick<Greeting, 'id' | 'text' | 'authorName' | 'createdAt'>;
 
@@ -54,7 +55,7 @@ function useToasts(ms = 4000) {
 
 /**
  * The realtime module in action: a counter the server publishes on `counter/main`, and a Wave
- * button that publishes straight from the browser on `room/lobby`.
+ * button that publishes straight from the browser on `lobby/main`.
  */
 function LivePanel() {
   const api = useApi();
@@ -181,6 +182,7 @@ function Board() {
   return (
     <>
       <LivePanel />
+      <Play />
       <form className="compose" onSubmit={post}>
         <label htmlFor="greeting">Hi {session?.user.name}, say hello</label>
         <textarea id="greeting" value={text} maxLength={MAX_GREETING} onChange={(e) => setText(e.target.value)} rows={3} />
