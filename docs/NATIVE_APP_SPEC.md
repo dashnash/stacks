@@ -521,7 +521,7 @@ Gate: a new person with a hidden email signs in with Apple on iPhone and on a la
 - [x] `gyro-gym` Game kit pilot (an app task): sensor lab, Kit panel, tilt maze
 - [ ] Camera kit, audio, location; a camera/scan demo once `uploads` lands; `flippy-work-table` flick-to-flip (an app task)
 
-Gate (Game kit): Gyro Gym's lab at ~100 Hz from CoreMotion on a real iPhone, every Kit call felt or seen, keyboard/drag emulation in demo mode, and an undeclared call refused.
+Gate (Game kit): Gyro Gym's lab at ~100 Hz from CoreMotion on a real iPhone, every Kit call felt or seen, keyboard/drag emulation in demo mode, and an undeclared call refused (passed 2026-11-15 on a real iPhone, DashyHQ Test).
 
 **N6 — Game Center, AR, widgets**
 - [ ] Game Center from manifest declarations (CI creates leaderboards); AR Quick Look, then ARKit sessions; Inbox and Glance widgets with `deps.platform.glance`
