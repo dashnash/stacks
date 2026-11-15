@@ -146,8 +146,12 @@ export interface Native {
     /** Where `start` would read from: the app (`native`), the browser (`web`) or nowhere. */
     readonly source: MotionSource;
     start(opts: MotionOptions, onBatch: (batch: MotionBatch) => void): MotionStop;
-    /** Browser motion only: iOS Safari asks first (call it from a tap). In the app, `granted`. */
-    requestPermission(): Promise<'granted' | 'denied' | 'unsupported'>;
+    /**
+     * Ask before `start` (call it from a tap), with the same `source` you will start with. The
+     * app's own sensors never ask (`granted`); the browser's do (iOS Safari, and inside the app
+     * when you pass `source: 'web'`). `auto` (default) asks for whichever `start` would use.
+     */
+    requestPermission(opts?: { source?: 'auto' | 'native' | 'web' }): Promise<'granted' | 'denied' | 'unsupported'>;
   };
   /** Felt in the app; `navigator.vibrate` where the browser has it; otherwise nothing (never throws for lack of support). */
   haptics: {
@@ -259,8 +263,11 @@ export function getNative(g: Global = globalThis as Global): Native {
         };
         return Object.assign(stop, { source, ready }) as MotionStop;
       },
-      async requestPermission() {
-        if (native.motion.source === 'native') return 'granted';
+      async requestPermission(opts = {}) {
+        const want = opts.source ?? 'auto';
+        const auto = native.motion.source;
+        if (want === 'native') return auto === 'native' ? 'granted' : 'unsupported';
+        if (want === 'auto' && auto === 'native') return 'granted';
         return requestWebMotionPermission(g);
       },
     },

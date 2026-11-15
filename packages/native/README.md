@@ -28,7 +28,9 @@ sensitive capability (code-owner review). Each has a web fallback, so the same c
 
 ```ts
 // Motion: CoreMotion at up to 100 Hz in the app, DeviceMotionEvent (~60 Hz) in a browser.
+// From a tap, with the same source as start: the app's sensors never ask, the browser's do.
 if ((await native.motion.requestPermission()) !== 'granted') { /* show "Enable motion" (a tap) */ }
+await native.motion.requestPermission({ source: 'web' }); // before start({ source: 'web' }), even in the app
 const stop = native.motion.start({ hz: 100, onError: (e) => show(e.code) }, ({ samples }) => {
   for (const s of samples) use(s.gravity, s.attitude); // also userAcceleration, rotationRate, t
 });
