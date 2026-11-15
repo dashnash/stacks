@@ -78,6 +78,9 @@ jobs:
         env:
           HOSTED_ZONE_IDS: ${{ needs.zones.outputs.ids }}
         run: |
+          # The same commit as the web build, stamped on every Lambda's log lines.
+          STACKS_BUILD_SHA="$(git rev-parse HEAD)"
+          export STACKS_BUILD_SHA
           npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out
           npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out-staging
       - uses: actions/upload-artifact@v4

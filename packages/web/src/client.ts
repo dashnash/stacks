@@ -7,6 +7,8 @@ export class ApiError extends Error {
     message: string,
     public readonly code?: string,
     public readonly body?: unknown,
+    /** On a 500: the short id of the failed request. Show it; the owner finds the trace with it. */
+    public readonly ref?: string,
   ) {
     super(message);
   }
@@ -66,8 +68,8 @@ export function createClient(opts: ClientOptions = {}) {
     const data: unknown = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 401) opts.onUnauthorized?.();
-      const err = data as { error?: string; code?: string };
-      throw new ApiError(res.status, err.error ?? `Request failed (${res.status})`, err.code, data);
+      const err = data as { error?: string; code?: string; ref?: unknown };
+      throw new ApiError(res.status, err.error ?? `Request failed (${res.status})`, err.code, data, typeof err.ref === 'string' ? err.ref : undefined);
     }
     return data as T;
   };

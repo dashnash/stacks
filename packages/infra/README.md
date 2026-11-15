@@ -16,7 +16,7 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
 - With the `gameServer` module, `AppStack` adds an arm64 Fargate task definition
   (`stacks-<env>-app-<slug>-game`, cpu/memory from the manifest) whose image is a `docker save`
   tarball (`gameImageTarball`, default `apps/<slug>/game/dist/image.tar`; `ContainerImage.fromTarball`),
-  its log group, task and execution roles (table, game key, the app's own Event API with IAM), a
+  its log group (`/stacks/<prod|test>/<slug>/game-server`), task and execution roles (table, game key, the app's own Event API with IAM), a
   security group allowing only UDP 40000-40019 in, the `stacks-<env>-app-<slug>-game-key` secret,
   grants for the API Lambda (run/stop/describe its own tagged tasks on the shared cluster, pass the
   two roles to ECS tasks, read the two TURN parameters) and a 3-hour alarm: a metric filter on the
@@ -26,6 +26,15 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
 - `PlatformStack` has the shared game network: a VPC with two public subnets and an internet gateway
   (no NAT), the ECS cluster `stacks-<env>-games` and the SNS topic `stacks-<env>-game-alarms`; their
   IDs are in SSM (`ssmNames(env).game`) and app stacks read them at deploy time.
+- Monitoring (`monitoring.ts`, spec "Monitoring", `docs/DEBUGGING.md`): API Lambdas log JSON to
+  named groups (`logGroupName(tag, slug)` → `/stacks/<prod|test>/<slug>/api`, the platform's slug is
+  `platform`; authorizers: `…/realtime-authorizer`) and get `STACKS_ENV_TAG`, `STACKS_APP_SLUG` and
+  `STACKS_BUILD_SHA` (prop `buildSha`; `infra/bin/stacks.ts` reads the `STACKS_BUILD_SHA` env var the
+  deploy workflows set). `addApiMetricFilters(scope, logGroup, tag)` publishes `Requests`,
+  `ServerErrors`, `UnhandledErrors`, `ClientErrors`, `DurationMs` to `Stacks/<tag>` with dimension
+  `app` (patterns in `API_METRIC_FILTERS`; they read `$.message.<field>`, the names `@stacks/api`
+  logs). `PlatformStack` adds `Monitoring`: the one dashboard `stacks-<tag>` and six saved queries
+  (`SAVED_QUERIES`) over the log groups of `appSlugs`. No alarms, no SNS.
 - `LegacyRedirectStack` (`stacks-<env>-legacy-redirect`, only with `legacyRedirects`): per old root a
   CloudFront distribution on `<old>` + `*.<old>` (own certificate and records in the old zone) whose
   function (`legacyRedirectCode(old, new)`) 301s to the same label + path + query on the new root

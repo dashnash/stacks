@@ -29,5 +29,7 @@ export type { EnvConfig, EnvName, LegacyRedirect, NativeConfig, StacksConfig } f
 export { LegacyRedirectStack, legacyRedirectCode } from './legacy-redirect-stack';
 export type { LegacyRedirectStackProps } from './legacy-redirect-stack';
 export { checkAssembly } from './assembly-check';
+export { addApiMetricFilters, API_METRIC_FILTERS, dashboardName, logGroupName, metricNamespace, Monitoring, SAVED_QUERIES } from './monitoring';
+export type { MonitoringProps } from './monitoring';
 export { PlatformStack, PORTAL_CSP, portalRouterCode } from './platform-stack';
 export type { PlatformStackProps } from './platform-stack';

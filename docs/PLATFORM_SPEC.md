@@ -58,6 +58,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Testing | In-browser demo mode for previews; one shared staging platform deployable from a Claude session via CI |
 | Book Club | Migrates as app #1 with its data; current members and roles pre-loaded into the grid; members sign in once more |
 | Audience | Different groups per app, up to a few dozen users at first |
+| Monitoring (#75, 2026-11-14) | Troubleshooting first, pull only: structured JSON logs with a request ref, browser errors captured by `@stacks/web`, one CloudWatch dashboard per environment and saved Logs Insights queries. AWS-native only; no alerts, no vendor, no tracing ("Monitoring") |
 | Realtime (#51, 2026-11-11) | `realtime` module: one AppSync Event API per app that turns it on (managed fan-out, no idle cost, ~$1 per million events). Server and client publish, channels declared with guards, short-lived HMAC tokens checked by a Lambda authorizer. Game input goes over WebRTC data channels (#44); realtime only carries their setup |
 | Game servers (#44, 2026-11-14) | `gameServer` module: server-authoritative rooms, one on-demand arm64 Fargate task per room on a shared VPC with public subnets (no NAT, no load balancer, no warm pool), players connected over WebRTC data channels to the task's public IP; the `realtime` module only signals. Peer hosting (players connected to each other, one of them the host) was considered and rejected: no authority, host migration, and worse NAT traversal. The image is built in the credential-free build job and deployed as a tarball |
 
@@ -238,9 +239,9 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 
 | Package | Contents | Extracted from |
 | --- | --- | --- |
-| `@stacks/api` | `Router`, `requireRole()` guards from the manifest, `run()` with auto-audit, `HttpError` helpers and validators, `Store` + `DynamoStore` + `MemoryStore`, `Deps` injection, Lambda handler, platform client (`me`, grants, notify) | `utils/router.ts`, `http.ts`, `store.ts`, `dynamo-store.ts`, `deps.ts`, `handler.ts` |
-| `@stacks/web` | `StacksProvider`, `useAuth`, `useApi`, `createApi`, runtime `config.json`, `useAsync`, hash routing, formatters, headless `Modal`, `Spinner`, `ErrorNote`, `Avatar`, `RequestAccess` | `lib/auth.tsx`, `api.ts`, `config.ts`, `useAsync.ts`, `route.ts`, `format.ts`, `components/ui.tsx` |
-| `@stacks/infra` | `PlatformApp` construct: S3 + OAC, CloudFront, SPA rewrite, CSP and security headers, HTTP API with throttling, arm64 Node 22 Lambda, single table with GSI1 + TTL, log retention, cache policy, `config.json` writer, module resources | `infra/lib/book-club-stack.ts` |
+| `@stacks/api` | `Router`, `requireRole()` guards from the manifest, `run()` with auto-audit, `HttpError` helpers and validators, `Store` + `DynamoStore` + `MemoryStore`, `Deps` injection, Lambda handler, platform client (`me`, grants, notify), structured `log` with request context and error refs, `/stacks/client-error` | `utils/router.ts`, `http.ts`, `store.ts`, `dynamo-store.ts`, `deps.ts`, `handler.ts` |
+| `@stacks/web` | `StacksProvider`, `useAuth`, `useApi`, `createApi`, runtime `config.json`, `useAsync`, hash routing, formatters, headless `Modal`, `Spinner`, `ErrorNote` (shows the error ref), `Avatar`, `RequestAccess`, browser error reporting and `ErrorBoundary` | `lib/auth.tsx`, `api.ts`, `config.ts`, `useAsync.ts`, `route.ts`, `format.ts`, `components/ui.tsx` |
+| `@stacks/infra` | `PlatformApp` construct: S3 + OAC, CloudFront, SPA rewrite, CSP and security headers, HTTP API with throttling, arm64 Node 22 Lambda, single table with GSI1 + TTL, log retention, cache policy, `config.json` writer, module resources, named JSON log groups with metric filters, the environment dashboard and saved queries (`Monitoring`) | `infra/lib/book-club-stack.ts` |
 | `@stacks/testing` | `MemoryStore` fakes, persona sign-in, integration helpers, Playwright smoke helper | `backend/tests/helpers.ts`, `frontend/tests/fakes.tsx` |
 | `@stacks/demo` | Runs the app's real API in the browser on `MemoryStore` with seeded personas; single-file demo build | `frontend/src/demo/*`, `scripts/inline-demo.mjs` |
 | App template | Build-hash footer (`<BuildVersion />`, required), ToS and privacy templates, Open Graph tags, favicon set, `/public/*` convention, landing page | `build-info.ts`, `public/*.html` |
@@ -292,6 +293,52 @@ the persona switcher · **Sign out** (of every app).
   `web/src/demo/setup.ts`. `tools/app-conformance` renders each app on its demo backend and fails CI
   unless exactly one account control is inside a `<header>`, signed out and signed in, with the
   standard items and a working sign-out. There is no fallback chip.
+
+## Monitoring
+
+Built for troubleshooting, not paging (#75): the owner looks when someone says something broke.
+AWS-native only (CloudWatch), no third-party tracker, no alerts.
+
+- **One JSON line per API request**, from every app and the platform, written by `@stacks/api`'s
+  router: `type: "request"`, `method`, `route` (the matched pattern, e.g. `/api/books/:id`;
+  `unmatched` when none), `status`, `durationMs`. Every line also has `level`, `app` (the slug, or
+  `platform`), `env` (`prod`/`test`), `build` (the commit) and, inside a request, `requestId`, `ref`
+  and the signed-in `userId`.
+- **What a line may hold**: route, method, status, duration, request id, ref, app slug, user id
+  (`u_…`), build. **Never** an email, a display name, a request or response body, cookies, headers
+  or a query string. The same rule binds app code that calls `log`.
+- **Error ref**: an unhandled error answers 500 with `{ error, code: "INTERNAL", ref }` and writes a
+  `type: "error"` line with the stack. The ref is the first 8 characters of the API Gateway request
+  id, logged as its own field on every line of that request. `@stacks/web`'s `ErrorNote` shows
+  "… (ref 3f9a2c1b)"; the owner pastes it into a saved query (`docs/DEBUGGING.md`). `HttpError`s
+  (4xx) are not errors in this sense and write no error line.
+- **App logging**: `log.info/warn/error(message, fields?)` from `@stacks/api` (`type: "app"`),
+  stamped with the current request's context (AsyncLocalStorage; no plumbing in app code).
+- **Browser errors**: `@stacks/web` captures window errors, unhandled rejections and React render
+  crashes in every app and the portal with no app code (`<StacksProvider>` installs it) and posts
+  them to the app's own API, `POST /api/stacks/client-error` (same origin, CSRF header, signed in
+  or out; at most 5 per page load). The API writes one `type: "client-error"` line with the user id
+  and the browser's build, and stores nothing. Stacks are logged as sent (minified); there is no
+  source-map symbolication. The demo reports nothing.
+- **Log groups** are named `/stacks/<prod|test>/<slug>/api` (the platform: `platform`) and
+  `/stacks/<prod|test>/<slug>/realtime-authorizer`, and use Lambda's JSON log format, which nests
+  the line under `message` (queries and filters read `message.<field>`). Retention is unchanged:
+  1 week on staging, 1 month on production (the platform's: 3 months).
+- **Metrics**: metric filters on each API log group publish `Requests`, `ServerErrors` (request
+  lines with status ≥ 500), `UnhandledErrors`, `ClientErrors` (browser errors) and `DurationMs` to
+  the namespace `Stacks/<prod|test>` with the dimension `app`.
+- **Dashboard**: exactly one per environment, `stacks-prod` and `stacks-test`, built in the
+  platform stack (never one per app). Graphs use `SEARCH` over the namespace, so a new app shows up
+  with no platform deploy: requests, server and unhandled errors, browser errors and p95 duration
+  per app; Lambda errors, throttles and duration and DynamoDB throttles for the environment's
+  stacks; and two log tables, "Latest errors" and "Slowest requests". API Gateway's own metrics
+  are left out: they carry only an API id, so they cannot be limited to one environment.
+- **Saved queries** (Logs Insights, folder `stacks-<prod|test>/`): Find by ref, Latest errors,
+  Browser errors, Slowest requests, One user's trail, One app's requests. The log tables and the
+  saved queries list each app's API log group by name (CloudWatch cannot select log groups by
+  prefix there), so a new app joins them on the next platform deploy.
+- **No tracing** (X-Ray) and **no alerts** (alarms, SNS, push, email). How to use all of it:
+  `docs/DEBUGGING.md`.
 
 ## Repo layout
 
@@ -486,7 +533,7 @@ Gate: a non-technical user builds one app end to end in a single Claude Code ses
 **Phase 5 — Hardening (after milestone 1)**
 
 - [ ] Per-PR preview stacks
-- [ ] Cost and usage dashboard per app
+- [ ] Cost and usage dashboard per app (separate from the troubleshooting dashboard of "Monitoring", #75, which is done; still open)
 - [ ] Template and SDK tuning from eval results
 
 ## Open questions

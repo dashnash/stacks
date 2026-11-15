@@ -20,6 +20,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { API_BURST_LIMIT, API_RATE_LIMIT } from './app-stack';
+import { addApiMetricFilters, logGroupName, Monitoring } from './monitoring';
 import { aasaRoute, authOrigin, bootstrapQualifier, envTag, gameAlarmTopicName, gameClusterName, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
 
 /** The portal needs Google Identity Services; nothing else may load from elsewhere. */
@@ -57,6 +58,10 @@ export interface PlatformStackProps {
   /** Overrides for tests. */
   webDistPath?: string;
   apiEntry?: string;
+  /** The commit being deployed, stamped on every log line (`STACKS_BUILD_SHA`). The deploy workflows pass it. */
+  buildSha?: string;
+  /** This environment's apps: the dashboard's log tables and the saved queries read their log groups. */
+  appSlugs?: string[];
 }
 
 /**
@@ -143,6 +148,12 @@ export class PlatformStack extends cdk.Stack {
     });
 
     // 3. The Platform API.
+    const apiLogs = new logs.LogGroup(this, 'ApiLogs', {
+      logGroupName: logGroupName(tag, 'platform'),
+      retention: isProd ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    addApiMetricFilters(this, apiLogs, tag);
     this.handler = new nodejs.NodejsFunction(this, 'ApiHandler', {
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
@@ -152,14 +163,13 @@ export class PlatformStack extends cdk.Stack {
       depsLockFilePath: path.join(props.repoRoot, 'package-lock.json'),
       memorySize: 512,
       timeout: cdk.Duration.seconds(20),
-      logGroup: new logs.LogGroup(this, 'ApiLogs', {
-        retention: isProd ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.ONE_WEEK,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-      }),
+      logGroup: apiLogs,
+      loggingFormat: lambda.LoggingFormat.JSON,
       bundling: { minify: true, sourceMap: true, target: 'node22' },
       environment: {
         TABLE_NAME: this.table.tableName,
         STACKS_ENV_TAG: tag,
+        ...(props.buildSha ? { STACKS_BUILD_SHA: props.buildSha } : {}),
         STACKS_ROOT_DOMAIN: env.rootDomain,
         GOOGLE_CLIENT_ID: env.googleClientId,
         GOOGLE_IOS_CLIENT_IDS: (env.native?.googleIosClientIds ?? []).join(','),
@@ -271,6 +281,10 @@ export class PlatformStack extends cdk.Stack {
       memoryLimit: 512,
     });
     site.node.addDependency(assets);
+
+    // 5. Monitoring: the environment's one dashboard and its saved queries. No alarms (#75).
+    const monitoring = new Monitoring(this, { tag, appSlugs: props.appSlugs ?? [] });
+    new cdk.CfnOutput(this, 'DashboardName', { value: monitoring.dashboard.dashboardName });
 
     new cdk.CfnOutput(this, 'PortalURL', { value: useDomain ? authOrigin(env) : `https://${distribution.distributionDomainName}` });
     new cdk.CfnOutput(this, 'TableName', { value: this.table.tableName });

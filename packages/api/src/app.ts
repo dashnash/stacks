@@ -4,6 +4,7 @@ import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
 import { gamesOff, registerGameRoutes } from './games';
 import { badRequest, forbidden, HttpError, maintenance, MAINTENANCE_OPEN_PATHS, unauthorized, type RouteResult } from './http';
+import { log, logClientError, setLogApp, setLogUser } from './log';
 import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
 import { ChannelRegistry, parseTokenRequest, realtimeOff, signRealtimeToken, TOKEN_TTL_SECONDS, type RealtimeChannels, type RealtimeTokenResponse } from './realtime';
@@ -74,7 +75,8 @@ export function safeReturnPath(value: unknown): string {
 
 /**
  * Build an app's API: the routes it declares plus the shared ones every app gets
- * (`/auth/login`, `/auth/callback`, `/auth/session`, `/auth/logout`, `/admin/audit`, `/health`).
+ * (`/auth/login`, `/auth/callback`, `/auth/session`, `/auth/logout`, `/admin/audit`, `/health`,
+ * `/stacks/client-error`). Every request is logged as one line (see `log.ts`).
  */
 export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   const { manifest, deps } = opts;
@@ -88,7 +90,8 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
   /** Set once the gameServer module has declared its `room/*` channels: apps can't add their own under it. */
   let roomChannelsTaken = false;
   const knownRoles = new Set(manifest.roles.map((r) => r.id));
-  const router = new Router().before((_method, path) => {
+  setLogApp(manifest.slug);
+  const router = new Router({ app: manifest.slug }).before((_method, path) => {
     if (deps.config.maintenance && !MAINTENANCE_OPEN_PATHS.has(path)) throw maintenance();
   });
 
@@ -97,6 +100,7 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     if (!session) return null;
     // A role the manifest no longer declares grants nothing.
     if (!knownRoles.has(session.role)) return null;
+    setLogUser(session.user.id);
     // Names and photos follow the platform profile (cached ~30 s), so a rename shows without signing in again.
     let user = session.user;
     try {
@@ -297,7 +301,7 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
     try {
       return { body: await v.deps.platform.account(v.user.id) };
     } catch (err) {
-      console.error('Account details unavailable', err);
+      log.warn('Account details unavailable', err);
       const portal = new URL('/', v.deps.config.authOrigin).toString();
       const label = manifest.roles.find((r) => r.id === v.role)?.label ?? v.role;
       return {
@@ -312,6 +316,13 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
         },
       };
     }
+  });
+
+  // Browser errors, sent by @stacks/web from every app (signed in or out). Logged, never stored.
+  api.public('POST', '/stacks/client-error', async (req, ctx) => {
+    await ctx.viewer();
+    if (!logClientError(req.body)) throw badRequest('Error report is too large');
+    return { status: 204 };
   });
 
   // Everyone with a role here (names for pickers and credits). Members only.

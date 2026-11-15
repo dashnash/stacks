@@ -281,7 +281,7 @@ describe('AppStack gameServer module', () => {
     for (const name of ['TABLE_NAME', 'STACKS_REALTIME_HTTP_HOST', 'STACKS_REALTIME_WS_HOST', 'STACKS_GAME_KEY_ARN']) expect(env[name], name).toBeDefined();
     // Nothing secret in the environment: the key is an ARN the task role may read.
     expect(JSON.stringify(env.STACKS_GAME_KEY_ARN)).toContain('GameKey');
-    template.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 7 });
+    template.hasResourceProperties('AWS::Logs::LogGroup', { LogGroupName: '/stacks/test/hello/game-server', RetentionInDays: 7 });
     template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'stacks-test-app-hello-game-key' });
   });
 
@@ -430,7 +430,9 @@ describe('AppStack gameServer module', () => {
   it('adds none of it without the module', () => {
     for (const m of [manifest, { ...manifest, modules: ['realtime' as const] }]) {
       const { template } = synth('staging', envs.staging, m);
-      for (const type of ['AWS::ECS::TaskDefinition', 'AWS::EC2::SecurityGroup', 'AWS::CloudWatch::Alarm', 'AWS::Logs::MetricFilter']) template.resourceCountIs(type, 0);
+      for (const type of ['AWS::ECS::TaskDefinition', 'AWS::EC2::SecurityGroup', 'AWS::CloudWatch::Alarm']) template.resourceCountIs(type, 0);
+      // (The API's own metric filters are monitoring's; none reads a game server's heartbeat.)
+      expect(JSON.stringify(template.findResources('AWS::Logs::MetricFilter'))).not.toContain('uptimeSeconds');
       const json = JSON.stringify(template.toJSON());
       expect(json).not.toMatch(/ecs:|STACKS_GAME|game-key|game\/vpc-id|"ConnectionAuthModes":\[\{"AuthType":"AWS_IAM"/);
     }

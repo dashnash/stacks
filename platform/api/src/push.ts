@@ -1,5 +1,5 @@
 import { canManageAccess, type AppManifest } from '@stacks/manifest';
-import { badRequest, forbidden, notFound, randomToken, sha256Hex, unauthorized, type Item } from '@stacks/api';
+import { badRequest, forbidden, log, notFound, randomToken, sha256Hex, unauthorized, type Item } from '@stacks/api';
 import { getApp, getGrant, getUser, grantsForApp, grantsForUser, listApps, listNotifications, managesApp, notify, setGrant, userIdForEmail } from './core';
 import { holdsRole, keys, PENDING, shownName, type Device, type DeviceItem, type PlatformDeps, type PlatformUser, type PushMessage } from './model';
 
@@ -141,7 +141,7 @@ async function deliver(deps: PlatformDeps, user: PlatformUser, build: (badge: nu
     devices.map(async (d) => {
       const message = await build(badge, d);
       const result = await push.send(d, message).catch((err) => {
-        console.error('Push failed', err);
+        log.error('Push failed', err);
         return 'failed' as const;
       });
       if (result === 'gone') await deleteDevice(deps, d);
@@ -189,7 +189,7 @@ export async function pushNotification(deps: PlatformDeps, userId: string, n: { 
       return message;
     });
   } catch (err) {
-    console.error('Could not push a notification', err);
+    log.error('Could not push a notification', err);
   }
 }
 
@@ -241,7 +241,7 @@ export async function syncBadges(deps: PlatformDeps, userIds: string[]): Promise
         const user = await getUser(deps, id);
         if (user) await deliver(deps, user, (badge) => ({ badge }));
       } catch (err) {
-        console.error('Could not sync a badge', err);
+        log.error('Could not sync a badge', err);
       }
     }),
   );

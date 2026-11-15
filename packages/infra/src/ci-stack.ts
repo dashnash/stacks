@@ -128,8 +128,16 @@ export class CiStack extends cdk.Stack {
             'secretsmanager:*', 'ssm:GetParameter*', 'ssm:DescribeParameters', 'acm:DescribeCertificate', 'acm:ListCertificates',
             'acm:RequestCertificate', 'acm:DeleteCertificate', 'acm:AddTagsToCertificate', 'route53:GetHostedZone',
             'route53:ListResourceRecordSets', 'route53:ChangeResourceRecordSets', 'route53:GetChange', 'kms:Decrypt',
+            'cloudwatch:ListDashboards',
           ],
           resources: ['*'],
+        }),
+        // Monitoring (#75): the one staging dashboard. Dashboards carry no tags, so the name is the
+        // limit (never `stacks-prod`). Metric filters and saved queries are `logs:*`, above.
+        new iam.PolicyStatement({
+          sid: 'MonitoringDashboard',
+          actions: ['cloudwatch:PutDashboard', 'cloudwatch:DeleteDashboards', 'cloudwatch:GetDashboard'],
+          resources: [`arn:${this.partition}:cloudwatch::${this.account}:dashboard/stacks-test`],
         }),
         // The `realtime` module: one AppSync Event API per app that turns it on (its channel
         // namespace, API keys and Lambda authorizer config). Production deploys with the default
