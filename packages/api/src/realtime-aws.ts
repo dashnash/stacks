@@ -23,12 +23,14 @@ export function signRequest(opts: {
   service: string;
   credentials: AwsCredentials;
   now: Date;
+  /** Headers to sign instead of the default `content-type: application/json` (the Events WebSocket wants its own set). */
+  headers?: Record<string, string>;
 }): Record<string, string> {
   const url = new URL(opts.url);
   const amzDate = opts.now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const date = amzDate.slice(0, 8);
   const headers: Record<string, string> = {
-    'content-type': 'application/json',
+    ...(opts.headers ?? { 'content-type': 'application/json' }),
     host: url.host,
     'x-amz-date': amzDate,
     ...(opts.credentials.sessionToken ? { 'x-amz-security-token': opts.credentials.sessionToken } : {}),

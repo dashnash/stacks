@@ -6,6 +6,8 @@ import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -14,11 +16,12 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { API_BURST_LIMIT, API_RATE_LIMIT } from './app-stack';
 import { addApiMetricFilters, logGroupName, Monitoring } from './monitoring';
-import { aasaRoute, authOrigin, bootstrapQualifier, envTag, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
+import { aasaRoute, authOrigin, bootstrapQualifier, envTag, gameAlarmTopicName, gameClusterName, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
 
 /** The portal needs Google Identity Services; nothing else may load from elsewhere. */
 export const PORTAL_CSP = [
@@ -98,6 +101,36 @@ export class PlatformStack extends cdk.Stack {
     // deletes it by hand afterwards).
     certificate?.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
     if (certificate) new ssm.StringParameter(this, 'CertificateArnParam', { parameterName: ssmNames(envName).certificateArn, stringValue: certificate.certificateArn });
+
+    // 1b. The game network (the `gameServer` module): one small VPC with two public subnets and an
+    //     internet gateway (no NAT gateway, so nothing here costs anything while no game runs), an
+    //     ECS cluster for the per-room Fargate tasks, and the topic their alarms go to. App stacks
+    //     read the IDs from SSM at deploy time, like the certificate.
+    const gameVpc = new ec2.Vpc(this, 'GameVpc', {
+      vpcName: `stacks-${tag}-games`,
+      ipAddresses: ec2.IpAddresses.cidr(isProd ? '10.44.0.0/16' : '10.45.0.0/16'),
+      // Named, not looked up: synth needs no AWS credentials.
+      availabilityZones: [`${props.region}a`, `${props.region}b`],
+      natGateways: 0,
+      subnetConfiguration: [{ name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 }],
+      // The default would add a custom-resource Lambda just to empty a security group nothing uses.
+      restrictDefaultSecurityGroup: false,
+    });
+    const gameCluster = new ecs.Cluster(this, 'GameCluster', {
+      clusterName: gameClusterName(envName),
+      vpc: gameVpc,
+      containerInsightsV2: ecs.ContainerInsights.DISABLED,
+    });
+    const gameAlarms = new sns.Topic(this, 'GameAlarms', {
+      topicName: gameAlarmTopicName(envName),
+      displayName: `Stacks ${envName}: a game server has been running too long`,
+    });
+    const gameNames = ssmNames(envName).game;
+    new ssm.StringParameter(this, 'GameVpcIdParam', { parameterName: gameNames.vpcId, stringValue: gameVpc.vpcId });
+    new ssm.StringParameter(this, 'GameSubnetIdsParam', { parameterName: gameNames.subnetIds, stringValue: cdk.Fn.join(',', gameVpc.publicSubnets.map((sn) => sn.subnetId)) });
+    new ssm.StringParameter(this, 'GameClusterArnParam', { parameterName: gameNames.clusterArn, stringValue: gameCluster.clusterArn });
+    new ssm.StringParameter(this, 'GameAlarmTopicArnParam', { parameterName: gameNames.alarmTopicArn, stringValue: gameAlarms.topicArn });
+    new cdk.CfnOutput(this, 'GameAlarmTopicArn', { value: gameAlarms.topicArn });
 
     // 2. Users, grants, master sessions, codes, notifications, the central audit feed.
     this.table = new dynamodb.Table(this, 'Table', {

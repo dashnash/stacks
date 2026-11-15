@@ -37,6 +37,11 @@ export interface Subscription {
   publish: boolean;
   /** Also deliver this tab's own publishes. */
   echo: boolean;
+  /**
+   * `false`: publish only, never subscribe (for channels whose guard lets you publish but not
+   * listen, like a game room's `to-server`). Its status is `live` once it can publish.
+   */
+  listen?: boolean;
   onEvent(data: unknown): void;
   onResync?(): void;
   onStatus(status: ChannelStatus): void;
@@ -111,7 +116,7 @@ export class RealtimeHub {
     this.subs.add(sub);
     this.bindVisibility();
     this.queueSync();
-    sub.onStatus(this.statusOf(sub.channel));
+    sub.onStatus(this.statusOf(sub));
     return () => {
       this.subs.delete(sub);
       this.queueSync();
@@ -136,7 +141,7 @@ export class RealtimeHub {
     const subscribe = new Set<string>();
     const publish = new Set<string>();
     for (const s of this.subs) {
-      subscribe.add(s.channel);
+      if (s.listen !== false) subscribe.add(s.channel);
       if (s.publish) publish.add(s.channel);
     }
     return { subscribe, publish, key: `${[...subscribe].sort().join(',')}|${[...publish].sort().join(',')}` };
@@ -153,7 +158,7 @@ export class RealtimeHub {
 
   private async sync(): Promise<void> {
     const want = this.wanted();
-    if (!want.subscribe.size) {
+    if (!want.subscribe.size && !want.publish.size) {
       this.closeSocket();
       this.clearTimer('refresh');
       this.clearTimer('retry');
@@ -189,7 +194,10 @@ export class RealtimeHub {
       if (gen !== this.generation) return false;
       this.token = { ...res, expiresAt: Date.parse(res.expiresAt), subscribe: new Set(want.subscribe), publish: new Set(want.publish) };
       this.failedKey = null;
-      this.state = this.ws && (previous === 'open' || previous === 'connecting') ? previous : 'idle';
+      // Restore the state from before the request only if nothing moved it on meanwhile: the
+      // socket may have been acknowledged (`open`) or lost (`waiting`) while the token was on its
+      // way. Putting back a stale `connecting` on an open socket left new channels never subscribed.
+      if (this.state === 'authorizing') this.state = this.ws && (previous === 'open' || previous === 'connecting') ? previous : 'idle';
       this.scheduleRefresh();
       // Channels may have changed while the token was on its way.
       if (this.wanted().key !== want.key) this.queueSync();
@@ -475,8 +483,12 @@ export class RealtimeHub {
 
   // --- helpers ------------------------------------------------------------------------------------
 
-  private statusOf(channel: string): ChannelStatus {
-    if (this.refused.has(channel)) return 'offline';
+  private statusOf(sub: Subscription): ChannelStatus {
+    const channel = sub.channel;
+    if (sub.listen === false) {
+      // Publish only: live as soon as the connection is up with a token that covers it.
+      if (this.state === 'open') return this.token?.publish.has(channel) ? 'live' : 'connecting';
+    } else if (this.refused.has(channel)) return 'offline';
     switch (this.state) {
       case 'open':
         return this.live.has(channel) ? 'live' : 'connecting';
@@ -490,7 +502,7 @@ export class RealtimeHub {
   }
 
   private emitStatus(): void {
-    for (const s of [...this.subs]) s.onStatus(this.statusOf(s.channel));
+    for (const s of [...this.subs]) s.onStatus(this.statusOf(s));
   }
 
   private channelFor(id: string | undefined): string | undefined {

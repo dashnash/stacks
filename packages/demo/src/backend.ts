@@ -3,6 +3,7 @@ import {
   createSession,
   createStacksApp,
   fixtureUserId,
+  gamesOff,
   MemoryStore,
   realtimeOff,
   SESSION_COOKIE,
@@ -14,9 +15,12 @@ import {
   type AccountData,
   type AppAccess,
   type StacksUser,
+  type Store,
 } from '@stacks/api';
-import { hasModule, type AppManifest } from '@stacks/manifest';
+import type { GameDefinition } from '@stacks/game-server';
+import { gameServerSettings, hasModule, type AppManifest } from '@stacks/manifest';
 import { createClient, type Client, type Navigator } from '@stacks/web';
+import { DemoGames, DemoPeerConnection } from './games';
 import { DemoRealtimeBus } from './realtime';
 
 export interface Persona {
@@ -41,6 +45,13 @@ export interface DemoOptions<D extends AppDeps> {
   pending?: { id?: string; email: string; name: string }[];
   /** Sample data, written on first load (and after a reset). */
   seed?: (deps: D) => Promise<void>;
+  /**
+   * The app's game (`export default defineGame(…)` in `game/server.ts`), for apps with the
+   * `gameServer` module: rooms then run in the page, the tab that creates one being its server.
+   */
+  game?: GameDefinition<any, any, any>;
+  /** How long a room's "server is starting" lasts in the demo. Default 1200 ms. */
+  gameStartDelayMs?: number;
   /** Where changes are kept between visits; set false to keep nothing. Default `stacks-demo:<slug>:v2` (v2: user ids; earlier saves are ignored). */
   storageKey?: string | false;
 }
@@ -125,6 +136,10 @@ export interface Demo {
   ready: Promise<void>;
   /** The in-browser Event API (apps with the `realtime` module), or null. */
   realtime: DemoRealtimeBus | null;
+  /** The in-page game servers (apps with the `gameServer` module), or null. */
+  games: DemoGames | null;
+  /** Stop everything that listens or ticks (tests). */
+  close(): void;
 }
 
 function load(key: string | false): Item[] | null {
@@ -167,14 +182,47 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     for (const [k, item] of mine) store.items.set(k, item);
   };
   const realtime = hasModule(opts.manifest, 'realtime') ? new DemoRealtimeBus(opts.manifest.slug, reloadShared) : null;
+  // Game rooms: other tabs write to the shared data at any time (a room's server lives in one tab,
+  // its players' API calls in another). So with the module on, every write is one step that can't
+  // lose another tab's: take what is saved, apply the change, save (all in one turn, and
+  // localStorage is shared synchronously). Requests also start from what is saved.
+  const gamesOn = !!realtime && hasModule(opts.manifest, 'gameServer');
+  const shared: Store = {
+    get: (pk, sk) => store.get(pk, sk),
+    query: (pk, prefix) => store.query(pk, prefix),
+    queryGsi1: (pk, o) => store.queryGsi1(pk, o),
+    put(item, o) {
+      reloadShared();
+      const done = store.put(item, o);
+      save(key, store);
+      return done;
+    },
+    delete(pk, sk) {
+      reloadShared();
+      const done = store.delete(pk, sk);
+      save(key, store);
+      return done;
+    },
+  };
+  const games = gamesOn
+    ? new DemoGames({
+        slug: opts.manifest.slug,
+        ...(opts.game ? { game: opts.game } : {}),
+        settings: gameServerSettings(opts.manifest),
+        store: shared,
+        bus: realtime!,
+        ...(opts.gameStartDelayMs !== undefined ? { startDelayMs: opts.gameStartDelayMs } : {}),
+      })
+    : null;
   const demoPlatform = new DemoPlatform({ slug: opts.manifest.slug, name: opts.manifest.name }, opts.manifest.roles, personas, (opts.pending ?? []).map((p) => ({ ...p, id: p.id ?? fixtureUserId(p.email) })));
   const base: AppDeps = {
-    store,
+    store: gamesOn ? shared : store,
     platform: demoPlatform,
     config: { appOrigin: globalThis.location?.origin ?? 'https://demo.local', authOrigin: 'https://auth.demo.local' },
     now: () => new Date(),
     newId: () => globalThis.crypto.randomUUID(),
     realtime: realtime ?? realtimeOff(opts.manifest.slug),
+    games: games ?? gamesOff(opts.manifest.slug),
   };
   demoPlatform.needsEmail = !!opts.manifest.needsEmail;
   const deps = opts.extend ? opts.extend(base) : (base as D);
@@ -187,14 +235,25 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((l) => l());
 
+  /**
+   * Keep this tab's changes for the next visit. With game rooms on, every write was already saved,
+   * merged with what other tabs saved, the moment it happened (`shared`); saving the whole store
+   * again here would put back this tab's older copy of anything another tab wrote while a request
+   * was awaiting (a room's server marking it open, say), and that write would be lost.
+   */
+  const persist = () => {
+    if (!gamesOn) save(key, store);
+  };
+
   const seed = async () => {
     if (opts.seed) await opts.seed(deps);
-    save(key, store);
+    persist();
   };
   const ready = saved ? Promise.resolve() : seed();
 
   const demoFetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     await ready;
+    if (gamesOn) reloadShared();
     const url = new URL(String(input), 'https://demo.local');
     const method = (init.method ?? 'GET').toUpperCase();
     const event = {
@@ -213,7 +272,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
         persona = null;
       }
     }
-    if (method !== 'GET') save(key, store);
+    if (method !== 'GET') persist();
     return new Response(res.body || '{}', { status: res.statusCode, headers: res.headers });
   };
 
@@ -224,7 +283,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     sessionToken = persona
       ? await createSession(deps, { id: persona.id, ...(opts.manifest.needsEmail ? { email: persona.email } : {}), name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
       : null;
-    save(key, store);
+    persist();
     notify();
   };
 
@@ -239,13 +298,19 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   };
 
   return {
-    client: createClient({ fetch: demoFetch as typeof fetch, ...(realtime ? { webSocket: realtime.open } : {}) }),
+    client: createClient({
+      fetch: demoFetch as typeof fetch,
+      ...(realtime ? { webSocket: realtime.open } : {}),
+      ...(gamesOn ? { peerConnection: () => new DemoPeerConnection(opts.manifest.slug) } : {}),
+    }),
     navigator,
     personas,
     current: () => persona,
     signInAs,
     reset: async () => {
       store.items.clear();
+      // A reset wipes the shared data on purpose (with game rooms on, writes merge with what is saved).
+      if (gamesOn) save(key, store);
       sessionToken = null;
       persona = null;
       await seed();
@@ -257,5 +322,10 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     },
     ready,
     realtime,
+    games,
+    close: () => {
+      games?.close();
+      realtime?.close();
+    },
   };
 }

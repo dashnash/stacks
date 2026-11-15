@@ -177,9 +177,13 @@ describe('PlatformStack monitoring', () => {
     expect(Object.keys(SAVED_QUERIES)).toHaveLength(6);
   });
 
-  it('adds no alarm or topic', () => {
-    noAlerts(platformStack('staging'));
-    noAlerts(platformStack('production'));
+  it('adds no alarm, and no topic of its own (the only one is the game servers\', from the gameServer module)', () => {
+    for (const t of [platformStack('staging'), platformStack('production')]) {
+      t.resourceCountIs('AWS::CloudWatch::Alarm', 0);
+      const topics = Object.values(t.findResources('AWS::SNS::Topic')).map((r) => r.Properties.TopicName as string);
+      expect(topics).toHaveLength(1);
+      expect(topics[0]).toMatch(/^stacks-(test|prod)-game-alarms$/);
+    }
   });
 });
 

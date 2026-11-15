@@ -202,4 +202,22 @@ export const appOrigin = (env: EnvConfig, slug: string) => `https://${slug}.${en
 /** SSM parameter names the platform stack writes and app stacks read at deploy time. */
 export const ssmNames = (env: EnvName) => ({
   certificateArn: `/stacks/${envTag(env)}/certificate-arn`,
+  /** The shared game network (the `gameServer` module): app stacks read these at deploy time. */
+  game: {
+    vpcId: `/stacks/${envTag(env)}/game/vpc-id`,
+    /** Comma-separated public subnet ids. */
+    subnetIds: `/stacks/${envTag(env)}/game/subnet-ids`,
+    clusterArn: `/stacks/${envTag(env)}/game/cluster-arn`,
+    alarmTopicArn: `/stacks/${envTag(env)}/game/alarm-topic-arn`,
+  },
 });
+
+/** The shared ECS cluster game servers run on, one per environment. */
+export const gameClusterName = (env: EnvName) => `stacks-${envTag(env)}-games`;
+/** The SNS topic long-running game server alarms go to (Dash subscribes an email). */
+export const gameAlarmTopicName = (env: EnvName) => `stacks-${envTag(env)}-game-alarms`;
+/** UDP ports a game server listens on: one per connected player. The app's security group opens exactly these. */
+export const GAME_PORT_MIN = 40000;
+export const GAME_PORT_MAX = 40019;
+/** The platform's own secrets (the APNs key, the TURN key): SecureStrings under this SSM prefix. */
+export const platformSecretsPrefix = (env: EnvName) => `/stacks/${envTag(env)}/secrets/platform/`;

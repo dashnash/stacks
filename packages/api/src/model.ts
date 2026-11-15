@@ -1,4 +1,5 @@
 import type { AppManifest } from '@stacks/manifest';
+import type { Games } from './games';
 import type { PlatformClient } from './platform';
 import type { Realtime } from './realtime';
 import type { Store } from './store';
@@ -48,6 +49,12 @@ export interface AppDeps {
    * Without the module every call fails with an error saying how to turn it on.
    */
   realtime: Realtime;
+  /**
+   * Game servers (manifest module `gameServer`): `start(roomId)` / `stop(roomId)` for apps that
+   * create rooms their own way; the built-in `/rooms` routes use it for you. Without the module
+   * every call fails with an error saying how to turn it on.
+   */
+  games: Games;
 }
 
 /** The caller of a signed-in route. */

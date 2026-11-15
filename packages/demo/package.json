@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
@@ -11,7 +13,8 @@
   "dependencies": {
     "@stacks/api": "*",
     "@stacks/manifest": "*",
-    "@stacks/web": "*"
+    "@stacks/web": "*",
+    "@stacks/game-server": "*"
   },
   "peerDependencies": {
     "react": "^18.3.1",

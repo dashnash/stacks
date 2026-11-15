@@ -54,11 +54,13 @@ Ask, one at a time, and stop asking once you have enough (usually 6-8 questions)
 7. How should it look and feel (three words, or a site you like)? → `BRIEF.md`.
 8. Only if it fits: discussion threads (`comments`), notifications to members (`notifications`),
    files bundled with the app (`contentPacks`), things that update live for everyone with the app
-   open (`realtime`), or a third-party service that needs an API key (`secrets`, names only).
+   open (`realtime`), a real-time action game played together (`gameServer`), or a third-party service that needs an API key (`secrets`, names only).
 
 Their Google email goes in `owners` (they become the top role). Modules available now: `comments`,
 `notifications`, `contentPacks`, `realtime` (live updates: `useChannel` in `@stacks/web`, channels
-declared in the API), plus `secrets`. **Not built yet** (needs a platform change first):
+declared in the API), `gameServer` (server-run game rooms for real-time action games: write
+`game/server.ts` with `defineGame`, see `packages/game-server/README.md`; needs `realtime`; turn-based
+games don't need it), plus `secrets`. **Not built yet** (needs a platform change first):
 `votes`, `uploads` (people adding photos/files), `scheduledJobs` (anything on a timer), `email`.
 Images from other sites need their origins in `csp.imgSrc`; calls to other APIs from the browser
 need `csp.connectSrc` (https origins, max 10).

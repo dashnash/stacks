@@ -13,7 +13,7 @@ import type { Construct } from 'constructs';
  */
 
 /** `/stacks/<tag>/<slug>/api`, `/stacks/<tag>/<slug>/realtime-authorizer`; the platform's slug is `platform`. */
-export const logGroupName = (tag: string, slug: string, kind: 'api' | 'realtime-authorizer' = 'api') => `/stacks/${tag}/${slug}/${kind}`;
+export const logGroupName = (tag: string, slug: string, kind: 'api' | 'realtime-authorizer' | 'game-server' = 'api') => `/stacks/${tag}/${slug}/${kind}`;
 
 /** The CloudWatch namespace of an environment's metrics: `Stacks/prod`, `Stacks/test`. */
 export const metricNamespace = (tag: string) => `Stacks/${tag}`;

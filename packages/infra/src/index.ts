@@ -1,4 +1,4 @@
-export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
+export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, GAME_ALARM_AFTER_HOURS, GAME_CONTAINER_NAME, GAME_IMAGE_PLACEHOLDER, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
 export type { AppStackProps } from './app-stack';
 export { CiStack, STAGING_EXEC_POLICY_NAME } from './ci-stack';
 export type { CiStackProps } from './ci-stack';
@@ -10,8 +10,13 @@ export {
   authOrigin,
   bootstrapQualifier,
   envTag,
+  GAME_PORT_MAX,
+  GAME_PORT_MIN,
+  gameAlarmTopicName,
+  gameClusterName,
   loadStacksConfig,
   parseZoneIds,
+  platformSecretsPrefix,
   resolveZoneIds,
   ssmNames,
   stackName,

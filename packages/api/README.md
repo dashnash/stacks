@@ -43,7 +43,8 @@ await store.queryGsi1<T>(gsi1pk, { descending: true });
 ```
 
 `strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate.
-Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`.
+Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`, and with the
+`gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<userId>`), `ROOMCODE#<code>` and the GSI1 partition `STACKS#ROOMS`.
 
 ## People and access (the platform owns them)
 
@@ -147,6 +148,37 @@ await v.deps.realtime.publish('room/lobby', [a, b, c]);             // an array 
   are extra but tiny at household scale). There is no per-app cap yet.
 - AWS side: `@stacks/api/realtime-authorizer` is the Event API's Lambda authorizer (`AppStack` wires
   it). Tests: `t.realtime` (`FakeRealtime`) records publishes; see `@stacks/testing`.
+
+## Game rooms (manifest modules `gameServer` + `realtime`)
+
+Session management for server-run games: each room has its own game server (your
+`game/server.ts` on `@stacks/game-server`, one Fargate task) that players reach over WebRTC. With the
+module on, these member routes exist (you write none of them):
+
+| Route | Does |
+|---|---|
+| `POST /rooms { name? }` | Creates a room (`{ room }`, 201) and starts its server (30-60 s to `open`). 429 `TOO_MANY_GAMES` at the manifest's `maxRooms`. |
+| `GET /rooms` | Open and starting rooms with player counts. Also sweeps: rooms whose server is gone or over time are closed. |
+| `GET /rooms/:id`, `GET /rooms/by-code/:code` | One room (ended ones stay readable for 7 days, with `results`). |
+| `POST /rooms/:id/join` | `{ ticket, iceServers, channels, player, room }`: a 60 s join ticket for the caller. 409 `ROOM_FULL` / `ROOM_ENDED` / `ROOM_STARTING`. |
+| `POST /rooms/:id/leave` | Frees the caller's seat. |
+| `POST /rooms/:id/end` | Ends it now (its creator, or an approver; others 403). |
+
+- A room: `{ id, code, name, status: 'starting'|'open'|'ended', createdBy: { id, name }, createdAt,
+  maxPlayers, players, endedAt?, endedReason?, results? }`. `code` is 4 characters from an alphabet
+  without look-alikes (`K7QX`); share it or a link with the id.
+- `useGameRoom(roomId)` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
+  `GET /rooms` and `by-code` themselves.
+- Channels `room/*`, `room/*/to-server`, `room/*/to/*` are declared for you (members listen to a
+  room and to their own answers, and publish offers; only servers publish room status). **Apps can't
+  declare channels under `room/`** with the module on: use another prefix.
+- `v.deps.games.start(roomId)` / `.stop(roomId)` for apps that create rooms their own way;
+  `gameRooms(v.deps, v.manifest)` is what the routes use (`create`, `list`, `get`, `byCode`, `join`,
+  `leave`, `end`). Without the module every `deps.games` call rejects with "add gameServer".
+- TURN (for networks that block UDP) comes from one platform key per environment; without it joins
+  return STUN only and `GET /health` lists `missingPlatformKeys`. See `docs/SETUP.md`.
+- Tests: `t.games` (`FakeGames`) records `started` / `stopped` and plays the server
+  (`await t.games.open(id)`, `.end(id, reason, results)`, `.crash(id)`); see `@stacks/testing`.
 
 Other: `recordAudit(deps, user, { action, label, details })` (events carry `actorId`), `listAudit`, `endUserSessions(deps, userId)`.
 

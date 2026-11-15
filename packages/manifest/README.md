@@ -11,4 +11,11 @@ need a `defaultRole` that cannot manage access; CSP additions must be https orig
 `needsEmail: true` (off by default) gives the app people's email addresses: a platform decision, reviewed by the code owners.
 
 `modules`: `comments`, `votes`, `contentPacks`, `uploads`, `notifications`, `scheduledJobs`, `email`,
-`realtime` (live events over an AppSync Event API of the app's own; see `@stacks/api` "Realtime").
+`realtime` (live events over an AppSync Event API of the app's own; see `@stacks/api` "Realtime"),
+`gameServer` (a server-run game room per Fargate task; see `@stacks/game-server`). `gameServer`
+without `realtime` is an error.
+
+`gameServer` (optional, only with the module) sets its limits; `gameServerSettings(manifest)` fills in
+the defaults (`GAME_SERVER_DEFAULTS`): `maxRooms` 1-10 (4), `maxPlayers` 2-16 (8), `idleMinutes` 1-60
+(10), `maxHours` 0.25-4 (2), `cpu` 256/512/1024 (256), `memory` 512/1024/2048 MiB (512; at least
+1024 with cpu 512 and 2048 with cpu 1024, Fargate's pairs).

@@ -69,6 +69,10 @@ jobs:
         env:
           VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build
+      # Game server images are built here (no AWS credentials in this job) and travel in cdk-out as
+      # tarballs; the deploy jobs only load and push them, they never run `docker build`.
+      - name: Build game server images (apps with the gameServer module)
+        run: npm run build-game-images
       - name: Synth
         working-directory: infra
         env:
@@ -77,8 +81,8 @@ jobs:
           # The same commit as the web build, stamped on every Lambda's log lines.
           STACKS_BUILD_SHA="$(git rev-parse HEAD)"
           export STACKS_BUILD_SHA
-          npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
-          npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
+          npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out
+          npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out-staging
       - uses: actions/upload-artifact@v4
         with:
           name: cdk-out

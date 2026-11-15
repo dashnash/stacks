@@ -22,6 +22,8 @@ export interface ClientOptions {
   fetch?: typeof fetch;
   /** How realtime opens its WebSocket (the demo passes an in-browser bus). Defaults to `new WebSocket`. */
   webSocket?: (url: string, protocols: string[]) => SocketLike;
+  /** How game rooms open their WebRTC connection (the demo passes an in-browser one). Defaults to `new RTCPeerConnection`. */
+  peerConnection?: (config: { iceServers: { urls: string[]; username?: string; credential?: string }[] }) => unknown;
 }
 
 /** The part of a WebSocket the realtime hub uses. */
@@ -81,6 +83,9 @@ export function createClient(opts: ClientOptions = {}) {
     del: <T = unknown,>(path: string) => request<T>('DELETE', path),
     session: () => request<Session>('GET', '/auth/session'),
     logout: () => request<{ ok: true; platformLogoutUrl: string }>('POST', '/auth/logout'),
+    /** For game rooms: open a WebRTC peer connection (the real one, or the demo's stand-in). */
+    openPeer: (config: { iceServers: { urls: string[]; username?: string; credential?: string }[] }): unknown =>
+      opts.peerConnection ? opts.peerConnection(config) : new RTCPeerConnection(config),
     /** For realtime: open its socket (a real WebSocket, or the demo's bus). */
     openSocket: (url: string, protocols: string[]): SocketLike => (opts.webSocket ? opts.webSocket(url, protocols) : (new WebSocket(url, protocols) as unknown as SocketLike)),
   };

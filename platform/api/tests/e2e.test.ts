@@ -7,6 +7,7 @@ import {
   type AppDeps,
   type AppRoutes,
   type PlatformClient,
+  gamesOff,
   realtimeOff,
 } from '@stacks/api';
 import type { AppManifest } from '@stacks/manifest';
@@ -63,6 +64,7 @@ function world() {
       now: () => platform.deps.now(),
       newId: () => `${slug}-${++n}`,
       realtime: realtimeOff(slug),
+      games: gamesOff(slug),
     };
     appDeps.set(slug, deps);
     apps.set(slug, createStacksApp({ manifest, deps, routes }));

@@ -4,7 +4,7 @@
  * the SDK's role checks all read it through this package.
  */
 
-export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notifications', 'scheduledJobs', 'email', 'realtime'] as const;
+export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notifications', 'scheduledJobs', 'email', 'realtime', 'gameServer'] as const;
 export type ModuleName = (typeof MODULES)[number];
 
 export const CSP_DIRECTIVES = ['imgSrc', 'connectSrc', 'scriptSrc', 'styleSrc', 'fontSrc', 'frameSrc', 'mediaSrc'] as const;
@@ -59,6 +59,11 @@ export interface AppManifest {
    * (CI marks a PR that adds it for code-owner review). Hidden-email accounts give a relay address.
    */
   needsEmail?: boolean;
+  /**
+   * Limits for the `gameServer` module (all optional; see {@link GAME_SERVER_DEFAULTS}). Only
+   * allowed with `gameServer` in `modules`.
+   */
+  gameServer?: Partial<GameServerSettings>;
   /** @deprecated Replaced by the account menu; accepted and ignored. */
   portalBar?: 'shown' | 'minimized' | 'off';
   /** Google emails of the people who own the app (the creator first). */
@@ -72,6 +77,44 @@ export interface AppSecret {
   description?: string;
   /** The app works without it (e.g. at a lower quota). Required secrets that are missing show on `/api/health`. */
   optional?: boolean;
+}
+
+/** The `gameServer` module's limits: its cost guard. */
+export interface GameServerSettings {
+  /** Rooms (Fargate tasks) the app may have running at once, 1-10. */
+  maxRooms: number;
+  /** Players per room, 2-16. */
+  maxPlayers: number;
+  /** A room ends after this many minutes with no input from anyone, 1-60. */
+  idleMinutes: number;
+  /** A room ends after this many hours whatever happens, 0.25-4. */
+  maxHours: number;
+  /** Fargate CPU units per room: 256 (0.25 vCPU), 512 or 1024. */
+  cpu: number;
+  /** Fargate memory per room in MiB, 512-2048 (1024 and up with cpu 512, 2048 and up with cpu 1024). */
+  memory: number;
+}
+
+export const GAME_SERVER_DEFAULTS: GameServerSettings = { maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, cpu: 256, memory: 512 };
+
+const GAME_SERVER_RANGES: Record<Exclude<keyof GameServerSettings, 'cpu' | 'memory'>, [number, number]> = {
+  maxRooms: [1, 10],
+  maxPlayers: [2, 16],
+  idleMinutes: [1, 60],
+  maxHours: [0.25, 4],
+};
+const GAME_SERVER_CPU = [256, 512, 1024];
+/** The Fargate memory sizes from 512 to 2048 MiB. */
+const GAME_SERVER_MEMORY = [512, 1024, 2048];
+/** The least memory Fargate allows for each CPU size. */
+const GAME_SERVER_MIN_MEMORY: Record<number, number> = { 256: 512, 512: 1024, 1024: 2048 };
+
+/** The app's game server limits: the manifest's `gameServer` over the defaults. */
+export function gameServerSettings(manifest: Pick<AppManifest, 'gameServer'>): GameServerSettings {
+  const merged = { ...GAME_SERVER_DEFAULTS, ...manifest.gameServer };
+  // A bigger CPU without a memory setting gets the least memory Fargate pairs with it.
+  if (manifest.gameServer?.memory === undefined) merged.memory = Math.max(merged.memory, GAME_SERVER_MIN_MEMORY[merged.cpu] ?? 0);
+  return merged;
 }
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
@@ -106,7 +149,7 @@ export function validateManifest(input: unknown): ValidationResult {
 
   const known = new Set([
     '$schema', 'slug', 'name', 'tagline', 'description', 'icon', 'category', 'visibility', 'roles', 'topRole',
-    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets', 'needsEmail',
+    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets', 'needsEmail', 'gameServer',
   ]);
   for (const key of Object.keys(m)) if (!known.has(key)) errors.push(`unknown field "${key}"`);
 
@@ -161,6 +204,33 @@ export function validateManifest(input: unknown): ValidationResult {
   if (m.modules !== undefined) {
     if (!Array.isArray(m.modules)) errors.push('"modules" must be a list');
     else for (const mod of m.modules) if (!MODULES.includes(mod as ModuleName)) errors.push(`unknown module "${String(mod)}" (known: ${MODULES.join(', ')})`);
+  }
+  const modules = Array.isArray(m.modules) ? (m.modules as unknown[]) : [];
+  if (modules.includes('gameServer') && !modules.includes('realtime')) {
+    errors.push('the "gameServer" module needs "realtime" too (players reach their game server through it): add "realtime" to "modules"');
+  }
+  if (m.gameServer !== undefined) {
+    if (!isObject(m.gameServer)) errors.push('"gameServer" must be an object of limits, e.g. { "maxPlayers": 4 }');
+    else {
+      if (!modules.includes('gameServer')) errors.push('"gameServer" settings need "gameServer" in "modules"');
+      const g = m.gameServer;
+      for (const [key, value] of Object.entries(g)) {
+        if (key === 'cpu') {
+          if (!GAME_SERVER_CPU.includes(value as number)) errors.push(`gameServer.cpu must be one of ${GAME_SERVER_CPU.join(', ')}`);
+        } else if (key === 'memory') {
+          if (!GAME_SERVER_MEMORY.includes(value as number)) errors.push(`gameServer.memory must be one of ${GAME_SERVER_MEMORY.join(', ')} (MiB, 512 to 2048)`);
+        } else if (key in GAME_SERVER_RANGES) {
+          const [min, max] = GAME_SERVER_RANGES[key as keyof typeof GAME_SERVER_RANGES];
+          const whole = key !== 'maxHours';
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (whole && !Number.isInteger(value))) {
+            errors.push(`gameServer.${key} must be ${whole ? 'a whole number' : 'a number'} from ${min} to ${max}`);
+          }
+        } else errors.push(`gameServer: unknown setting "${key}" (known: ${Object.keys(GAME_SERVER_DEFAULTS).join(', ')})`);
+      }
+      const cpu = typeof g.cpu === 'number' ? g.cpu : GAME_SERVER_DEFAULTS.cpu;
+      const least = GAME_SERVER_MIN_MEMORY[cpu];
+      if (least !== undefined && GAME_SERVER_MEMORY.includes(g.memory as number) && (g.memory as number) < least) errors.push(`gameServer.memory must be at least ${least} with cpu ${cpu} (a Fargate rule)`);
+    }
   }
   if (m.secrets !== undefined) {
     if (!Array.isArray(m.secrets) || m.secrets.length > MAX_SECRETS) errors.push(`"secrets" must be a list of at most ${MAX_SECRETS}`);

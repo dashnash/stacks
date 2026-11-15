@@ -13,6 +13,19 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   (`@stacks/api/realtime-authorizer`, results never cached), the `stacks-<env>-app-<slug>-realtime-key`
   secret, `appsync:EventPublish` for the API Lambda on that API only, `realtime` endpoints in
   `config.json` and the `wss://` host in `connect-src`. Apps without it get none of these.
+- With the `gameServer` module, `AppStack` adds an arm64 Fargate task definition
+  (`stacks-<env>-app-<slug>-game`, cpu/memory from the manifest) whose image is a `docker save`
+  tarball (`gameImageTarball`, default `apps/<slug>/game/dist/image.tar`; `ContainerImage.fromTarball`),
+  its log group (`/stacks/<prod|test>/<slug>/game-server`), task and execution roles (table, game key, the app's own Event API with IAM), a
+  security group allowing only UDP 40000-40019 in, the `stacks-<env>-app-<slug>-game-key` secret,
+  grants for the API Lambda (run/stop/describe its own tagged tasks on the shared cluster, pass the
+  two roles to ECS tasks, read the two TURN parameters) and a 3-hour alarm: a metric filter on the
+  server's heartbeat `uptimeSeconds` (the server logs it every minute), alarming to the environment's
+  topic. A missing tarball is a placeholder plus a warning (synth without Docker) unless
+  `requireGameImage` (`-c requireGameImage=true`, set by every CI synth). Apps without it get none.
+- `PlatformStack` has the shared game network: a VPC with two public subnets and an internet gateway
+  (no NAT), the ECS cluster `stacks-<env>-games` and the SNS topic `stacks-<env>-game-alarms`; their
+  IDs are in SSM (`ssmNames(env).game`) and app stacks read them at deploy time.
 - Monitoring (`monitoring.ts`, spec "Monitoring", `docs/DEBUGGING.md`): API Lambdas log JSON to
   named groups (`logGroupName(tag, slug)` → `/stacks/<prod|test>/<slug>/api`, the platform's slug is
   `platform`; authorizers: `…/realtime-authorizer`) and get `STACKS_ENV_TAG`, `STACKS_APP_SLUG` and
@@ -28,7 +41,8 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   (bare old root → `auth.`, anything odd → the portal's front page). `infra/bin/stacks.ts` makes it
   depend on every other stack so it deploys last.
 - `CiStack` (`stacks-ci`): GitHub OIDC roles per environment and the staging guardrail policies.
-- `checkAssembly(dir, stack)`: the staging deploy gate.
+- `checkAssembly(dir, stack)`: the staging deploy gate (one stack, bounded roles, no asset that runs
+  a command: the only image allowed is a tarball in the assembly with CDK's own load command).
 - `buildCsp`, `loadStacksConfig` (validates zones and `legacyRedirects`), naming helpers.
 - Zones: `hostedZoneId` is a Route 53 ID or `"lookup"` (needs `hostedZoneName`). `resolveZoneIds(env,
   parseZoneIds(ctx), strict)` swaps in the IDs CI passes as `-c hostedZoneIds=<name>=<id>,…`;

@@ -101,7 +101,7 @@ async function screenshots(): Promise<void> {
   // Inner pages the app asks for (web/src/demo/pages.ts), shot signed in.
   const pagesFile = path.join(appDir, 'web/src/demo/pages.ts');
   const extraPages = existsSync(pagesFile)
-    ? ((await import(pathToFileURL(pagesFile).href)) as { screenshotPages?: { name: string; hash: string; as?: string[] }[] }).screenshotPages ?? []
+    ? ((await import(pathToFileURL(pagesFile).href)) as { screenshotPages?: { name: string; hash: string; as?: string[]; waitFor?: string }[] }).screenshotPages ?? []
     : [];
   const outDir = path.join(appDir, '.stacks/screenshots');
   mkdirSync(outDir, { recursive: true });
@@ -119,11 +119,11 @@ async function screenshots(): Promise<void> {
     await probe.close();
     if (!personas.length) problems.push('the demo lists no personas (is the app wrapped in <DemoApp>?)');
     const personaId = (p: { role: string; name: string }) => `${p.role}-${p.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const who: { id: string; as: string | null; hash: string }[] = [
+    const who: { id: string; as: string | null; hash: string; waitFor?: string }[] = [
       { id: 'signed-out', as: null, hash: '' },
       ...personas.map((p) => ({ id: personaId(p), as: p.email, hash: '' })),
       ...extraPages.flatMap((page) =>
-        personas.filter((p) => !page.as || page.as.includes(p.email)).map((p) => ({ id: `${page.name}-${personaId(p)}`, as: p.email, hash: page.hash.startsWith('#') ? page.hash : `#${page.hash}` })),
+        personas.filter((p) => !page.as || page.as.includes(p.email)).map((p) => ({ id: `${page.name}-${personaId(p)}`, as: p.email, hash: page.hash.startsWith('#') ? page.hash : `#${page.hash}`, ...(page.waitFor ? { waitFor: page.waitFor } : {}) })),
       ),
     ];
     for (const viewport of [{ id: 'desktop', width: 1280, height: 800 }, { id: 'phone', width: 390, height: 844 }]) {
@@ -133,6 +133,8 @@ async function screenshots(): Promise<void> {
         page.on('console', (m) => m.type() === 'error' && problems.push(`${w.id}/${viewport.id}: console: ${m.text()}`));
         await page.goto(`${url}/demo.html${w.as ? `?as=${encodeURIComponent(w.as)}` : ''}${w.hash}`);
         await page.waitForSelector(w.as ? '[data-stacks-account-menu="signedIn"]' : '[data-stacks-account-menu="signedOut"]', { timeout: 15_000 }).catch(() => problems.push(`${w.id}/${viewport.id}: the account menu never showed the expected state`));
+        // A page that takes a moment to be worth a picture (a game connecting) names what to wait for.
+        if (w.waitFor) await page.waitForSelector(w.waitFor, { timeout: 15_000 }).catch(() => problems.push(`${w.id}/${viewport.id}: "${w.waitFor}" never appeared`));
         await page.waitForTimeout(400);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
         if (overflow) problems.push(`${w.id}/${viewport.id}: the page scrolls sideways (something is wider than the screen)`);

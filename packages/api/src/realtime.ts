@@ -258,25 +258,34 @@ function sameString(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** `srt1.<claims>.<HMAC-SHA256>`, base64url. */
-export async function signRealtimeToken(key: string, claims: RealtimeClaims): Promise<string> {
-  const body = `${TOKEN_PREFIX}.${b64urlJson(claims)}`;
+/** `<prefix>.<claims>.<HMAC-SHA256>`, base64url: the shape of every token the SDK signs. */
+export async function signHmacToken(prefix: string, key: string, claims: unknown): Promise<string> {
+  const body = `${prefix}.${b64urlJson(claims)}`;
   return `${body}.${await hmac(key, body)}`;
+}
+
+/** The claims of a token {@link signHmacToken} made with this prefix and key (expiry not checked), or null. */
+export async function openHmacToken(prefix: string, key: string, token: unknown): Promise<unknown> {
+  if (typeof token !== 'string' || token.length > 8192) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== prefix) return null;
+  const expected = await hmac(key, `${parts[0]}.${parts[1]}`);
+  if (!sameString(expected, parts[2]!)) return null;
+  try {
+    return JSON.parse(fromB64url(parts[1]!)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** `srt1.<claims>.<HMAC-SHA256>`, base64url. */
+export function signRealtimeToken(key: string, claims: RealtimeClaims): Promise<string> {
+  return signHmacToken(TOKEN_PREFIX, key, claims);
 }
 
 /** The claims of a genuine, unexpired token, or null. */
 export async function verifyRealtimeToken(key: string, token: unknown, nowMs: number): Promise<RealtimeClaims | null> {
-  if (typeof token !== 'string' || token.length > 8192) return null;
-  const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX) return null;
-  const expected = await hmac(key, `${parts[0]}.${parts[1]}`);
-  if (!sameString(expected, parts[2]!)) return null;
-  let claims: RealtimeClaims;
-  try {
-    claims = JSON.parse(fromB64url(parts[1]!)) as RealtimeClaims;
-  } catch {
-    return null;
-  }
+  const claims = (await openHmacToken(TOKEN_PREFIX, key, token)) as RealtimeClaims | null;
   if (claims?.v !== 1 || typeof claims.u !== 'string' || !Array.isArray(claims.s) || !Array.isArray(claims.p) || typeof claims.exp !== 'number') return null;
   if (claims.exp * 1000 <= nowMs) return null;
   return claims;

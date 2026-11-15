@@ -15,3 +15,7 @@ export { useChannel } from './useChannel';
 export type { ChannelHandle, UseChannelOptions } from './useChannel';
 export { encodeEvent, MAX_EVENT_BYTES, RealtimeHub, realtimeHub } from './realtime';
 export type { ChannelStatus, Subscription } from './realtime';
+export { useGameRoom } from './useGameRoom';
+export type { GameRoomHandle, UseGameRoomOptions } from './useGameRoom';
+export { createStateBuffer, GameRoomClient, hubSignaling, interpolate } from './gameRoom';
+export type { ChannelLike, GamePlayerInfo, GameRoomClientOptions, GameRoomSnapshot, GameRoomStatus, GameSignaling, PeerLike, StateMeta } from './gameRoom';
