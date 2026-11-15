@@ -24,10 +24,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         shell.orientationMask
     }
 
-    func applicationDidBecomeActive(_ application: UIApplication) {
-        shell.becameActive()
-    }
-
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         shell.push.didRegister(token: deviceToken)
     }

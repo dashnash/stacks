@@ -146,7 +146,7 @@ final class AppCapabilityTests: XCTestCase {
             .init(slug: "gyro-gym", name: "Gyro Gym", host: "gyro-gym.dashnash.ninja", native: ["motion", "haptics"]),
             .init(slug: "hello", name: "Hello Board", host: "hello.dashnash.ninja"),
         ])
-        let r = BridgeRouter(authHost: policy.authHost, isOurHost: policy.isOurHost, capabilities: { config.capabilities(forHost: $0) })
+        let r = BridgeRouter(authHost: policy.authHost, isOurHost: policy.isOurHost, allows: { config.capabilities(forHost: $0).contains($1) })
         for name in BridgeProtocol.capabilities.keys { r.register(name) { _ in .object([:]) } }
         return r
     }
@@ -191,6 +191,49 @@ final class AppCapabilityTests: XCTestCase {
         XCTAssertEqual(config.capabilities(forHost: "Gyro-Gym.dashnash.ninja"), ["motion"])
         XCTAssertEqual(config.capabilities(forHost: "hello.dashnash.ninja"), [])
         XCTAssertEqual(config.capabilities(forHost: "auth.dashnash.ninja"), [])
+    }
+}
+
+final class NativeConfigCacheTests: XCTestCase {
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+    private func config(_ native: [String]) -> NativeConfig {
+        NativeConfig(protocol: 1, minShellVersion: "1.0.0", authHost: "auth.dashnash.ninja", apps: [
+            .init(slug: "gyro-gym", name: "Gyro Gym", host: "gyro-gym.dashnash.ninja", native: native),
+        ])
+    }
+
+    func testReadsItFirst() {
+        XCTAssertTrue(NativeConfigCache().needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0))
+    }
+
+    func testAnAllowedCallNeverWaits() {
+        var c = NativeConfigCache()
+        c.stored(config(["motion"]), at: t0)
+        XCTAssertTrue(c.allows(host: "gyro-gym.dashnash.ninja", capability: "motion"))
+        XCTAssertFalse(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(3600)))
+    }
+
+    /// The bug behind "Motion was refused": a copy read before the app was deployed refused it until a relaunch.
+    func testARefusalIsOnlyGivenFromAFreshCopy() {
+        var c = NativeConfigCache()
+        c.stored(config([]), at: t0)
+        XCTAssertFalse(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(5)))
+        XCTAssertTrue(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(11)))
+        XCTAssertTrue(c.needsFetch(host: "new-app.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(11)))
+        c.stored(config(["motion"]), at: t0.addingTimeInterval(11))
+        XCTAssertTrue(c.allows(host: "gyro-gym.dashnash.ninja", capability: "motion"))
+    }
+
+    func testComingBackToTheAppReadsItAgainAndOfflineDoesNotHammer() {
+        var c = NativeConfigCache()
+        c.stored(config([]), at: t0)
+        c.expire()
+        XCTAssertTrue(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(1)))
+        c.failed(at: t0.addingTimeInterval(1))
+        XCTAssertFalse(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(3)))
+        XCTAssertTrue(c.needsFetch(host: "gyro-gym.dashnash.ninja", capability: "motion", now: t0.addingTimeInterval(7)))
+        // The last good copy is kept through a failure.
+        XCTAssertNotNil(c.config)
     }
 }
 

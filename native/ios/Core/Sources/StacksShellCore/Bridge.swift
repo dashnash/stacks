@@ -119,18 +119,18 @@ public final class BridgeRouter {
 
     public let authHost: String
     private let isOurHost: (String) -> Bool
-    private let capabilities: (String) async -> Set<String>
+    private let allows: (String, String) async -> Bool
     private var handlers: [String: Handler] = [:]
 
     /// - Parameters:
     ///   - authHost: the portal's host (`auth.<domain>`): the only page that may call `auth.*`.
     ///   - isOurHost: pages on other hosts get nothing (they shouldn't be in the app at all).
-    ///   - capabilities: what the app on a host declared (`native` in /native/config); `.app`
-    ///     calls need theirs. Unknown hosts (or no config yet) declare nothing.
-    public init(authHost: String, isOurHost: @escaping (String) -> Bool, capabilities: @escaping (String) async -> Set<String> = { _ in [] }) {
+    ///   - allows: has the app on a host (first argument) declared a capability (second)? From
+    ///     `native` in /native/config; `.app` calls need theirs. Unknown hosts declare nothing.
+    public init(authHost: String, isOurHost: @escaping (String) -> Bool, allows: @escaping (String, String) async -> Bool = { _, _ in false }) {
         self.authHost = authHost.lowercased()
         self.isOurHost = isOurHost
-        self.capabilities = capabilities
+        self.allows = allows
     }
 
     public func register(_ name: String, _ handler: @escaping Handler) {
@@ -153,7 +153,7 @@ public final class BridgeRouter {
             if frame.host == authHost {
                 return BridgeError(.forbidden, "\"\(name)\" is for apps")
             }
-            if !(await capabilities(frame.host)).contains(needed) {
+            if !(await allows(frame.host, needed)) {
                 return BridgeError(.forbidden, "This app hasn't declared \"\(needed)\" (\"native\" in its manifest)")
             }
         }
