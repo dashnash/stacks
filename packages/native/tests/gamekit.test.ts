@@ -139,6 +139,25 @@ describe('native.motion', () => {
     g.DeviceMotionEvent.requestPermission = async () => Promise.reject(new Error('needs a tap'));
     await expect(getNative(g).motion.requestPermission()).resolves.toBe('denied');
   });
+
+  it("asks the browser for its sensors inside the app when told to, and never for the app's", async () => {
+    const { g } = webGlobal();
+    const ask = vi.fn(async () => 'granted');
+    g.DeviceMotionEvent = { requestPermission: ask };
+    installFakeNative({ 'motion.start': () => ({ channel: 'm1', hz: 60 }) }, g);
+    const n = getNative(g);
+    expect(n.motion.source).toBe('native');
+    // The app's sensors (auto or native) never ask: this is what made "compare with the browser" silent.
+    await expect(n.motion.requestPermission()).resolves.toBe('granted');
+    await expect(n.motion.requestPermission({ source: 'native' })).resolves.toBe('granted');
+    expect(ask).not.toHaveBeenCalled();
+    await expect(n.motion.requestPermission({ source: 'web' })).resolves.toBe('granted');
+    expect(ask).toHaveBeenCalledTimes(1);
+    ask.mockResolvedValueOnce('denied');
+    await expect(n.motion.requestPermission({ source: 'web' })).resolves.toBe('denied');
+    // Outside the app there are no app sensors to grant.
+    await expect(getNative(webGlobal().g).motion.requestPermission({ source: 'native' })).resolves.toBe('unsupported');
+  });
 });
 
 describe('sampleFromWeb', () => {
