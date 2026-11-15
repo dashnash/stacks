@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { MotionSample } from '@stacks/native';
 import { Graph } from './Graph';
 import { relative, tiltFromAttitude, ZERO } from './motion/tilt';
-import { canCompare, errorText, sourceLabel, useMotion, useTicker, useZero, type Want } from './motion/useMotion';
+import { canCompare, problemText, sourceLabel, useMotion, useTicker, useZero, type Want } from './motion/useMotion';
 
 export const RATES = [10, 30, 60, 100] as const;
 
@@ -68,7 +68,7 @@ export function Lab() {
           Enable motion
         </button>
       )}
-      {motion.error && <p className="error" role="alert">{errorText[motion.error]}</p>}
+      {motion.error && <p className="error" role="alert">{problemText(motion.error)}</p>}
 
       <div className="meter" aria-label="Rate meter">
         <div>
