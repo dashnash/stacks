@@ -9,6 +9,7 @@ import { gameServerSettings, type AppManifest, type GameServerSettings } from '@
 import type { AppRoutes } from './app';
 import { conflict, forbidden, HttpError, notFound, optionalString } from './http';
 import type { AppDeps, Viewer } from './model';
+import { log } from './log';
 import { isUser } from './people';
 import { openHmacToken, signHmacToken, type RealtimeChannels } from './realtime';
 import { ConditionFailedError, type Item, type Store } from './store';
@@ -291,7 +292,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
 
   /** Tell everyone watching the room that it is over (best effort: they also poll). */
   const announceEnd = (id: string) =>
-    deps.realtime.publish(roomChannels.room(id), { status: 'ended' }).catch((err) => console.error('Room end not announced', id, err));
+    deps.realtime.publish(roomChannels.room(id), { status: 'ended' }).catch((err) => log.warn('Room end not announced', { roomId: id, error: err }));
 
   /**
    * The rooms still going, after closing the ones that are not: the server said it ended, its task
@@ -314,7 +315,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
         await finish(r.meta, 'stopped');
         await announceEnd(r.meta.id);
       } else if (age > limit) {
-        await deps.games.stop(r.meta.id).catch((err) => console.error('Overtime game server not stopped', r.meta.id, err));
+        await deps.games.stop(r.meta.id).catch((err) => log.error('Overtime game server not stopped', { roomId: r.meta.id, error: err }));
         await finish(r.meta, 'time');
         await announceEnd(r.meta.id);
       } else going.push(r);
@@ -359,7 +360,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       try {
         await deps.games.start(id);
       } catch (err) {
-        console.error('Game server not started', id, err);
+        log.error('Game server not started', { roomId: id, error: err });
         await finish(m, 'error');
         throw new HttpError(503, "Couldn't start a game server. Try again in a minute.", 'GAME_START_FAILED');
       }
@@ -401,7 +402,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const ticket = await signGameTicket(await deps.games.key(), { roomId: id, userId: player.id, name: player.name, exp });
       // TURN credentials outlive the ticket: they must last as long as the connection may.
       const iceServers = await deps.games.iceServers(Math.ceil(settings.maxHours * 3600) + 600).catch((err) => {
-        console.error('TURN credentials unavailable; joining with STUN only', err);
+        log.warn('TURN credentials unavailable; joining with STUN only', err);
         return STUN_ONLY;
       });
       return {
@@ -424,7 +425,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const m = await meta(id);
       if (!m) throw notFound('No such room');
       await finish(m, reason);
-      await deps.games.stop(id).catch((err) => console.error('Game server not stopped', id, err));
+      await deps.games.stop(id).catch((err) => log.error('Game server not stopped', { roomId: id, error: err }));
       await announceEnd(id);
       return view(store, (await meta(id)) ?? m);
     },

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import type { AppDeps, AppRoutes } from '@stacks/api';
+import { setLogSink, type AppDeps, type AppRoutes, type LogLine } from '@stacks/api';
 import { defineGame, type GameRoom } from '@stacks/game-server';
 import { GameRoomClient, hubSignaling, RealtimeHub, type GameRoomSnapshot, type PeerLike } from '@stacks/web';
 import { createDemo, type Demo } from '../src/index';
@@ -189,10 +189,11 @@ describe('demo game rooms', () => {
 
   it('says how to turn rooms on when the demo was not given the game', async () => {
     const demo = await tab('olive@demo', false);
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const lines: LogLine[] = [];
+    const stop = setLogSink((_level, line) => void lines.push(line));
     await expect(demo.client.post('/rooms', {})).rejects.toMatchObject({ status: 503 });
-    expect(String(err.mock.calls[0]?.[2])).toMatch(/pass `game`/);
-    err.mockRestore();
+    stop();
+    expect(JSON.stringify(lines.find((l) => l.message === 'Game server not started'))).toMatch(/pass `game`/);
   });
 });
 
