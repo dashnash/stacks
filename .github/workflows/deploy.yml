@@ -69,8 +69,8 @@ jobs:
         env:
           VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build
-      # Game server images are built here (no AWS credentials in this job) and travel in cdk-out as
-      # tarballs; the deploy jobs only load and push them, they never run `docker build`.
+      # Game server images are built here (no AWS credentials in this job) and travel in the cdk-out
+      # artifacts as tarballs; the deploy jobs only load and push them, they never run `docker build`.
       - name: Build game server images (apps with the gameServer module)
         run: npm run build-game-images
       - name: Synth
@@ -83,12 +83,17 @@ jobs:
           export STACKS_BUILD_SHA
           npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out
           npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -c requireGameImage=true -o ../cdk.out-staging
+      # One artifact per environment: each deploy job downloads only its own (the game server
+      # images are in both, and the runners download slowly).
       - uses: actions/upload-artifact@v4
         with:
-          name: cdk-out
-          path: |
-            cdk.out
-            cdk.out-staging
+          name: cdk-out-staging
+          path: cdk.out-staging
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cdk-out-production
+          path: cdk.out
           retention-days: 7
 
   staging:
@@ -105,9 +110,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
+      # An artifact of one folder holds that folder's contents, so they go back into it.
       - uses: actions/download-artifact@v4
         with:
-          name: cdk-out
+          name: cdk-out-staging
+          path: cdk.out-staging
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
@@ -136,7 +143,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@v4
         with:
-          name: cdk-out
+          name: cdk-out-production
+          path: cdk.out
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_PRODUCTION_ROLE_ARN }}
