@@ -12,7 +12,7 @@
   "topRole": "OWNER",
   "defaultRole": "MEMBER",
   "publicRoutes": ["/"],
-  "modules": ["realtime"],
+  "modules": ["realtime", "gameServer"],
   "accountMenu": "standard",
   "owners": ["dashiell.nash@gmail.com"]
 }

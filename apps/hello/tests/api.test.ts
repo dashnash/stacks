@@ -64,7 +64,7 @@ describe('Hello Board API', () => {
 
   it('hands members realtime tokens for the counter and lobby, and refuses the rest', async () => {
     const t = harness();
-    const ok = await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { subscribe: ['counter/main', 'room/lobby'], publish: ['room/lobby'] } });
+    const ok = await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { subscribe: ['counter/main', 'lobby/main'], publish: ['lobby/main'] } });
     expect(ok.status).toBe(200);
     expect((await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { publish: ['counter/main'] } })).body.code).toBe('REALTIME_SUBSCRIBE_ONLY');
     expect((await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { subscribe: ['greetings/all'] } })).body.code).toBe('REALTIME_UNDECLARED');
@@ -77,5 +77,20 @@ describe('Hello Board API', () => {
     t.realtime.publish = async () => Promise.reject(new Error('AppSync down'));
     expect((await t.call('POST', '/counter', { as: 'max@x.dev' })).body).toEqual({ n: 1 });
     error.mockRestore();
+  });
+
+  it('has Live dots rooms (the gameServer module): create, join with the code, and the lobby channel is not a room', async () => {
+    const t = harness();
+    const created = await t.call('POST', '/rooms', { as: 'olive@x.dev', role: 'OWNER', body: {} });
+    expect(created.status).toBe(201);
+    expect(t.games.started).toEqual([created.body.room.id]);
+    await t.games.open(created.body.room.id);
+    const found = await t.call('GET', `/rooms/by-code/${created.body.room.code}`, { as: 'max@x.dev' });
+    expect(found.body.room).toMatchObject({ id: created.body.room.id, status: 'open', maxPlayers: 8 });
+    const join = await t.call('POST', `/rooms/${found.body.room.id}/join`, { as: 'max@x.dev' });
+    expect(join.status).toBe(200);
+    expect(join.body.ticket).toMatch(/^sgt1\./);
+    // Waves moved to lobby/*: room/* is the game's signaling, where members can't just publish.
+    expect((await t.call('POST', '/realtime/token', { as: 'max@x.dev', body: { publish: ['room/lobby'] } })).body.code).toBe('REALTIME_SUBSCRIBE_ONLY');
   });
 });
