@@ -235,9 +235,19 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((l) => l());
 
+  /**
+   * Keep this tab's changes for the next visit. With game rooms on, every write was already saved,
+   * merged with what other tabs saved, the moment it happened (`shared`); saving the whole store
+   * again here would put back this tab's older copy of anything another tab wrote while a request
+   * was awaiting (a room's server marking it open, say), and that write would be lost.
+   */
+  const persist = () => {
+    if (!gamesOn) save(key, store);
+  };
+
   const seed = async () => {
     if (opts.seed) await opts.seed(deps);
-    save(key, store);
+    persist();
   };
   const ready = saved ? Promise.resolve() : seed();
 
@@ -262,7 +272,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
         persona = null;
       }
     }
-    if (method !== 'GET') save(key, store);
+    if (method !== 'GET') persist();
     return new Response(res.body || '{}', { status: res.statusCode, headers: res.headers });
   };
 
@@ -273,7 +283,7 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     sessionToken = persona
       ? await createSession(deps, { id: persona.id, ...(opts.manifest.needsEmail ? { email: persona.email } : {}), name: persona.name, ...(persona.pictureUrl ? { pictureUrl: persona.pictureUrl } : {}) }, persona.role)
       : null;
-    save(key, store);
+    persist();
     notify();
   };
 
@@ -299,6 +309,8 @@ export function createDemo<D extends AppDeps = AppDeps>(opts: DemoOptions<D>): D
     signInAs,
     reset: async () => {
       store.items.clear();
+      // A reset wipes the shared data on purpose (with game rooms on, writes merge with what is saved).
+      if (gamesOn) save(key, store);
       sessionToken = null;
       persona = null;
       await seed();

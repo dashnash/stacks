@@ -305,6 +305,54 @@ describe('RealtimeHub', () => {
     expect(server.last.closed).toBe(true);
   });
 
+  it('subscribes a channel added while the socket was still handshaking, when the ack lands before its token', async () => {
+    const pending: (() => void)[] = [];
+    let n = 0;
+    const api = {
+      // Token requests answer when the test says so.
+      post: vi.fn(
+        (_path: string, body: { subscribe: string[]; publish: string[] }) =>
+          new Promise((resolve) => {
+            tokens.push(body);
+            pending.push(() =>
+              resolve({
+                token: `tok-${++n}`,
+                expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+                endpoint: 'wss://abc.appsync-realtime-api.us-east-1.amazonaws.com/event/realtime',
+                host: 'abc.appsync-api.us-east-1.amazonaws.com',
+                namespace: 'app',
+              }),
+            );
+          }),
+      ),
+      openSocket: server.open,
+    } as unknown as Client;
+    const hub = new RealtimeHub(api, { random: () => 1 });
+    server.auto = false;
+    const a = watch(hub, 'room/r1');
+    await flush();
+    pending.shift()!();
+    await flush();
+    const ws = server.last;
+    expect(ws.of('connection_init')).toHaveLength(1);
+
+    // Before AppSync acknowledges the connection, the page opens another channel: a new token is needed.
+    const b = watch(hub, 'room/r1/to/u-1');
+    await flush();
+    expect(tokens).toHaveLength(2);
+    // The ack arrives while that token is still on its way...
+    server.auto = true;
+    ws.reply({ type: 'connection_ack', connectionTimeoutMs: 300_000 });
+    await flush();
+    expect(a.status()).toBe('live');
+    // ...and then the token: the new channel must be subscribed on the open socket.
+    pending.shift()!();
+    await flush();
+    expect(ws.of('subscribe').map((m) => m.channel)).toEqual(['/app/room/r1', '/app/room/r1/to/u-1']);
+    expect(b.status()).toBe('live');
+    expect(a.status()).toBe('live');
+  });
+
   it('stays offline when the token is refused', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const hub = new RealtimeHub(fakeApi({ refuse: true }));

@@ -194,7 +194,10 @@ export class RealtimeHub {
       if (gen !== this.generation) return false;
       this.token = { ...res, expiresAt: Date.parse(res.expiresAt), subscribe: new Set(want.subscribe), publish: new Set(want.publish) };
       this.failedKey = null;
-      this.state = this.ws && (previous === 'open' || previous === 'connecting') ? previous : 'idle';
+      // Restore the state from before the request only if nothing moved it on meanwhile: the
+      // socket may have been acknowledged (`open`) or lost (`waiting`) while the token was on its
+      // way. Putting back a stale `connecting` on an open socket left new channels never subscribed.
+      if (this.state === 'authorizing') this.state = this.ws && (previous === 'open' || previous === 'connecting') ? previous : 'idle';
       this.scheduleRefresh();
       // Channels may have changed while the token was on its way.
       if (this.wanted().key !== want.key) this.queueSync();

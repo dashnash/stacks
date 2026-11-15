@@ -195,3 +195,49 @@ describe('demo game rooms', () => {
     err.mockRestore();
   });
 });
+
+describe('demo tabs sharing data (game rooms on)', () => {
+  let release: () => void = () => undefined;
+  const sharedRoutes = (api: AppRoutes<AppDeps>) => {
+    api
+      // A request that awaits something (WebCrypto, say) before it finishes, and writes nothing.
+      .member('POST', '/slow', async () => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return { body: { ok: true } };
+      })
+      .member('POST', '/note', async (_req, v) => {
+        await v.deps.store.put({ PK: 'NOTE', SK: 'x', by: v.user.id });
+        return { body: { ok: true } };
+      })
+      .member('GET', '/note', async (_req, v) => ({ body: { note: (await v.deps.store.get('NOTE', 'x')) ?? null } }));
+  };
+  const open = async (email: string) => {
+    const demo = createDemo({ manifest, routes: sharedRoutes, personas, storageKey: 'stacks-demo:dotsdemo:shared', game });
+    demos.push(demo);
+    await demo.signInAs(email);
+    return demo;
+  };
+
+  it("never loses another tab's write made while one of its requests was in flight", async () => {
+    const a = await open('olive@demo');
+    const b = await open('pat@demo');
+    const slow = b.client.post('/slow', {});
+    await vi.waitFor(() => expect(release).not.toBe(undefined));
+    await new Promise((r) => setTimeout(r, 0));
+    // Tab A writes (as a room's server writes "open") while B's request is still going.
+    await a.client.post('/note', {});
+    release();
+    await slow;
+    // B finishing its request must not have put back its older copy of the data.
+    expect((await a.client.get<{ note: unknown }>('/note')).note).toMatchObject({ by: 'u_olive_demo' });
+    expect((await b.client.get<{ note: unknown }>('/note')).note).toMatchObject({ by: 'u_olive_demo' });
+  });
+
+  it("keeps another tab's write when someone signs in", async () => {
+    const a = await open('olive@demo');
+    const b = await open('pat@demo');
+    await a.client.post('/note', {});
+    await b.signInAs('quin@demo');
+    expect((await a.client.get<{ note: unknown }>('/note')).note).toMatchObject({ by: 'u_olive_demo' });
+  });
+});
