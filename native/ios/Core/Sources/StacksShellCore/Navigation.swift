@@ -192,3 +192,46 @@ public struct ShellSettings: Equatable {
 
     public var nativeConfigURL: URL { URL(string: "https://\(policy.authHost)/api/native/config")! }
 }
+
+/// What the app knows of `/native/config`, and when to read it again. A call an app is allowed
+/// never waits; a refusal is only given from a fresh copy, so an app (or a capability) added since
+/// the last read works at once instead of after a relaunch.
+public struct NativeConfigCache: Equatable {
+    /// A copy older than this is read again before refusing a call.
+    public static let refreshBeforeRefusingAfter: TimeInterval = 10
+    /// After a failed read (offline), don't try again sooner than this.
+    public static let retryAfterFailure: TimeInterval = 5
+
+    public private(set) var config: NativeConfig?
+    public private(set) var fetchedAt: Date?
+    public private(set) var failedAt: Date?
+
+    public init() {}
+
+    public mutating func stored(_ config: NativeConfig, at: Date) {
+        self.config = config
+        fetchedAt = at
+        failedAt = nil
+    }
+
+    public mutating func failed(at: Date) {
+        failedAt = at
+    }
+
+    /// Back in the foreground: the next call reads it again.
+    public mutating func expire() {
+        fetchedAt = nil
+    }
+
+    public func allows(host: String, capability: String) -> Bool {
+        config?.capabilities(forHost: host).contains(capability) ?? false
+    }
+
+    /// Should the app read the config before answering `capability` for `host`?
+    public func needsFetch(host: String, capability: String, now: Date) -> Bool {
+        if let failedAt, now.timeIntervalSince(failedAt) < Self.retryAfterFailure { return false }
+        guard config != nil, let fetchedAt else { return true }
+        if allows(host: host, capability: capability) { return false }
+        return now.timeIntervalSince(fetchedAt) >= Self.refreshBeforeRefusingAfter
+    }
+}

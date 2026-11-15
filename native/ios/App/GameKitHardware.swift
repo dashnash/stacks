@@ -182,11 +182,13 @@ private final class DisplayLinkTarget: NSObject {
     }
 }
 
-/// `GET /native/config`, read once per launch (and again after coming back to the app): which hosts
-/// declared which capabilities. Until it loads, the first call waits for it; offline, nobody has any.
+/// `GET /native/config`: which hosts declared which capabilities. Read at launch and again after
+/// coming back to the app; before refusing a call it is read again if the copy is more than 10 s
+/// old (`NativeConfigCache`), so an app deployed while DashyHQ was open works without a relaunch.
+/// Never from the phone's HTTP cache (the platform says max-age=300).
 actor NativeConfigStore {
     private let url: URL
-    private var config: NativeConfig?
+    private var cache = NativeConfigCache()
     private var loading: Task<NativeConfig?, Never>?
 
     init(url: URL) {
@@ -194,12 +196,31 @@ actor NativeConfigStore {
     }
 
     func current() async -> NativeConfig? {
-        if let config { return config }
-        if let loading { return await loading.value }
+        if cache.config == nil || cache.fetchedAt == nil { await fetch() }
+        return cache.config
+    }
+
+    func allows(host: String, capability: String) async -> Bool {
+        if cache.needsFetch(host: host, capability: capability, now: Date()) { await fetch() }
+        return cache.allows(host: host, capability: capability)
+    }
+
+    /// Apps may have changed what they declare: read it again on the next call.
+    func forget() {
+        cache.expire()
+    }
+
+    private func fetch() async {
+        if let loading {
+            _ = await loading.value
+            return
+        }
         let url = url
         let task = Task<NativeConfig?, Never> {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
+                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, _) = try await URLSession.shared.data(for: request)
                 return try JSONDecoder().decode(NativeConfig.self, from: data)
             } catch {
                 return nil
@@ -208,16 +229,6 @@ actor NativeConfigStore {
         loading = task
         let result = await task.value
         loading = nil
-        config = result
-        return result
-    }
-
-    func capabilities(forHost host: String) async -> Set<String> {
-        await current()?.capabilities(forHost: host) ?? []
-    }
-
-    /// Apps may have changed what they declare: read it again on the next call.
-    func forget() {
-        config = nil
+        if let result { cache.stored(result, at: Date()) } else { cache.failed(at: Date()) }
     }
 }

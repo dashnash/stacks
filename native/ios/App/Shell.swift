@@ -44,8 +44,8 @@ final class Shell: NSObject, ObservableObject {
         push = PushRegistrar(environment: settings.pushEnvironment)
         let nativeConfig = NativeConfigStore(url: settings.nativeConfigURL)
         self.nativeConfig = nativeConfig
-        router = BridgeRouter(authHost: settings.policy.authHost, isOurHost: settings.policy.isOurHost, capabilities: { host in
-            await nativeConfig.capabilities(forHost: host)
+        router = BridgeRouter(authHost: settings.policy.authHost, isOurHost: settings.policy.isOurHost, allows: { host, capability in
+            await nativeConfig.allows(host: host, capability: capability)
         })
         defaultOrientationMask = UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
         orientationMask = defaultOrientationMask
@@ -73,6 +73,11 @@ final class Shell: NSObject, ObservableObject {
         refreshControl = refresh
 
         NativeHandlers.register(on: router, shell: self)
+        // Back in the app: read /native/config again. (A SwiftUI app has scenes, so UIKit doesn't
+        // call the app delegate's applicationDidBecomeActive; the notification still comes.)
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.becameActive() }
+        }
         let defaults = UserDefaults.standard
         let start = settings.policy.launchURL(lastURL: defaults.url(forKey: Self.lastURLKey), savedAt: defaults.object(forKey: Self.lastURLAtKey) as? Date)
         webView.load(URLRequest(url: start))
@@ -219,7 +224,7 @@ extension Shell: WKNavigationDelegate, WKUIDelegate {
         let host = origin.host
         let allowedPage = frame.isMainFrame && origin.protocol == "https" && settings.policy.isOurHost(host)
         Task { @MainActor in
-            let declared = allowedPage ? await nativeConfig.capabilities(forHost: host).contains("motion") : false
+            let declared = allowedPage ? await nativeConfig.allows(host: host, capability: "motion") : false
             decisionHandler(declared ? .prompt : .deny)
         }
     }

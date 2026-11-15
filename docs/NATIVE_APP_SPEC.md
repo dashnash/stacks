@@ -381,8 +381,10 @@ await native.gameCenter.submitScore('flips', 4200);
   `minShellVersion`. Calls with `"origins": "app"` in `v1.json` name a `capability`; the shell
   routes one only if the calling frame's host maps to an app that declared it (never the portal).
   **Main frame only**; iframes get nothing. `auth.*` is portal-only. The shell reads the config
-  once per launch and again after coming back to the foreground; until it loads, the first call
-  waits; offline, no app has any capability. The web's own `DeviceMotionEvent` is gated the same way
+  at launch and again after coming back to the foreground (never from the phone's HTTP cache), and
+  before refusing a call it reads it again if its copy is over 10 s old, so an app deployed while
+  the app was open works at once; until it loads, the first call waits; offline, no app has any
+  capability (`NativeConfigCache` in Core). The web's own `DeviceMotionEvent` is gated the same way
   (the shell answers WebKit's motion-permission request with "prompt" only for apps that declared
   `motion`).
 - What the page turned on (a motion stream, orientation lock, immersive, keep awake) is undone when
