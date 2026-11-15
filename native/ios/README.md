@@ -6,7 +6,7 @@ share sheet, universal links, and later push and device features. Spec: `docs/NA
 | Path | What |
 | --- | --- |
 | `Core/` | `StacksShellCore`, a Foundation-only Swift package: link rules (`NavigationPolicy`), the bridge (`BridgeRouter`, protocol types), version and `/native/config` checks. Tested on Linux and macOS: `swift test --package-path native/ios/Core` |
-| `App/` | The iOS layer: `Shell` (WKWebView, navigation, offline, last page), `NativeHandlers` (`app.info`, `auth.google`, `auth.signedOut`, `share`), SwiftUI views |
+| `App/` | The iOS layer: `Shell` (WKWebView, navigation, offline, last page), `NativeHandlers` (every bridge call), `GameKitHardware` (CoreMotion streamed per frame, haptics, orientation lock, immersive, keep awake; undone when the page goes away) and `NativeConfigStore` (who declared what), SwiftUI views |
 | `project.yml` | XcodeGen spec; the `.xcodeproj` is generated, not committed |
 | `Config/*.xcconfig` | Per-environment settings, **generated** from `stacks.config.json` by `node scripts/ios-xcconfig.mjs` (CI fails if stale) |
 | `VERSION` | The marketing version; CI sets the build number |

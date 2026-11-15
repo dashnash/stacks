@@ -188,7 +188,13 @@ export function createPlatformApp(deps: PlatformDeps) {
         protocol: NATIVE_PROTOCOL,
         minShellVersion: deps.config.minShellVersion ?? '1.0.0',
         authHost: new URL(deps.config.authOrigin).host,
-        apps: (await listApps(deps)).map((a) => ({ slug: a.manifest.slug, name: a.manifest.name, host: new URL(appOrigin(deps.config, a.manifest.slug)).host })),
+        // `native`: what each app may ask of the iOS app (its manifest's declaration).
+        apps: (await listApps(deps)).map((a) => ({
+          slug: a.manifest.slug,
+          name: a.manifest.name,
+          host: new URL(appOrigin(deps.config, a.manifest.slug)).host,
+          native: a.manifest.native ?? [],
+        })),
       },
     }))
 

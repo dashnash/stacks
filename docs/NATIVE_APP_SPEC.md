@@ -359,7 +359,7 @@ await native.gameCenter.submitScore('flips', 4200);
 
 | Kit | Bridge calls (native only) | Web standard used directly | Sensitive | v1 pilot |
 | --- | --- | --- | --- | --- |
-| Game kit | Core Haptics (`impact`, `notification`, `pattern`), CoreMotion at up to 100 Hz batched per frame, orientation lock, immersive mode, keep awake | `DeviceMotionEvent` (lower rate), Wake Lock, WebGPU/WebGL | motion | `flippy-work-table`: flick the phone up to flip, haptics on impact |
+| Game kit | Core Haptics (`impact`, `notification`, `pattern`), CoreMotion at up to 100 Hz batched per frame, orientation lock, immersive mode, keep awake | `DeviceMotionEvent` (lower rate), Wake Lock, WebGPU/WebGL | motion | `gyro-gym`: a sensor lab, a Kit panel and a tilt maze (built); later `flippy-work-table`'s flick-to-flip |
 | Camera kit | `camera.capture` (photo/video via the system camera), `scan.code` (VisionKit `DataScannerViewController`), `scan.document` (VisionKit document camera → images/PDF) | `getUserMedia` for a live camera in the page | camera | A QR check-in or a photo upload once `uploads` lands |
 | Microphone / audio | `audio.session('ambient' \| 'playback')` so game sound respects the silent switch and doesn't stop other audio | `getUserMedia({audio})`, Web Audio; the shell turns off autoplay-on-gesture for game audio | microphone | — |
 | Location | Foreground only in v1 | Geolocation API | location | — |
@@ -370,22 +370,34 @@ await native.gameCenter.submitScore('flips', 4200);
 
 **Declaring and gating**
 
-- The manifest gains `"native": ["haptics", "motion", "camera", ...]` (enum in `@stacks/manifest`).
+- The manifest gains `"native": ["haptics", "motion", "screen", ...]` (`NATIVE_CAPABILITIES` in
+  `@stacks/manifest`; today `haptics`, `motion`, `screen`; later kits add theirs).
   For Game Center it also gains `"gameCenter": { "leaderboards": [...], "achievements": [...] }`;
   IDs are namespaced `<slug>.<id>`, and CI creates them in App Store Connect through its API.
 - **Sensitive** = `camera`, `microphone`, `location`, `motion`, plus `needsEmail`.
   `scripts/pr-paths.mjs` treats an app PR that *adds* a sensitive entry as platform work
   (`CODEOWNERS` review), even though only `apps/<slug>/` changed.
-- The Platform API serves `/native/config`: per app host, the declared capabilities, plus
-  `minShellVersion`. The shell routes a bridge call only if the calling frame's origin maps to an
-  app that declared it. **Main frame only**; iframes get nothing. `auth.*` is portal-only.
+- The Platform API serves `/native/config`: per app host, the declared capabilities (`native`), plus
+  `minShellVersion`. Calls with `"origins": "app"` in `v1.json` name a `capability`; the shell
+  routes one only if the calling frame's host maps to an app that declared it (never the portal).
+  **Main frame only**; iframes get nothing. `auth.*` is portal-only. The shell reads the config
+  once per launch and again after coming back to the foreground; until it loads, the first call
+  waits; offline, no app has any capability. The web's own `DeviceMotionEvent` is gated the same way
+  (the shell answers WebKit's motion-permission request with "prompt" only for apps that declared
+  `motion`).
+- What the page turned on (a motion stream, orientation lock, immersive, keep awake) is undone when
+  a new document commits (another page, a reload) and motion pauses in the background. CoreMotion's
+  raw sensors need no iOS prompt (the purpose string is carried for the web fallback and later kits),
+  so the manifest declaration and its code-owner review are the control.
 - iOS still asks the user. The shell carries every purpose string up front (Info.plist can't change
   per app): camera, microphone, location when in use, motion, photo library add. They are worded for
   a platform ("Apps you use in DashyHQ can use the camera when you choose to take a photo or scan a
   code").
 
 **Protocol**: `window.stacksNative.call(name, args) → Promise` over a `WKScriptMessageHandlerWithReply`,
-events (motion batches, AR frames) via a per-call channel. JSON shapes live in
+events (motion batches, AR frames) via a per-call channel: the call returns `{ channel }`, the shell
+calls `window.stacksNative._emit(channel, payload)` (`evaluateJavaScript`, once per `CADisplayLink`
+frame) and pages subscribe with `stacksNative.listen(channel, fn)`. JSON shapes live in
 `native/protocol/*.schema.json` with fixtures that both the Vitest and XCTest suites run, so the TS
 client and the Swift handlers can't drift. The protocol version is in the user agent and
 `/native/config`.
@@ -503,10 +515,11 @@ Gate: a request on a private app reaches the approver's lock screen, Approve wor
 Gate: a new person with a hidden email signs in with Apple on iPhone and on a laptop to the same account; an existing user links Apple and keeps their grants. First external TestFlight group opened.
 
 **N5 — Game kit, Camera kit, audio, location**
-- [ ] Manifest `native`, sensitive-capability review in `pr-paths.mjs`, purpose strings, demo fakes
-- [ ] `flippy-work-table` motion + haptics pilot (an app task); a camera/scan demo once `uploads` lands
+- [x] **N5a** Game kit (#45): manifest `native`, sensitive-capability review in `pr-paths.mjs`, `origins: "app"` and the event channel in `v1.json`, `native.motion` / `haptics` / `screen` in `@stacks/native` with web fallbacks and fakes (`fakeMotion`, `fakeGameKit`), CoreMotion/Core Haptics/screen handlers in the shell, motion purpose string
+- [x] `gyro-gym` Game kit pilot (an app task): sensor lab, Kit panel, tilt maze
+- [ ] Camera kit, audio, location; a camera/scan demo once `uploads` lands; `flippy-work-table` flick-to-flip (an app task)
 
-Gate: flick-to-flip on a real iPhone, keyboard/drag emulation in demo mode, and an undeclared call refused.
+Gate (Game kit): Gyro Gym's lab at ~100 Hz from CoreMotion on a real iPhone, every Kit call felt or seen, keyboard/drag emulation in demo mode, and an undeclared call refused.
 
 **N6 — Game Center, AR, widgets**
 - [ ] Game Center from manifest declarations (CI creates leaderboards); AR Quick Look, then ARKit sessions; Inbox and Glance widgets with `deps.platform.glance`

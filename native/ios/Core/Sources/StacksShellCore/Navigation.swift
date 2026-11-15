@@ -113,12 +113,35 @@ public struct NativeConfig: Codable, Equatable {
         public let slug: String
         public let name: String
         public let host: String
+        /// What the app may ask of this app (its manifest's `native`; absent from older platforms).
+        public let native: [String]
+
+        public init(slug: String, name: String, host: String, native: [String] = []) {
+            self.slug = slug
+            self.name = name
+            self.host = host
+            self.native = native
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            slug = try c.decode(String.self, forKey: .slug)
+            name = try c.decode(String.self, forKey: .name)
+            host = try c.decode(String.self, forKey: .host)
+            native = try c.decodeIfPresent([String].self, forKey: .native) ?? []
+        }
     }
 
     public let `protocol`: Int
     public let minShellVersion: String
     public let authHost: String
     public let apps: [App]
+
+    /// The capabilities the app on `host` declared (none for the portal or an unknown host).
+    public func capabilities(forHost host: String) -> Set<String> {
+        let h = host.lowercased()
+        return Set(apps.first { $0.host.lowercased() == h }?.native ?? [])
+    }
 
     /// Should the app ask to be updated (the web needs a newer app, or a newer bridge)?
     public func needsUpdate(appVersion: String) -> Bool {

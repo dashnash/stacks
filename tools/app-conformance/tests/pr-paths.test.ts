@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { SENSITIVE_NATIVE_CAPABILITIES } from '../../../packages/manifest/src/index';
 // @ts-expect-error: plain .mjs script, no types
-import { classifyPr } from '../../../scripts/pr-paths.mjs';
+import { classifyPr, SENSITIVE_NATIVE } from '../../../scripts/pr-paths.mjs';
 
 describe('PR path guard', () => {
   it('keeps app branches inside their app (the lockfile is fine)', () => {
@@ -34,5 +35,23 @@ describe('PR path guard', () => {
     expect(classifyPr('claude/new', ['apps/mailer/app.manifest.json'], { mailer: { before: null, after: { needsEmail: true } } }).kind).toBe('platform');
     expect(classifyPr('claude/edit', files, { mofobookklub: { before: { needsEmail: true }, after: { needsEmail: true } } }).kind).toBe('app');
     expect(classifyPr('claude/off', files, { mofobookklub: { before: { needsEmail: true }, after: {} } }).kind).toBe('app');
+  });
+
+  it('makes adding a sensitive native capability platform work', () => {
+    const files = ['apps/gyro-gym/app.manifest.json'];
+    const m = (before: unknown, after: unknown) => ({ 'gyro-gym': { before, after } });
+    const r = classifyPr('claude/motion', files, m({ native: ['haptics'] }, { native: ['haptics', 'motion'] }));
+    expect(r).toMatchObject({ ok: true, kind: 'platform' });
+    expect(r.message).toMatch(/"motion" native capability/);
+    expect(classifyPr('app/gyro-gym/x', files, m(null, { native: ['motion'] }))).toMatchObject({ ok: false });
+    expect(classifyPr('claude/new', files, m(null, { native: ['motion', 'screen'] })).kind).toBe('platform');
+    // Not sensitive, already there, or removed: an app change.
+    expect(classifyPr('claude/buzz', files, m({}, { native: ['haptics', 'screen'] })).kind).toBe('app');
+    expect(classifyPr('claude/edit', files, m({ native: ['motion'] }, { native: ['motion', 'haptics'] })).kind).toBe('app');
+    expect(classifyPr('claude/off', files, m({ native: ['motion'] }, { native: [] })).kind).toBe('app');
+  });
+
+  it('agrees with @stacks/manifest on which capabilities are sensitive', () => {
+    expect([...SENSITIVE_NATIVE].sort()).toEqual([...SENSITIVE_NATIVE_CAPABILITIES].sort());
   });
 });

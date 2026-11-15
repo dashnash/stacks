@@ -15,6 +15,9 @@ struct ShellView: View {
             .safeAreaInset(edge: .top) {
                 if shell.needsUpdate { UpdateBanner() }
             }
+            // A game asked for the whole screen (screen.immersive).
+            .statusBarHidden(shell.immersive)
+            .persistentSystemOverlays(shell.immersive ? .hidden : .automatic)
     }
 }
 

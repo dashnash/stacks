@@ -81,6 +81,40 @@ enum NativeHandlers {
             return .object([:])
         }
 
+        // The Game kit (apps that declared "motion", "haptics" or "screen"; checked by the router).
+        router.register("motion.start") { @MainActor [weak shell] args in
+            guard let shell else { throw BridgeError(.failed, "The app is closing") }
+            return try shell.gameKit.startMotion(try GameKit.motionStart(args))
+        }
+        router.register("motion.stop") { @MainActor [weak shell] args in
+            shell?.gameKit.stopMotion(channel: try GameKit.channel(args))
+            return .object([:])
+        }
+        router.register("haptics.impact") { @MainActor [weak shell] args in
+            shell?.gameKit.impact(try GameKit.impactStyle(args))
+            return .object([:])
+        }
+        router.register("haptics.notification") { @MainActor [weak shell] args in
+            shell?.gameKit.notification(try GameKit.notificationType(args))
+            return .object([:])
+        }
+        router.register("haptics.pattern") { @MainActor [weak shell] args in
+            try shell?.gameKit.pattern(try GameKit.pattern(args))
+            return .object([:])
+        }
+        router.register("screen.lockOrientation") { @MainActor [weak shell] args in
+            shell?.gameKit.lockOrientation(try GameKit.orientation(args))
+            return .object([:])
+        }
+        router.register("screen.immersive") { @MainActor [weak shell] args in
+            shell?.gameKit.immersive(try GameKit.on(args))
+            return .object([:])
+        }
+        router.register("screen.keepAwake") { @MainActor [weak shell] args in
+            shell?.gameKit.keepAwake(try GameKit.on(args))
+            return .object([:])
+        }
+
         router.register("share") { @MainActor [weak shell] args in
             var items: [Any] = []
             if let text = args["text"]?.stringValue { items.append(text) }
