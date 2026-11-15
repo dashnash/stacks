@@ -64,9 +64,12 @@ export function Lab() {
       </div>
 
       {motion.needsTap && (
-        <button type="button" className="primary" onClick={() => void motion.enable()}>
-          Enable motion
-        </button>
+        <p className="ask">
+          The browser's sensors need your OK first.{' '}
+          <button type="button" className="primary" onClick={() => void motion.enable()}>
+            Enable motion
+          </button>
+        </p>
       )}
       {motion.error && <p className="error" role="alert">{problemText(motion.error)}</p>}
 
