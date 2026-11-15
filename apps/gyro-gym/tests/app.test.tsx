@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemo, DemoApp } from '@stacks/demo';
 import { fakeGameKit, fakeMotion, installFakeNative, NativeError, type FakeHandlers } from '@stacks/native';
 import { personas, seed } from '../api/demo-data';
@@ -79,7 +79,39 @@ describe('Lab', () => {
     }
   });
 
-  it('has no sensors in a desktop browser without the app, and says what to do', async () => {
+  it("in the app, comparing with the browser's sensors asks the browser (not the app) and then streams them", async () => {
+    fakeApp();
+    const listeners = new Set<(e: unknown) => void>();
+    const requestPermission = vi.fn(async () => 'granted');
+    const add = window.addEventListener.bind(window);
+    Object.assign(globalThis, { DeviceMotionEvent: { requestPermission }, DeviceOrientationEvent: { requestPermission } });
+    const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((type: string, fn: (e: unknown) => void, o?: unknown) =>
+      type === 'devicemotion' ? listeners.add(fn) : add(type, fn as EventListener, o as AddEventListenerOptions)) as typeof window.addEventListener);
+    try {
+      renderDemo();
+      expect(await screen.findByTestId('source')).toHaveTextContent('Fake');
+      await userEvent.click(screen.getByRole('button', { name: 'Compare: browser sensors' }));
+      expect(await screen.findByText(/need your OK/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Zero' })).toBeDisabled(); // the app's readings are cleared, not frozen
+      await userEvent.click(screen.getByRole('button', { name: 'Enable motion' }));
+      expect(requestPermission).toHaveBeenCalled();
+      expect(await screen.findByTestId('source')).toHaveTextContent('Web');
+      await waitFor(() => expect(listeners.size).toBe(1));
+      act(() => {
+        for (let i = 0; i < 30; i++)
+          listeners.forEach((fn) => fn({ timeStamp: i * 16, acceleration: { x: 0, y: 0, z: 0 }, accelerationIncludingGravity: { x: 0, y: 0, z: 9.8 }, rotationRate: { alpha: 0, beta: 0, gamma: 0 } }));
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Zero' })).toBeEnabled());
+      await userEvent.click(screen.getByRole('button', { name: 'Use the app’s sensors' }));
+      expect(await screen.findByTestId('source')).toHaveTextContent('Fake');
+    } finally {
+      spy.mockRestore();
+      delete (globalThis as { DeviceMotionEvent?: unknown }).DeviceMotionEvent;
+      delete (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent;
+    }
+  });
+
+    it('has no sensors in a desktop browser without the app, and says what to do', async () => {
     renderDemo();
     expect(await screen.findByTestId('source')).toHaveTextContent('None');
     expect(await screen.findByRole('alert')).toHaveTextContent(/arrow keys/);

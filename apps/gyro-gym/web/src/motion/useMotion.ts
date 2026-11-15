@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { hasWebMotion, native, type Attitude, type MotionSource, type NativeErrorCode } from '@stacks/native';
+import { hasWebMotion, native, requestWebMotionPermission, type Attitude, type MotionSource, type NativeErrorCode } from '@stacks/native';
 import { MotionStats } from './stats';
 import { ZERO } from './tilt';
 
@@ -44,7 +44,11 @@ export function useMotion(hz: number, want: Want = 'auto'): MotionState {
   useEffect(() => {
     setReadyHz(null);
     setError(null);
-    if (needsTap) return;
+    if (needsTap) {
+      // Nothing streams until the tap: don't leave the last source's readings frozen on screen.
+      stats.current = null;
+      return;
+    }
     const s = new MotionStats(hz);
     stats.current = s;
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -61,10 +65,12 @@ export function useMotion(hz: number, want: Want = 'auto'): MotionState {
   }, [hz, want, needsTap]);
 
   const enable = useCallback(async () => {
-    const answer = await native.motion.requestPermission();
+    // Ask the browser itself: native.motion.requestPermission() answers for the app's sensors
+    // ("granted": they never ask) when the page is in DashyHQ, even if we want the browser's.
+    const answer = willUse === 'web' ? await requestWebMotionPermission(globalThis as never) : await native.motion.requestPermission();
     if (answer === 'granted') setGranted(true);
     else setError({ code: answer === 'denied' ? 'forbidden' : 'unsupported', source: 'web', message: '' });
-  }, []);
+  }, [willUse]);
 
   return { source: willUse, hz: readyHz, error, needsTap, enable, stats };
 }
