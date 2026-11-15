@@ -63,7 +63,20 @@ describe('Lab', () => {
       },
     });
     renderDemo();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/refused/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/DashyHQ didn't let this app use motion \(“not declared”\)\. There's no prompt/);
+  });
+
+  it("explains a browser that turned motion down, after the tap", async () => {
+    const DME = { requestPermission: async () => 'denied' };
+    Object.assign(globalThis, { DeviceMotionEvent: DME });
+    try {
+      renderDemo();
+      expect(await screen.findByTestId('source')).toHaveTextContent('Web');
+      await userEvent.click(screen.getByRole('button', { name: 'Enable motion' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/turned down.*Website Settings/);
+    } finally {
+      delete (globalThis as { DeviceMotionEvent?: unknown }).DeviceMotionEvent;
+    }
   });
 
   it('has no sensors in a desktop browser without the app, and says what to do', async () => {

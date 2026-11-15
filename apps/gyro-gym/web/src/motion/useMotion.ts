@@ -25,7 +25,7 @@ export interface MotionState {
   source: MotionSource;
   /** The rate the source runs at, once started. */
   hz: number | null;
-  error: NativeErrorCode | null;
+  error: MotionProblem | null;
   /** Waiting for the person to tap "Enable motion". */
   needsTap: boolean;
   enable: () => Promise<void>;
@@ -37,7 +37,7 @@ export function useMotion(hz: number, want: Want = 'auto'): MotionState {
   const willUse: MotionSource = want === 'web' ? (hasWebMotion(globalThis as never) ? 'web' : 'none') : native.motion.source;
   const [granted, setGranted] = useState(false);
   const [readyHz, setReadyHz] = useState<number | null>(null);
-  const [error, setError] = useState<NativeErrorCode | null>(null);
+  const [error, setError] = useState<MotionProblem | null>(null);
   const stats = useRef<MotionStats | null>(null);
   const needsTap = willUse === 'web' && webNeedsTap() && !granted;
 
@@ -52,7 +52,7 @@ export function useMotion(hz: number, want: Want = 'auto'): MotionState {
     let live = true;
     stop.ready.then(
       (r) => live && setReadyHz(r.hz),
-      (e: { code?: NativeErrorCode }) => live && setError(e.code ?? 'failed'),
+      (e: { code?: NativeErrorCode; message?: string }) => live && setError({ code: e.code ?? 'failed', source: willUse, message: e.message ?? '' }),
     );
     return () => {
       live = false;
@@ -63,7 +63,7 @@ export function useMotion(hz: number, want: Want = 'auto'): MotionState {
   const enable = useCallback(async () => {
     const answer = await native.motion.requestPermission();
     if (answer === 'granted') setGranted(true);
-    else setError(answer === 'denied' ? 'forbidden' : 'unsupported');
+    else setError({ code: answer === 'denied' ? 'forbidden' : 'unsupported', source: 'web', message: '' });
   }, []);
 
   return { source: willUse, hz: readyHz, error, needsTap, enable, stats };
@@ -83,9 +83,19 @@ export function useTicker(ms: number): number {
 export const ZeroContext = createContext<{ zero: Attitude; setZero: (a: Attitude) => void }>({ zero: ZERO, setZero: () => {} });
 export const useZero = () => useContext(ZeroContext);
 
-export const errorText: Record<NativeErrorCode, string> = {
-  unsupported: 'No motion sensors here. Use the arrow keys or drag in the Maze.',
-  forbidden: 'Motion was refused (this app or this page is not allowed to read it).',
-  cancelled: 'Motion was cancelled.',
-  failed: 'Motion failed to start.',
-};
+/** Why motion didn't start: the error, and whether the app or the browser said it. */
+export interface MotionProblem {
+  code: NativeErrorCode;
+  source: MotionSource;
+  message: string;
+}
+
+/** What to tell the person. The app's own sensors never ask; only the browser's do. */
+export function problemText(p: MotionProblem): string {
+  if (p.code === 'unsupported') return 'No motion sensors here. Use the arrow keys or drag in the Maze.';
+  if (p.code === 'forbidden' && p.source === 'native')
+    return `DashyHQ didn't let this app use motion${p.message ? ` (“${p.message}”)` : ''}. There's no prompt for this: the app decides from what Gyro Gym declares.`;
+  if (p.code === 'forbidden')
+    return 'Motion access was turned down. In Safari, allow Motion & Orientation Access for this site (aA › Website Settings), then reload.';
+  return `Motion didn't start${p.message ? `: ${p.message}` : ''}.`;
+}
