@@ -1,7 +1,7 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
 import { createGoogleVerifier } from '../src/google';
-import { createPlatformHarness } from './helpers';
+import { createPlatformHarness, privateApp, publicApp } from './helpers';
 
 const WEB = 'web-client.apps.googleusercontent.com';
 const IOS = 'ios-client.apps.googleusercontent.com';
@@ -36,7 +36,7 @@ describe('Google ID tokens', () => {
 
 describe('/native/config', () => {
   it('tells the iOS app which hosts open inside it, even during maintenance', async () => {
-    const h = createPlatformHarness();
+    const h = createPlatformHarness({ apps: [privateApp, { ...publicApp, native: ['motion', 'haptics'] }] });
     h.deps.config.maintenance = true;
     const res = await h.call('GET', '/native/config');
     expect(res.status).toBe(200);
@@ -45,8 +45,8 @@ describe('/native/config', () => {
       minShellVersion: '1.0.0',
       authHost: 'auth.stacks.test',
       apps: [
-        { slug: 'club', name: 'Book Club', host: 'club.stacks.test' },
-        { slug: 'hello', name: 'Hello Board', host: 'hello.stacks.test' },
+        { slug: 'club', name: 'Book Club', host: 'club.stacks.test', native: [] },
+        { slug: 'hello', name: 'Hello Board', host: 'hello.stacks.test', native: ['motion', 'haptics'] },
       ],
     });
   });

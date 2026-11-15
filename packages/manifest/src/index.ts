@@ -7,6 +7,15 @@
 export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notifications', 'scheduledJobs', 'email', 'realtime', 'gameServer'] as const;
 export type ModuleName = (typeof MODULES)[number];
 
+/**
+ * What an app may ask of the Stacks iOS app (`@stacks/native`). `motion` is sensitive: adding it is
+ * a platform decision (CI marks the PR for code-owner review, like `needsEmail`).
+ */
+export const NATIVE_CAPABILITIES = ['haptics', 'motion', 'screen'] as const;
+export type NativeCapability = (typeof NATIVE_CAPABILITIES)[number];
+/** Capabilities whose addition needs code-owner review (later kits: camera, microphone, location). */
+export const SENSITIVE_NATIVE_CAPABILITIES: readonly string[] = ['motion', 'camera', 'microphone', 'location'];
+
 export const CSP_DIRECTIVES = ['imgSrc', 'connectSrc', 'scriptSrc', 'styleSrc', 'fontSrc', 'frameSrc', 'mediaSrc'] as const;
 export type CspDirective = (typeof CSP_DIRECTIVES)[number];
 
@@ -59,6 +68,8 @@ export interface AppManifest {
    * (CI marks a PR that adds it for code-owner review). Hidden-email accounts give a relay address.
    */
   needsEmail?: boolean;
+  /** iOS app capabilities the app uses (`@stacks/native`); the app refuses undeclared calls. */
+  native?: NativeCapability[];
   /**
    * Limits for the `gameServer` module (all optional; see {@link GAME_SERVER_DEFAULTS}). Only
    * allowed with `gameServer` in `modules`.
@@ -149,7 +160,7 @@ export function validateManifest(input: unknown): ValidationResult {
 
   const known = new Set([
     '$schema', 'slug', 'name', 'tagline', 'description', 'icon', 'category', 'visibility', 'roles', 'topRole',
-    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets', 'needsEmail', 'gameServer',
+    'defaultRole', 'publicRoutes', 'modules', 'csp', 'accountMenu', 'portalBar', 'owners', 'secrets', 'needsEmail', 'native', 'gameServer',
   ]);
   for (const key of Object.keys(m)) if (!known.has(key)) errors.push(`unknown field "${key}"`);
 
@@ -271,6 +282,13 @@ export function validateManifest(input: unknown): ValidationResult {
     errors.push('"accountMenu" must be "standard" or "custom"');
   }
   if (m.needsEmail !== undefined && typeof m.needsEmail !== 'boolean') errors.push('"needsEmail" must be true or false');
+  if (m.native !== undefined) {
+    if (!Array.isArray(m.native)) errors.push('"native" must be a list of capabilities');
+    else {
+      for (const c of m.native) if (!NATIVE_CAPABILITIES.includes(c as NativeCapability)) errors.push(`unknown native capability "${String(c)}" (known: ${NATIVE_CAPABILITIES.join(', ')})`);
+      if (new Set(m.native).size !== m.native.length) errors.push('"native" lists a capability twice');
+    }
+  }
   if (!Array.isArray(m.owners) || m.owners.length === 0 || !m.owners.every((e) => isString(e) && EMAIL.test(e))) {
     errors.push('"owners" must list at least one email address');
   }

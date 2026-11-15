@@ -47,6 +47,14 @@ describe('validateManifest', () => {
     expect(errorsFor({ needsEmail: 'yes' })).toEqual(['"needsEmail" must be true or false']);
   });
 
+  it('takes a list of known native capabilities, once each', () => {
+    expect(errorsFor({ native: ['haptics', 'motion', 'screen'] })).toEqual([]);
+    expect(errorsFor({ native: [] })).toEqual([]);
+    expect(errorsFor({ native: 'motion' })).toEqual(['"native" must be a list of capabilities']);
+    expect(errorsFor({ native: ['gyro'] })[0]).toMatch(/unknown native capability "gyro".*motion/);
+    expect(errorsFor({ native: ['motion', 'motion'] })).toEqual(['"native" lists a capability twice']);
+  });
+
   it('rejects bad and reserved slugs', () => {
     expect(errorsFor({ slug: 'Book Club' })[0]).toMatch(/slug/);
     expect(errorsFor({ slug: 'ab' })[0]).toMatch(/slug/);

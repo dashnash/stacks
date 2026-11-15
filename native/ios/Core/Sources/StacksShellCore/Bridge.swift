@@ -4,10 +4,12 @@ import Foundation
 public enum BridgeProtocol {
     public static let version = 1
 
-    /// Who may make a call: any page of ours, or only the portal's own page.
+    /// Who may make a call: any page of ours, only the portal's own page, or only an app that
+    /// declared the call's capability (its manifest's `native`, served by /native/config).
     public enum Origins: String {
         case any
         case auth
+        case app
     }
 
     /// Every call this app version understands, and who may make it.
@@ -21,6 +23,26 @@ public enum BridgeProtocol {
         "push.saveDevice": .auth,
         "push.status": .auth,
         "share": .any,
+        "haptics.impact": .app,
+        "haptics.notification": .app,
+        "haptics.pattern": .app,
+        "motion.start": .app,
+        "motion.stop": .app,
+        "screen.immersive": .app,
+        "screen.keepAwake": .app,
+        "screen.lockOrientation": .app,
+    ]
+
+    /// The manifest capability each `.app` call needs.
+    public static let capabilities: [String: String] = [
+        "haptics.impact": "haptics",
+        "haptics.notification": "haptics",
+        "haptics.pattern": "haptics",
+        "motion.start": "motion",
+        "motion.stop": "motion",
+        "screen.immersive": "screen",
+        "screen.keepAwake": "screen",
+        "screen.lockOrientation": "screen",
     ]
 
     public static var callNames: [String] { calls.keys.sorted() }
@@ -97,14 +119,18 @@ public final class BridgeRouter {
 
     public let authHost: String
     private let isOurHost: (String) -> Bool
+    private let capabilities: (String) async -> Set<String>
     private var handlers: [String: Handler] = [:]
 
     /// - Parameters:
     ///   - authHost: the portal's host (`auth.<domain>`): the only page that may call `auth.*`.
     ///   - isOurHost: pages on other hosts get nothing (they shouldn't be in the app at all).
-    public init(authHost: String, isOurHost: @escaping (String) -> Bool) {
+    ///   - capabilities: what the app on a host declared (`native` in /native/config); `.app`
+    ///     calls need theirs. Unknown hosts (or no config yet) declare nothing.
+    public init(authHost: String, isOurHost: @escaping (String) -> Bool, capabilities: @escaping (String) async -> Set<String> = { _ in [] }) {
         self.authHost = authHost.lowercased()
         self.isOurHost = isOurHost
+        self.capabilities = capabilities
     }
 
     public func register(_ name: String, _ handler: @escaping Handler) {
@@ -112,7 +138,7 @@ public final class BridgeRouter {
     }
 
     /// Why this call may not run from this frame, or nil when it may.
-    public func refusal(_ name: String, from frame: FrameInfo) -> BridgeError? {
+    public func refusal(_ name: String, from frame: FrameInfo) async -> BridgeError? {
         guard let origins = BridgeProtocol.calls[name], handlers[name] != nil else {
             return BridgeError(.unsupported, "\"\(name)\" is not something this app does")
         }
@@ -121,6 +147,15 @@ public final class BridgeRouter {
         }
         if origins == .auth && frame.host != authHost {
             return BridgeError(.forbidden, "Only the Stacks portal may ask for \"\(name)\"")
+        }
+        if origins == .app {
+            let needed = BridgeProtocol.capabilities[name] ?? name
+            if frame.host == authHost {
+                return BridgeError(.forbidden, "\"\(name)\" is for apps")
+            }
+            if !(await capabilities(frame.host)).contains(needed) {
+                return BridgeError(.forbidden, "This app hasn't declared \"\(needed)\" (\"native\" in its manifest)")
+            }
         }
         return nil
     }
@@ -141,7 +176,7 @@ public final class BridgeRouter {
         guard request.v == BridgeProtocol.version else {
             return .error(BridgeError(.unsupported, "This app speaks bridge protocol \(BridgeProtocol.version)"))
         }
-        if let refusal = refusal(request.name, from: frame) { return .error(refusal) }
+        if let refusal = await refusal(request.name, from: frame) { return .error(refusal) }
         do {
             return .ok(try await handlers[request.name]!(request.args))
         } catch let e as BridgeError {
@@ -159,15 +194,30 @@ public final class BridgeRouter {
         (function () {
           var handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.stacks;
           if (!handler || window.stacksNative) return;
+          var listeners = {};
           var host = Object.freeze({
             protocol: \(BridgeProtocol.version),
             platform: "\(platform)",
             version: "\(version)",
             calls: Object.freeze([\(calls)]),
-            call: function (name, args) { return handler.postMessage({ v: \(BridgeProtocol.version), name: name, args: args || {} }); }
+            call: function (name, args) { return handler.postMessage({ v: \(BridgeProtocol.version), name: name, args: args || {} }); },
+            listen: function (channel, fn) {
+              (listeners[channel] = listeners[channel] || []).push(fn);
+              return function () { listeners[channel] = (listeners[channel] || []).filter(function (f) { return f !== fn; }); };
+            },
+            _emit: function (channel, payload) {
+              (listeners[channel] || []).slice().forEach(function (fn) { try { fn(payload); } catch (e) { setTimeout(function () { throw e; }); } });
+            }
           });
           Object.defineProperty(window, "stacksNative", { value: host, writable: false, configurable: false });
         })();
         """
+    }
+
+    /// The script that hands an event to the page's listeners on `channel` (`payloadJSON` is
+    /// already JSON).
+    public static func emitScript(channel: String, payloadJSON: String) -> String {
+        let quoted = (try? JSONEncoder().encode(channel)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+        return "window.stacksNative && window.stacksNative._emit(\(quoted), \(payloadJSON));"
     }
 }

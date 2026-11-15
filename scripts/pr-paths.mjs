@@ -1,12 +1,18 @@
+/** Native capabilities whose addition is a platform decision (`SENSITIVE_NATIVE_CAPABILITIES` in @stacks/manifest). */
+export const SENSITIVE_NATIVE = ['motion', 'camera', 'microphone', 'location'];
+
 /**
- * Manifest changes that are platform decisions even inside an app folder (spec: Identity v2):
- * turning on `needsEmail`. `manifests` maps a slug to its manifest before and after the PR
+ * Manifest changes that are platform decisions even inside an app folder (spec: Identity v2 and
+ * Native capabilities): turning on `needsEmail`, or adding a sensitive `native` capability. `manifests` maps a slug to its manifest before and after the PR
  * (`null` when the file didn't exist). Returns one line per finding.
  */
 export function sensitiveManifestChanges(manifests = {}) {
   const found = [];
   for (const [slug, { before, after }] of Object.entries(manifests)) {
     if (after?.needsEmail === true && before?.needsEmail !== true) found.push(`apps/${slug}: turns on "needsEmail" (the app would get people's email addresses)`);
+    const had = new Set(Array.isArray(before?.native) ? before.native : []);
+    const added = (Array.isArray(after?.native) ? after.native : []).filter((c) => SENSITIVE_NATIVE.includes(c) && !had.has(c));
+    for (const c of added) found.push(`apps/${slug}: adds the "${c}" native capability (the iOS app's ${c} sensors)`);
   }
   return found;
 }
@@ -18,7 +24,7 @@ export function sensitiveManifestChanges(manifests = {}) {
  * - Any other PR that changes only apps/ is an app PR: it may change one app, never two.
  * - A PR that changes anything outside apps/ is platform work and needs CODEOWNERS review; it may
  *   also touch apps (e.g. an SDK change that updates an app using it).
- * - Turning on a sensitive manifest field (`needsEmail`) is platform work wherever it happens, and
+ * - Turning on a sensitive manifest field (`needsEmail`, a sensitive `native` entry) is platform work wherever it happens, and
  *   an app branch can't do it at all (see sensitiveManifestChanges).
  *
  * Returns { ok, kind: 'app' | 'platform' | 'none', apps, message }.

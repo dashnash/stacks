@@ -77,6 +77,8 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
+        # Motion games (the Game kit; apps that declare "motion"). Worded for a platform: one string for every app.
+        NSMotionUsageDescription: Apps you use in DashyHQ can use motion sensors when you play a motion game.
         StacksRootDomain: $(STACKS_ROOT_DOMAIN)
         StacksOtherRoots: $(STACKS_OTHER_ROOTS)
         StacksPushEnvironment: $(STACKS_APS_ENVIRONMENT)

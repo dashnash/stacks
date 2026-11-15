@@ -19,12 +19,21 @@ final class Shell: NSObject, ObservableObject {
     let webView: WKWebView
     let router: BridgeRouter
     let push: PushRegistrar
+    /// What each app declared it may ask for (`native` in /native/config).
+    let nativeConfig: NativeConfigStore
+    lazy var gameKit = GameKitHardware(shell: self)
 
     /// Why the last page didn't load (shown as "Can't reach DashyHQ" with a retry), or nil.
     @Published var loadError: String?
     @Published var failedURL: URL?
     /// The web needs a newer app than this one.
     @Published var needsUpdate = false
+    /// A game asked for the whole screen (`screen.immersive`): no status bar or home indicator.
+    @Published private(set) var immersive = false
+    /// What the app may rotate to now (`screen.lockOrientation`); AppDelegate hands it to UIKit.
+    var orientationMask: UIInterfaceOrientationMask
+    let defaultOrientationMask: UIInterfaceOrientationMask
+    private var refreshControl: UIRefreshControl?
 
     private var lastLoaded: URL?
     private static let lastURLKey = "stacks.lastURL"
@@ -33,7 +42,13 @@ final class Shell: NSObject, ObservableObject {
     init(settings: ShellSettings) {
         self.settings = settings
         push = PushRegistrar(environment: settings.pushEnvironment)
-        router = BridgeRouter(authHost: settings.policy.authHost, isOurHost: settings.policy.isOurHost)
+        let nativeConfig = NativeConfigStore(url: settings.nativeConfigURL)
+        self.nativeConfig = nativeConfig
+        router = BridgeRouter(authHost: settings.policy.authHost, isOurHost: settings.policy.isOurHost, capabilities: { host in
+            await nativeConfig.capabilities(forHost: host)
+        })
+        defaultOrientationMask = UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
+        orientationMask = defaultOrientationMask
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default() // the platform's and apps' cookies, kept across launches
@@ -55,6 +70,7 @@ final class Shell: NSObject, ObservableObject {
         let refresh = UIRefreshControl()
         refresh.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
         webView.scrollView.refreshControl = refresh
+        refreshControl = refresh
 
         NativeHandlers.register(on: router, shell: self)
         let defaults = UserDefaults.standard
@@ -89,13 +105,21 @@ final class Shell: NSObject, ObservableObject {
     }
 
     private func checkForUpdate() async {
-        do {
-            let (data, _) = try await URLSession.shared.data(from: settings.nativeConfigURL)
-            let config = try JSONDecoder().decode(NativeConfig.self, from: data)
-            needsUpdate = config.needsUpdate(appVersion: settings.appVersion)
-        } catch {
-            // Offline or an older platform: carry on.
-        }
+        // Offline or an older platform: carry on.
+        guard let config = await nativeConfig.current() else { return }
+        needsUpdate = config.needsUpdate(appVersion: settings.appVersion)
+    }
+
+    /// Back in the app: apps may have changed what they declare since /native/config was read.
+    func becameActive() {
+        Task { await nativeConfig.forget() }
+    }
+
+    /// `screen.immersive`: no status bar, home indicator, swipe-back or pull-to-refresh.
+    func setImmersive(_ on: Bool) {
+        immersive = on
+        webView.allowsBackForwardNavigationGestures = !on
+        webView.scrollView.refreshControl = on ? nil : refreshControl
     }
 
     /// The view controller to present sheets from (the topmost one).
@@ -153,6 +177,11 @@ extension Shell: WKNavigationDelegate, WKUIDelegate {
         decisionHandler(.allow)
     }
 
+    /// A new page (or a reload) replaced the old one: whatever the old one turned on stops.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        gameKit.reset()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         finishedLoading()
         if let url = webView.url {
@@ -180,7 +209,19 @@ extension Shell: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        gameKit.reset()
         webView.reload()
+    }
+
+    /// The web's own motion events (DeviceMotionEvent, the fallback): only for apps that declared
+    /// "motion", and iOS still asks the person.
+    func webView(_ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let host = origin.host
+        let allowedPage = frame.isMainFrame && origin.protocol == "https" && settings.policy.isOurHost(host)
+        Task { @MainActor in
+            let declared = allowedPage ? await nativeConfig.capabilities(forHost: host).contains("motion") : false
+            decisionHandler(declared ? .prompt : .deny)
+        }
     }
 
     /// `target="_blank"` links and `window.open`: ours in this view, others in Safari.

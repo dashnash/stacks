@@ -10,6 +10,9 @@ need a `defaultRole` that cannot manage access; CSP additions must be https orig
 `secrets` are at most 10 `{ name: "UPPER_CASE", description?, optional? }`, with names only (never values);
 `needsEmail: true` (off by default) gives the app people's email addresses: a platform decision, reviewed by the code owners.
 
+`native: ["haptics", "motion", "screen"]` (`NATIVE_CAPABILITIES`) declares what the app asks of the iOS app
+(`@stacks/native`); the app refuses undeclared calls. Adding `motion` is sensitive (`SENSITIVE_NATIVE_CAPABILITIES`): code-owner review.
+
 `modules`: `comments`, `votes`, `contentPacks`, `uploads`, `notifications`, `scheduledJobs`, `email`,
 `realtime` (live events over an AppSync Event API of the app's own; see `@stacks/api` "Realtime"),
 `gameServer` (a server-run game room per Fargate task; see `@stacks/game-server`). `gameServer`

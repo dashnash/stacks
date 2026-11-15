@@ -43,7 +43,10 @@ final class ProtocolFileTests: XCTestCase {
         XCTAssertEqual(calls.keys.sorted(), BridgeProtocol.callNames)
         for (name, call) in calls {
             XCTAssertEqual(field(call, "origins").stringValue, BridgeProtocol.calls[name]?.rawValue, name)
+            XCTAssertEqual(field(call, "capability").stringValue, BridgeProtocol.capabilities[name], name)
         }
+        guard case .array(let example)? = Optional(field(file, "global", "example", "calls")) else { return XCTFail("no example calls") }
+        XCTAssertEqual(example.compactMap { $0.stringValue }, BridgeProtocol.callNames)
         guard case .array(let codes) = field(file, "errorCodes") else { return XCTFail("no errorCodes") }
         XCTAssertEqual(codes.compactMap { $0.stringValue }, ["unsupported", "forbidden", "cancelled", "failed"])
         XCTAssertEqual(codes.compactMap { $0.stringValue.flatMap(BridgeErrorCode.init(rawValue:)) }.count, 4)
@@ -114,8 +117,18 @@ final class BridgeRouterTests: XCTestCase {
         let js = BridgeRouter.injectedScript(appVersion: "1.2.3")
         XCTAssertTrue(js.contains("protocol: 1"))
         XCTAssertTrue(js.contains("version: \"1.2.3\""))
-        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.apple\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"push.register\",\"push.saveDevice\",\"push.status\",\"share\"])"))
+        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.apple\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"haptics.impact\",\"haptics.notification\",\"haptics.pattern\",\"motion.start\",\"motion.stop\",\"push.register\",\"push.saveDevice\",\"push.status\",\"screen.immersive\",\"screen.keepAwake\",\"screen.lockOrientation\",\"share\"])"))
         XCTAssertTrue(js.contains("messageHandlers.stacks"))
+        XCTAssertTrue(js.contains("listen: function (channel, fn)"))
+        XCTAssertTrue(js.contains("_emit: function (channel, payload)"))
+    }
+
+    func testTheEmitScriptQuotesTheChannel() {
+        XCTAssertEqual(
+            BridgeRouter.emitScript(channel: "motion-1", payloadJSON: "{\"samples\":[]}"),
+            "window.stacksNative && window.stacksNative._emit(\"motion-1\", {\"samples\":[]});"
+        )
+        XCTAssertTrue(BridgeRouter.emitScript(channel: "a\"); alert(1); (\"", payloadJSON: "{}").contains("_emit(\"a\\\"); alert(1); (\\\"\", {})"))
     }
 
     func testJSONValuesRoundTripThroughFoundation() throws {
@@ -123,3 +136,61 @@ final class BridgeRouterTests: XCTestCase {
         XCTAssertEqual(try JSONValue(foundation: v.foundationValue), v)
     }
 }
+
+final class AppCapabilityTests: XCTestCase {
+    private let gyro = FrameInfo(scheme: "https", host: "gyro-gym.dashnash.ninja", isMainFrame: true)
+
+    private func gameRouter() -> BridgeRouter {
+        let policy = NavigationPolicy(rootDomain: "dashnash.ninja", otherRoots: ["test.dashnash.ninja"])
+        let config = NativeConfig(protocol: 1, minShellVersion: "1.0.0", authHost: policy.authHost, apps: [
+            .init(slug: "gyro-gym", name: "Gyro Gym", host: "gyro-gym.dashnash.ninja", native: ["motion", "haptics"]),
+            .init(slug: "hello", name: "Hello Board", host: "hello.dashnash.ninja"),
+        ])
+        let r = BridgeRouter(authHost: policy.authHost, isOurHost: policy.isOurHost, capabilities: { config.capabilities(forHost: $0) })
+        for name in BridgeProtocol.capabilities.keys { r.register(name) { _ in .object([:]) } }
+        return r
+    }
+
+    func testAnAppThatDeclaredACapabilityMayUseIt() async {
+        let r = gameRouter()
+        let started = await r.handle(BridgeRequest(name: "motion.start"), from: gyro)
+        XCTAssertEqual(started, .ok(.object([:])))
+        let buzz = await r.handle(BridgeRequest(name: "haptics.impact"), from: gyro)
+        XCTAssertEqual(buzz, .ok(.object([:])))
+    }
+
+    func testUndeclaredCapabilitiesThePortalAndIframesAreRefused() async {
+        let r = gameRouter()
+        let cases: [(String, FrameInfo)] = [
+            ("screen.immersive", gyro), // gyro-gym didn't declare "screen"
+            ("motion.start", anApp), // hello declared nothing
+            ("motion.start", portal),
+            ("motion.start", FrameInfo(scheme: "https", host: "gyro-gym.dashnash.ninja", isMainFrame: false)),
+            ("motion.start", FrameInfo(scheme: "https", host: "gyro-gym.test.dashnash.ninja", isMainFrame: true)),
+        ]
+        for (name, frame) in cases {
+            let reply = await r.handle(BridgeRequest(name: name), from: frame)
+            guard case .error(let e) = reply else { return XCTFail("\(name) from \(frame) was allowed") }
+            XCTAssertEqual(e.code, .forbidden, "\(name) from \(frame)")
+        }
+        let undeclared = await r.handle(BridgeRequest(name: "motion.start"), from: anApp)
+        XCTAssertEqual(undeclared, .error(BridgeError(.forbidden, "This app hasn't declared \"motion\" (\"native\" in its manifest)")))
+    }
+
+    func testWithoutAConfigNoAppHasCapabilities() async {
+        let r = BridgeRouter(authHost: "auth.dashnash.ninja", isOurHost: { _ in true })
+        r.register("haptics.impact") { _ in .object([:]) }
+        let reply = await r.handle(BridgeRequest(name: "haptics.impact"), from: gyro)
+        guard case .error(let e) = reply else { return XCTFail() }
+        XCTAssertEqual(e.code, .forbidden)
+    }
+
+    func testNativeConfigReadsCapabilitiesAndOlderConfigsWithout() throws {
+        let json = #"{"protocol":1,"minShellVersion":"1.0.0","authHost":"auth.dashnash.ninja","apps":[{"slug":"gyro-gym","name":"Gyro Gym","host":"gyro-gym.dashnash.ninja","native":["motion"]},{"slug":"hello","name":"Hello Board","host":"hello.dashnash.ninja"}]}"#
+        let config = try JSONDecoder().decode(NativeConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(config.capabilities(forHost: "Gyro-Gym.dashnash.ninja"), ["motion"])
+        XCTAssertEqual(config.capabilities(forHost: "hello.dashnash.ninja"), [])
+        XCTAssertEqual(config.capabilities(forHost: "auth.dashnash.ninja"), [])
+    }
+}
+

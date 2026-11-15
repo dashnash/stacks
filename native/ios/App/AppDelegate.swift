@@ -19,6 +19,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// A game may lock the orientation (screen.lockOrientation).
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        shell.orientationMask
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        shell.becameActive()
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         shell.push.didRegister(token: deviceToken)
     }

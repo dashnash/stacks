@@ -13,9 +13,17 @@
         "auth.google",
         "auth.signedOut",
         "badge.set",
+        "haptics.impact",
+        "haptics.notification",
+        "haptics.pattern",
+        "motion.start",
+        "motion.stop",
         "push.register",
         "push.saveDevice",
         "push.status",
+        "screen.immersive",
+        "screen.keepAwake",
+        "screen.lockOrientation",
         "share"
       ]
     }
@@ -48,6 +56,41 @@
     "cancelled",
     "failed"
   ],
+  "origins": {
+    "any": "Any page of ours (the portal or an app), main frame only.",
+    "auth": "Only the portal's own page.",
+    "app": "Only an app's page whose GET /native/config entry lists the call's `capability` (its manifest's `native`). The portal may not."
+  },
+  "events": {
+    "doc": "Streams (motion) arrive as window.stacksNative._emit(channel, payload); pages subscribe with window.stacksNative.listen(channel, fn), which returns a function that unsubscribes. A batch holds every sample since the last frame. Units: g (acceleration, gravity), rad/s (rotationRate), rad (attitude); `t` is seconds since the stream started.",
+    "motion": {
+      "samples": [
+        {
+          "t": 0.01,
+          "userAcceleration": {
+            "x": 0.01,
+            "y": -0.02,
+            "z": 0.0
+          },
+          "rotationRate": {
+            "x": 0.1,
+            "y": 0.0,
+            "z": -0.05
+          },
+          "gravity": {
+            "x": 0.0,
+            "y": -0.71,
+            "z": -0.71
+          },
+          "attitude": {
+            "roll": 0.0,
+            "pitch": 0.79,
+            "yaw": 0.12
+          }
+        }
+      ]
+    }
+  },
   "calls": {
     "app.info": {
       "doc": "The app's version, build, the git commit CI built it from (\"\" for a local Xcode build; absent in builds made before this field), and platform.",
@@ -92,6 +135,72 @@
       },
       "result": {}
     },
+    "haptics.impact": {
+      "doc": "A tap you feel (UIImpactFeedbackGenerator). Apps that declare \"haptics\".",
+      "origins": "app",
+      "capability": "haptics",
+      "args": {
+        "style": "heavy"
+      },
+      "result": {}
+    },
+    "haptics.notification": {
+      "doc": "A success, warning or error buzz (UINotificationFeedbackGenerator).",
+      "origins": "app",
+      "capability": "haptics",
+      "args": {
+        "type": "success"
+      },
+      "result": {}
+    },
+    "haptics.pattern": {
+      "doc": "A custom pattern (Core Haptics): at most 32 events within 5 s. `t` and `duration` in seconds; `intensity` and `sharpness` 0-1; an event with `duration` is continuous, else a tap.",
+      "origins": "app",
+      "capability": "haptics",
+      "args": {
+        "events": [
+          {
+            "t": 0,
+            "intensity": 1,
+            "sharpness": 0.5
+          },
+          {
+            "t": 0.1,
+            "intensity": 0.6,
+            "sharpness": 0.2,
+            "duration": 0.3
+          }
+        ]
+      },
+      "result": {}
+    },
+    "motion.start": {
+      "doc": "Streams CoreMotion device motion at `hz` (10-100; asked-for rates are clamped) to `channel`, batched once per display frame (see events). `sensors` picks the fields of each sample (default all four). Starting again stops the previous stream. Stops when the page goes away; pauses while the app is in the background. Apps that declare \"motion\".",
+      "origins": "app",
+      "capability": "motion",
+      "args": {
+        "hz": 100,
+        "sensors": [
+          "userAcceleration",
+          "rotationRate",
+          "gravity",
+          "attitude"
+        ]
+      },
+      "result": {
+        "channel": "motion-1",
+        "hz": 100
+      }
+    },
+    "motion.stop": {
+      "doc": "Stops the stream on `channel` (no error if it already stopped).",
+      "origins": "app",
+      "capability": "motion",
+      "args": {
+        "channel": "motion-1"
+      },
+      "result": {}
+    },
     "push.register": {
       "doc": "Asks for permission (the system prompt, the first time) and returns the APNs token for the portal to register with POST /devices. `cancelled` when the person says no; `env` is sandbox for Xcode builds.",
       "origins": "auth",
@@ -120,6 +229,33 @@
         "permission": "granted",
         "deviceId": "5f2c8e1a-0d3b-4c55-9a43-2f6f1d7b8e90"
       }
+    },
+    "screen.immersive": {
+      "doc": "`on`: hides the status bar and home indicator and turns off swipe-back and pull-to-refresh, until turned off or the page goes away.",
+      "origins": "app",
+      "capability": "screen",
+      "args": {
+        "on": true
+      },
+      "result": {}
+    },
+    "screen.keepAwake": {
+      "doc": "`on`: the screen doesn't dim or lock, until turned off or the page goes away.",
+      "origins": "app",
+      "capability": "screen",
+      "args": {
+        "on": true
+      },
+      "result": {}
+    },
+    "screen.lockOrientation": {
+      "doc": "Locks to `portrait` or `landscape`; `any` unlocks. Unlocked when the page goes away.",
+      "origins": "app",
+      "capability": "screen",
+      "args": {
+        "orientation": "portrait"
+      },
+      "result": {}
     },
     "share": {
       "doc": "The system share sheet.",
