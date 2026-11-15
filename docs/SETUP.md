@@ -88,8 +88,7 @@ Staging deploys can now only do what `stacks-test-cfn-exec` allows: no IAM users
 **When `packages/infra/src/ci-stack.ts` changes** (e.g. the `realtime` module added AppSync Event
 APIs to `stacks-test-cfn-exec` and `appsync:EventConnect`/`EventPublish` to `stacks-test-boundary`;
 the `gameServer` module (#44) added the VPC, ECS, alarm and SNS statements to `stacks-test-cfn-exec`
-and running tasks, passing task roles, `appsync:EventSubscribe` and image pulls to `stacks-test-boundary` (the ECR image-pull statement is
-unused now that game servers run a public image, and can go the next time this stack changes);
+and running tasks, passing task roles and `appsync:EventSubscribe` to `stacks-test-boundary`;
 monitoring (#75) added the `stacks-test` dashboard to `stacks-test-cfn-exec`),
 redeploy it from your machine with admin credentials before merging anything that needs it:
 `cd infra && npx cdk deploy -c ci=true stacks-ci`. CI never deploys this stack.
