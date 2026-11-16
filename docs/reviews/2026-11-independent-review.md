@@ -21,7 +21,7 @@ internals of individual apps beyond their blast radius.
 ## 1. Summary
 
 The design is careful and most of it is real: per-app sessions, hashed tokens, PKCE, no stored
-AWS keys, ephemeral runners, a staging stage that has stopped six bad merges before production.
+AWS keys, ephemeral runners, and a pipeline in which all six failed Deploy runs stopped before production.
 The weak points are at the edges of that design. The staging/production boundary inside the one
 AWS account rests on a tag condition that S3, Route 53 and hand-made parameters do not honour, and
 the review rules the security model depends on (CODEOWNERS, required checks) are not enforceable on
@@ -175,8 +175,8 @@ administrator.
   requests per second with a burst of 100 (`packages/infra/src/platform-stack.ts:210`); no route
   has its own, and there is no per-caller limit or WAF. `POST /api/apps/:slug/request` notifies
   every approver of a private app.
-- **Impact:** one visitor can use the whole platform's budget of requests, which signs everyone
-  else out of the sign-in path for as long as they keep it up; cost is bounded by the throttle.
+- **Impact:** one visitor can use the whole platform's budget of requests, which locks everyone
+  else out of sign-in for as long as they keep it up; cost is bounded by the throttle.
 - **Recommendation:** per-route throttles on `/api/auth/*` and `/api/apps/*/request`, or correct
   the spec.
 
@@ -406,7 +406,8 @@ administrator.
   60-second codes bound to app and redirect URI, exact-match redirect and logout-return checks
   (probed live: a foreign `return` is refused).
 - Security headers are present and identical on every live host checked.
-- Staging stopped six bad merges in eight days; none reached the production job.
+- All six failed Deploy runs in eight days stopped before the production job (four in build, one
+  in the zone lookup, one in staging).
 - Production tables are retained with point-in-time recovery; the game server image is pinned by
   digest.
 - 101 test files and about 780 test cases for an eight-day-old codebase, including an in-memory
