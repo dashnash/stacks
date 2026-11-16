@@ -54,7 +54,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Access requests | In-app badge only (no email in v1) |
 | Account menu | The same control at the top right of the portal and every app: sign in, your apps, inbox, settings, manage access, app-specific items, sign out (of everything). Required in every app, enforced by a test |
 | Shared modules | All Tier 3 modules except runtime AI inference |
-| Deploys | Only CI deploys. `CODEOWNERS` gates `packages/` and `infra/`; app folders deploy on green CI |
+| Deploys | Only CI deploys. The repo is public and a ruleset on `main` (`.github/rulesets/main.json`) enforces PRs, green CI and `CODEOWNERS` review of shared code; app folders deploy on green CI |
 | Testing | In-browser demo mode for previews; one shared staging platform deployable from a Claude session via CI |
 | Book Club | Migrates as app #1 with its data; current members and roles pre-loaded into the grid; members sign in once more |
 | Audience | Different groups per app, up to a few dozen users at first |
@@ -401,7 +401,7 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 
 - No AWS credentials in sessions; only CI deploys.
 - `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task. CI's path check (`scripts/pr-paths.mjs`): a PR from an `app/<slug>/…` branch may change only `apps/<slug>/` (and the lockfile); any other PR that changes only `apps/` may change one app, never two; a PR that changes anything outside `apps/` is platform work for `CODEOWNERS` review. The check writes the PR's kind to the run summary.
-- Enforcement at merge needs branch protection (required checks and code-owner review), which GitHub offers for private repos only on paid plans. Until then these rules hold only if whoever merges follows them; keep merge rights to the platform owner.
+- Enforcement at merge: the repo is public, so GitHub Free enforces the ruleset in `.github/rulesets/main.json` (see Security → Merge gate). Every push to `main` deploys production, so this ruleset, not `CODEOWNERS` alone, is what keeps write access from being production access.
 - The manifest schema caps CSP additions and module choices; anything else needs a platform PR.
 
 ## Environments and CI/CD
@@ -468,7 +468,8 @@ The design assumes any single app may be buggy or malicious and limits what it c
 - **Headers**: CSP per app (default from Book Club's policy plus manifest additions), HSTS, `nosniff`, `frame-ancestors 'none'`, strict referrer policy.
 - **Throttling**: API Gateway rate limits per app; the platform API has its own, tighter limits on login and request-access.
 - **Revocation**: removing a grant or a user deletes their app sessions at once; super-admin can force sign-out everywhere.
-- **Supply chain**: `CODEOWNERS` review on shared code, lockfile committed, Dependabot on, no install scripts from new dependencies without review.
+- **Merge gate** (#93): every push to `main` deploys production, so `main` is protected by the ruleset in `.github/rulesets/main.json`, applied with `gh api` (`docs/SETUP.md` §4): no direct pushes, deletion or force pushes; `CI / check` must pass; `CODEOWNERS` paths need the owner's review (dismissed by a later push); repository admins may bypass only through a PR. The repo is public so this is free; fork PRs need the owner's approval to run, get no secrets or OIDC token, and never run on self-hosted runners.
+- **Supply chain**: `CODEOWNERS` review on shared code (enforced by the merge gate), lockfile committed, Dependabot on, no install scripts from new dependencies without review.
 - **Privacy**: apps see only the user id, display name and avatar of users with a grant, plus the email for apps whose manifest has `needsEmail` (a code-owner decision: CI flags a PR that turns it on, and refuses it on an app branch); full Google names are never sent, as in Book Club.
 
 ## Build plan

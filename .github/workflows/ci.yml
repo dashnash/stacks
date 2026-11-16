@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   check:
-    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    # Public repo: PRs from forks never run on the self-hosted runner (#93).
+    runs-on: ${{ (vars.LINUX_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
