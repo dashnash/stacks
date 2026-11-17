@@ -68,6 +68,12 @@ If it says `"use_immutable_subject": true`, copy its `sub_claim_prefix` into `gi
 in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
 `repo:dashnash@3804293/stacks@1449992124`, which survives renames). Otherwise leave it out.
 
+`stacks-ci` also creates the account's monthly cost budget `stacks-monthly` (#98): `budget.monthlyUsd`
+in `stacks.config.json` (50 USD), with emails to the first production `platformAdmins` address at 80%
+of actual and 100% of forecast spend (no confirmation needed; forecast alerts start once AWS has
+about five weeks of usage history). Check Billing → Budgets for an older
+budget first; keeping both only means two emails.
+
 `stacks-ci` creates the GitHub OIDC provider (pass `existingOidcProviderArn` in `bin/stacks.ts` if
 the account already has one), the roles `stacks-ci-production` and `stacks-ci-staging`, and the
 staging guardrail policies `stacks-test-cfn-exec` and `stacks-test-boundary`. Note the two role

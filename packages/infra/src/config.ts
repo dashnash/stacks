@@ -101,6 +101,8 @@ export interface StacksConfig {
   githubRepo: string;
   /** OIDC `sub` prefix GitHub sends for the repo (needed when it uses immutable subject claims). */
   githubSubjectPrefix?: string;
+  /** The account's monthly cost budget (#98), in USD; alerts go to production's first platform admin. */
+  budget?: { monthlyUsd: number };
   environments: Record<EnvName, EnvConfig>;
 }
 
@@ -122,6 +124,9 @@ export function loadStacksConfig(path: string): StacksConfig {
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.githubRepo ?? '')) throw new Error(`${path}: githubRepo must be "owner/repo"`);
   if (config.githubSubjectPrefix !== undefined && !/^repo:[^:\s]+$/.test(config.githubSubjectPrefix)) {
     throw new Error(`${path}: githubSubjectPrefix must look like "repo:owner/repo" or "repo:owner@id/repo@id"`);
+  }
+  if (config.budget !== undefined && !(Number.isFinite(config.budget?.monthlyUsd) && config.budget.monthlyUsd > 0)) {
+    throw new Error(`${path}: budget.monthlyUsd must be a positive number`);
   }
   return config;
 }
