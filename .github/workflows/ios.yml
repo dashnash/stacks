@@ -46,7 +46,7 @@ jobs:
     outputs:
       app: ${{ steps.changes.outputs.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Did anything that goes into the app change?
@@ -75,7 +75,7 @@ jobs:
             echo "::notice title=No macOS build::Nothing that goes into the app changed (only $(printf '%s\n' "$changed" | wc -l | tr -d ' ') other file(s))."
             echo "app=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Build settings match stacks.config.json
@@ -92,7 +92,7 @@ jobs:
     runs-on: ${{ (vars.MACOS_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Use the newest Xcode
         run: |
           # For this job only: no sudo, and the machine's Xcode selection is left alone (the runner may be a shared Mac).
@@ -138,7 +138,7 @@ jobs:
           fi
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/spm
           key: spm-${{ hashFiles('native/ios/project.yml') }}
@@ -168,8 +168,8 @@ jobs:
     outputs:
       build: ${{ steps.upload.outputs.build }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Set up yet?
@@ -257,7 +257,7 @@ jobs:
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
         if: steps.ready.outputs.go == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/spm
           key: spm-${{ hashFiles('native/ios/project.yml') }}
@@ -427,8 +427,8 @@ jobs:
     timeout-minutes: 30
     environment: ios-release
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Write "What to Test"

@@ -1,0 +1,21 @@
+/**
+ * Every `uses:` in a workflow must be pinned (#99): an action to a full 40-hex commit SHA, a
+ * Docker image to a digest. Local actions (`./…`) are fine. Returns one line per offender.
+ */
+export function unpinnedActions(files) {
+  const found = [];
+  for (const [file, text] of Object.entries(files)) {
+    text.split('\n').forEach((line, i) => {
+      const m = /^\s*(?:-\s+)?uses:\s*['"]?([^'"\s#]+)/.exec(line);
+      if (!m) return;
+      const ref = m[1];
+      if (ref.startsWith('./')) return;
+      if (ref.startsWith('docker://')) {
+        if (!/@sha256:[0-9a-f]{64}$/.test(ref)) found.push(`${file}:${i + 1}: ${ref} (pin the image by digest: …@sha256:<digest>)`);
+        return;
+      }
+      if (!/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/.test(ref)) found.push(`${file}:${i + 1}: ${ref} (pin to a full commit SHA, with a "# vX.Y.Z" comment)`);
+    });
+  }
+  return found;
+}
