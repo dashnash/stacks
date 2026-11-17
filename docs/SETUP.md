@@ -98,7 +98,18 @@ redeploy it from your machine with admin credentials before merging anything tha
 - **Environments** (Settings → Environments): create `staging` and `production`. For each, set
   *Deployment branches* to **Selected branches: `main`**, and add the variable
   `AWS_STAGING_ROLE_ARN` / `AWS_PRODUCTION_ROLE_ARN` with the ARN from step 2.
-- **Branch protection on `main`**: require the `CI / check` status and review from code owners.
+- **Fork pull requests** (Settings → Actions → General → Fork pull request workflows): **Require
+  approval for all external contributors**. The repo is public; fork PRs get no secrets or OIDC
+  token, and never run on the self-hosted runners (step 9).
+- **Ruleset on `main`** (#93; free because the repo is public). The rules live in
+  `.github/rulesets/main.json`: no deletion or force push, every change through a PR, the `check`
+  job of `CI` green, and code-owner review on `CODEOWNERS` paths (app-only PRs merge on green CI).
+  Repository admins may bypass only through a PR (to merge their own), so nobody pushes straight to
+  `main`. Apply it once, and again after editing the file (`PUT …/rulesets/<id>` to update):
+
+  ```bash
+  gh api -X POST repos/dashnash/stacks/rulesets --input .github/rulesets/main.json
+  ```
 
 ## 5. First deploy
 
@@ -171,7 +182,10 @@ to run them on the owner's own hardware: two ephemeral runners managed as code i
 runner and its own Docker daemon, and job traffic can reach the internet but not the home network.
 The production deploy runs there too; its AWS access is still the GitHub OIDC role, unchanged.
 
-The iOS app build jobs (`macos-26`) always stay on GitHub-hosted runners.
+The iOS app build jobs (`macos-26`) always stay on GitHub-hosted runners. Jobs that run on pull
+requests add `github.event.pull_request.head.repo.full_name == github.repository` to that
+condition, so a PR from a fork always runs on `ubuntu-latest`, never on the owner's hardware
+(`tools/app-conformance/tests/repo-guard.test.ts` checks it).
 
 To fall back (runners down, or to compare), delete the variable or set it empty: no PR needed.
 Jobs already queued for the self-hosted label keep waiting, so cancel and re-run them.
