@@ -18,7 +18,22 @@ export interface CiStackProps {
   region: string;
   /** Reuse an existing GitHub OIDC provider in the account instead of creating one. */
   existingOidcProviderArn?: string;
+  /**
+   * DNS names staging deploys may create records for (#94): each staging root domain and
+   * `*.<root>` (`stagingRecordNames()`). Without it staging may change no record at all.
+   */
+  stagingRecordNames?: string[];
 }
+
+/** The staging root domains in a config: `rootDomain` and each legacy redirect's. */
+export const stagingRootDomains = (env: { rootDomain: string; legacyRedirects?: Array<{ rootDomain: string }> }) => [
+  env.rootDomain,
+  ...(env.legacyRedirects ?? []).map((r) => r.rootDomain),
+];
+
+/** The record names a staging deploy may write: each staging root domain (and legacy root), and everything under it. */
+export const stagingRecordNames = (rootDomains: string[]) =>
+  [...new Set(rootDomains.map((d) => d.toLowerCase().replace(/\.$/, '')))].flatMap((d) => [d, `*.${d}`]);
 
 /**
  * Deployed once, by hand, with admin credentials. It lets GitHub Actions deploy without stored
@@ -31,7 +46,10 @@ export interface CiStackProps {
  *   with it instead of AdministratorAccess);
  * - `stacks-test-boundary`: the permissions boundary every role a staging deploy creates must carry.
  *
- * Both staging policies deny anything on resources tagged `stacks:env=production`.
+ * Both staging policies deny anything on resources tagged `stacks:env=production`, and (#94) name
+ * production's buckets and parameters explicitly, because S3 buckets and hand-made SSM parameters
+ * don't carry that tag where IAM can see it. S3 and SSM are allowed only on staging names, and
+ * Route 53 changes only on staging record names.
  */
 export class CiStack extends cdk.Stack {
   readonly roles: Record<EnvName, iam.Role>;
@@ -75,6 +93,21 @@ export class CiStack extends cdk.Stack {
     const prodTagged = { StringEquals: { 'aws:ResourceTag/stacks:env': 'production' } };
     const boundaryArn = `arn:${this.partition}:iam::${this.account}:policy/${STAGING_BOUNDARY_NAME}`;
     const stagingRoles = `arn:${this.partition}:iam::${this.account}:role/stacks-test-*`;
+    const buckets = (...prefixes: string[]) => prefixes.flatMap((p) => [`arn:${this.partition}:s3:::${p}`, `arn:${this.partition}:s3:::${p}/*`]);
+    const parameters = (...paths: string[]) => paths.map((p) => `arn:${this.partition}:ssm:${this.region}:${this.account}:parameter/${p}`);
+    // CDK names buckets after their stack (stacks-test-… / stacks-prod-…); the bootstrap's assets
+    // bucket is cdk-<qualifier>-assets-…. CloudFormation resolves /cdk-bootstrap/<qualifier>/version.
+    const stagingBuckets = buckets('stacks-test-*', 'cdk-stktest-*');
+    const stagingParameters = parameters('stacks/test/*', 'cdk-bootstrap/stktest/*');
+    const ssmRead = ['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath'];
+    const neverProductionByName = () =>
+      new iam.PolicyStatement({
+        sid: 'NeverProductionByName',
+        effect: iam.Effect.DENY,
+        actions: ['s3:*', 'ssm:*'],
+        resources: [...buckets('stacks-prod-*', 'cdk-stkprod-*'), ...parameters('stacks/prod/*', 'cdk-bootstrap/stkprod/*')],
+      });
+    const recordNames = props.stagingRecordNames ?? [];
 
     new iam.ManagedPolicy(this, 'StagingBoundary', {
       managedPolicyName: STAGING_BOUNDARY_NAME,
@@ -83,12 +116,16 @@ export class CiStack extends cdk.Stack {
         new iam.PolicyStatement({
           sid: 'AppRuntime',
           actions: [
-            'dynamodb:*', 's3:*', 'logs:*', 'secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret',
-            'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'kms:Decrypt', 'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation',
+            'dynamodb:*', 'logs:*', 'secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret',
+            'kms:Decrypt', 'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation',
             'lambda:InvokeFunction', 'lambda:GetFunction', 'events:PutEvents', 'xray:PutTraceSegments', 'xray:PutTelemetryRecords',
           ],
           resources: ['*'],
         }),
+        // Only staging's buckets (#94): S3 ABAC is off, so the tag deny below doesn't reach buckets.
+        new iam.PolicyStatement({ sid: 'StagingBuckets', actions: ['s3:*'], resources: stagingBuckets }),
+        // Only staging's parameters (#94): production secrets are made by hand, without the tag.
+        new iam.PolicyStatement({ sid: 'StagingParametersRead', actions: ssmRead, resources: stagingParameters }),
         // The `realtime` module: an app's API Lambda publishes to its own AppSync Event API over
         // HTTP (SigV4). The app stack scopes each grant to that one API.
         new iam.PolicyStatement({ sid: 'RealtimePublish', actions: ['appsync:EventConnect', 'appsync:EventPublish'], resources: ['*'] }),
@@ -109,6 +146,7 @@ export class CiStack extends cdk.Stack {
         }),
         new iam.PolicyStatement({ sid: 'GameServerSignaling', actions: ['appsync:EventSubscribe'], resources: ['*'] }),
         new iam.PolicyStatement({ sid: 'NeverProduction', effect: iam.Effect.DENY, actions: ['*'], resources: ['*'], conditions: prodTagged }),
+        neverProductionByName(),
       ],
     });
 
@@ -119,14 +157,31 @@ export class CiStack extends cdk.Stack {
         new iam.PolicyStatement({
           sid: 'StackServices',
           actions: [
-            'cloudformation:*', 'dynamodb:*', 'lambda:*', 's3:*', 'cloudfront:*', 'apigateway:*', 'logs:*', 'events:*',
-            'secretsmanager:*', 'ssm:GetParameter*', 'ssm:DescribeParameters', 'acm:DescribeCertificate', 'acm:ListCertificates',
+            'cloudformation:*', 'dynamodb:*', 'lambda:*', 'cloudfront:*', 'apigateway:*', 'logs:*', 'events:*',
+            'secretsmanager:*', 'ssm:DescribeParameters', 'acm:DescribeCertificate', 'acm:ListCertificates',
             'acm:RequestCertificate', 'acm:DeleteCertificate', 'acm:AddTagsToCertificate', 'route53:GetHostedZone',
-            'route53:ListResourceRecordSets', 'route53:ChangeResourceRecordSets', 'route53:GetChange', 'kms:Decrypt',
-            'cloudwatch:ListDashboards',
+            'route53:ListResourceRecordSets', 'route53:GetChange', 'kms:Decrypt',
+            'cloudwatch:ListDashboards', 's3:ListAllMyBuckets', 's3:GetBucketLocation',
           ],
           resources: ['*'],
         }),
+        // #94: buckets, parameters and DNS records by name, not `*`.
+        new iam.PolicyStatement({ sid: 'StagingBuckets', actions: ['s3:*'], resources: stagingBuckets }),
+        new iam.PolicyStatement({ sid: 'StagingParametersRead', actions: ssmRead, resources: stagingParameters }),
+        ...(recordNames.length
+          ? [
+              new iam.PolicyStatement({
+                sid: 'StagingRecords',
+                actions: ['route53:ChangeResourceRecordSets'],
+                resources: [`arn:${this.partition}:route53:::hostedzone/*`],
+                // ForAllValues is vacuously true when the key is missing, so require it to be present.
+                conditions: {
+                  'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': recordNames },
+                  Null: { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': 'false' },
+                },
+              }),
+            ]
+          : []),
         // Monitoring (#75): the one staging dashboard. Dashboards carry no tags, so the name is the
         // limit (never `stacks-prod`). Metric filters and saved queries are `logs:*`, above.
         new iam.PolicyStatement({
@@ -189,6 +244,7 @@ export class CiStack extends cdk.Stack {
           resources: [stagingRoles],
         }),
         new iam.PolicyStatement({ sid: 'NeverProduction', effect: iam.Effect.DENY, actions: ['*'], resources: ['*'], conditions: prodTagged }),
+        neverProductionByName(),
         new iam.PolicyStatement({
           sid: 'KeepGuardrails',
           effect: iam.Effect.DENY,
