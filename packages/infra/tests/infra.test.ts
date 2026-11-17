@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, stagingRecordNames, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -694,6 +694,69 @@ describe('CiStack', () => {
 
     it('still denies everything tagged production in both policies', () => {
       for (const policy of ['stacks-test-cfn-exec', 'stacks-test-boundary']) expect(statement(policy, 'NeverProduction')).toEqual(neverProduction);
+    });
+  });
+
+  describe('production by name, not only by tag (#94)', () => {
+    const names = stagingRecordNames(['test.dashnash.ninja', 'test.iamdashnash.com', 'Test.dashnash.ninja.']);
+    const template = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1', stagingRecordNames: names }));
+    const statements = (policyName: string, t = template): Array<Record<string, any>> =>
+      Object.values(t.findResources('AWS::IAM::ManagedPolicy', { Properties: { ManagedPolicyName: policyName } }))[0]!.Properties.PolicyDocument.Statement;
+    const actions = (s: Record<string, any>) => [s.Action].flat() as string[];
+    const policies = ['stacks-test-cfn-exec', 'stacks-test-boundary'];
+    const arn = (x: unknown) => JSON.stringify(x);
+
+    it('derives each staging root and everything under it, once', () => {
+      expect(names).toEqual(['test.dashnash.ninja', '*.test.dashnash.ninja', 'test.iamdashnash.com', '*.test.iamdashnash.com']);
+    });
+
+    it('allows S3 and SSM reads on no resource "*"', () => {
+      for (const policy of policies) {
+        for (const s of statements(policy).filter((x) => x.Effect === 'Allow' && x.Resource === '*')) {
+          expect(actions(s).filter((a) => a === 's3:*' || a.startsWith('ssm:GetParameter')), `${policy} ${s.Sid}`).toEqual([]);
+        }
+      }
+    });
+
+    it('allows S3 only on staging and stktest buckets, and SSM reads only on staging parameters', () => {
+      for (const policy of policies) {
+        const buckets = statements(policy).find((x) => x.Sid === 'StagingBuckets')!;
+        expect(buckets).toMatchObject({ Effect: 'Allow', Action: 's3:*' });
+        expect(buckets.Resource).toHaveLength(4);
+        expect(arn(buckets.Resource)).toContain(':s3:::stacks-test-*/*');
+        expect(arn(buckets.Resource)).toContain(':s3:::cdk-stktest-*');
+        expect(arn(buckets.Resource)).not.toContain('prod');
+        const params = statements(policy).find((x) => x.Sid === 'StagingParametersRead')!;
+        expect(params.Action).toEqual(['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath']);
+        expect(arn(params.Resource)).toContain(':parameter/stacks/test/*');
+        expect(arn(params.Resource)).toContain(':parameter/cdk-bootstrap/stktest/*');
+        expect(arn(params.Resource)).not.toContain('prod');
+      }
+    });
+
+    it('denies production buckets and parameters by name in both policies, next to the tag deny', () => {
+      for (const policy of policies) {
+        const deny = statements(policy).find((x) => x.Sid === 'NeverProductionByName')!;
+        expect(deny).toMatchObject({ Effect: 'Deny', Action: ['s3:*', 'ssm:*'] });
+        const resources = arn(deny.Resource);
+        for (const r of [':s3:::stacks-prod-*"', ':s3:::stacks-prod-*/*', ':s3:::cdk-stkprod-*"', ':s3:::cdk-stkprod-*/*', ':parameter/stacks/prod/*', ':parameter/cdk-bootstrap/stkprod/*']) {
+          expect(resources).toContain(r);
+        }
+        expect(statements(policy).find((x) => x.Sid === 'NeverProduction')).toMatchObject({ Effect: 'Deny', Action: '*' });
+      }
+    });
+
+    it('lets staging change DNS records only under the staging names', () => {
+      const exec = statements('stacks-test-cfn-exec');
+      const changers = exec.filter((x) => x.Effect === 'Allow' && actions(x).some((a) => a === 'route53:ChangeResourceRecordSets' || a === 'route53:*'));
+      expect(changers.map((x) => x.Sid)).toEqual(['StagingRecords']);
+      expect(changers[0]!.Condition).toEqual({ 'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': names } });
+      expect(arn(statements('stacks-test-boundary'))).not.toContain('route53');
+    });
+
+    it('allows no DNS change at all without staging names', () => {
+      const bare = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+      expect(arn(statements('stacks-test-cfn-exec', bare))).not.toContain('route53:ChangeResourceRecordSets');
     });
   });
 

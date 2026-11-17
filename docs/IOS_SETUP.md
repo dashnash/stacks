@@ -151,6 +151,10 @@ for env in test prod; do
   aws ssm put-parameter --name /stacks/$env/secrets/platform/APNS_KEY --type SecureString --value "$(cat ~/Downloads/AuthKey_<Key ID>.p8)" --overwrite --profile admin --region us-east-1
   aws ssm put-parameter --name /stacks/$env/secrets/platform/APNS_KEY_ID --type SecureString --value '<Key ID>' --overwrite --profile admin --region us-east-1
 done
+# Tag the production copies (#94; put-parameter can't combine --tags with --overwrite).
+for name in APNS_KEY APNS_KEY_ID; do
+  aws ssm add-tags-to-resource --resource-type Parameter --resource-id /stacks/prod/secrets/platform/$name --tags Key=stacks:env,Value=production --profile admin --region us-east-1
+done
 ```
 
 The platform picks it up within five minutes; no deploy. Then delete the `.p8` from Downloads (or

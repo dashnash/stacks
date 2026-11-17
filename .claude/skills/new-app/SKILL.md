@@ -153,7 +153,7 @@ separate from production. If the run fails, read only the failing job's log
 
 Open a PR from the app branch (`gh api repos/dashnash/stacks/pulls -f title=… -f head=<branch> -f base=main -f body=…`): title `New app: <Name>`. In the body: the tagline, who it's for, the
 roles, what it tracks, the test-site link, and anything someone must do by hand (for example each
-secret's `aws ssm put-parameter` command from `docs/SETUP.md` §7: Dash runs those, never the
+secret's `aws ssm put-parameter` and, for production, `add-tags-to-resource` commands from `docs/SETUP.md` §7: Dash runs those, never the
 creator). Commit `apps/<slug>/.stacks/usage.json` with it. `npm run app-usage -- <slug> ship`.
 
 Tell the creator, plainly: once the PR is merged the app is live at `https://<slug>.dashnash.ninja`,

@@ -83,13 +83,17 @@ npx cdk bootstrap aws://ACCOUNT_ID/us-east-1 --qualifier stktest --toolkit-stack
 ```
 
 Staging deploys can now only do what `stacks-test-cfn-exec` allows: no IAM users, roles only named
-`stacks-test-*` with the boundary attached, and nothing on resources tagged `stacks:env=production`.
+`stacks-test-*` with the boundary attached, nothing on resources tagged `stacks:env=production`,
+S3 only on `stacks-test-*`/`cdk-stktest-*` buckets, SSM reads only under `/stacks/test/`, and DNS
+records only at or under the staging root domains (#94). Production buckets and parameters are also
+denied by name.
 
 **When `packages/infra/src/ci-stack.ts` changes** (e.g. the `realtime` module added AppSync Event
 APIs to `stacks-test-cfn-exec` and `appsync:EventConnect`/`EventPublish` to `stacks-test-boundary`;
 the `gameServer` module (#44) added the VPC, ECS, alarm and SNS statements to `stacks-test-cfn-exec`
 and running tasks, passing task roles and `appsync:EventSubscribe` to `stacks-test-boundary`;
-monitoring (#75) added the `stacks-test` dashboard to `stacks-test-cfn-exec`),
+monitoring (#75) added the `stacks-test` dashboard to `stacks-test-cfn-exec`; #94 limited S3, SSM
+and DNS to staging names in both),
 redeploy it from your machine with admin credentials before merging anything that needs it:
 `cd infra && npx cdk deploy -c ci=true stacks-ci`. CI never deploys this stack.
 
@@ -155,7 +159,15 @@ yourself, once per environment, with your admin profile. CI never sees it and it
 aws ssm put-parameter --name /stacks/prod/secrets/<slug>/<NAME> --type SecureString --value '<value>' --overwrite --profile admin --region us-east-1
 ```
 
-Use `/stacks/test/...` for staging. The app picks the value up within 5 minutes, with no deploy.
+Tag every production parameter right after storing it (`put-parameter` can't combine `--tags` with
+`--overwrite`). Staging is kept away from `/stacks/prod/` by name either way; the tag is the second
+lock (#94):
+
+```bash
+aws ssm add-tags-to-resource --resource-type Parameter --resource-id /stacks/prod/secrets/<slug>/<NAME> --tags Key=stacks:env,Value=production --profile admin --region us-east-1
+```
+
+Use `/stacks/test/...` for staging (no tag needed). The app picks the value up within 5 minutes, with no deploy.
 `https://<slug>.<rootDomain>/api/health` lists required secrets that are still missing (by name).
 To remove one: `aws ssm delete-parameter --name <same name> --profile admin --region us-east-1`.
 
@@ -182,7 +194,15 @@ aws ssm put-parameter --name /stacks/prod/secrets/platform/CLOUDFLARE_TURN_KEY_I
 aws ssm put-parameter --name /stacks/prod/secrets/platform/CLOUDFLARE_TURN_API_TOKEN --type SecureString --value '<api token>' --overwrite --profile admin --region us-east-1
 ```
 
-Use `/stacks/test/...` for staging. Apps pick it up within 5 minutes, with no deploy.
+Then tag both (#94):
+
+```bash
+for name in CLOUDFLARE_TURN_KEY_ID CLOUDFLARE_TURN_API_TOKEN; do
+  aws ssm add-tags-to-resource --resource-type Parameter --resource-id /stacks/prod/secrets/platform/$name --tags Key=stacks:env,Value=production --profile admin --region us-east-1
+done
+```
+
+Use `/stacks/test/...` for staging (no tag needed). Apps pick it up within 5 minutes, with no deploy.
 
 **Alarm email.** Each app has an alarm for a game server running over 3 hours (rooms end themselves
 after 2). They all go to one SNS topic per environment, `stacks-prod-game-alarms` and
