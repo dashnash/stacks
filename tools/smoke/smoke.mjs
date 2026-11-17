@@ -27,6 +27,10 @@ export function targetsFromOutputs(outputs) {
 }
 const trim = (url) => String(url).replace(/\/+$/, '');
 
+/** The app whose sign-in is probed: the reference app when deployed (stable), else the first. */
+export const SIGN_IN_PROBE = 'hello';
+export const probeApp = (apps) => apps.find((a) => a.slug === SIGN_IN_PROBE) ?? apps[0];
+
 /** The checks to run, in order. Each `run(fetch)` resolves to `{ warnings? }` or throws with the reason. */
 export function plan({ portal, apps }, { maintenance = false } = {}) {
   const checks = [
@@ -34,8 +38,9 @@ export function plan({ portal, apps }, { maintenance = false } = {}) {
     ...apps.map((a) => ({ name: `${a.slug} /api/health`, run: (f) => health(f, `${a.url}/api/health`) })),
   ];
   if (maintenance) return checks;
-  checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`) });
-  if (apps[0]) checks.push({ name: `${apps[0].slug} sign-in redirects to the portal`, run: (f) => signIn(f, apps[0].url, portal) });
+  checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug)) });
+  const probe = probeApp(apps);
+  if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: (f) => signIn(f, probe.url, portal) });
   return checks;
 }
 
@@ -58,11 +63,17 @@ async function health(f, url) {
   return { warnings };
 }
 
-async function catalog(f, url) {
+/**
+ * The catalog must list at least one of the apps just deployed: an empty list means the registry
+ * read broke. (Not all of them: an archived app stays deployed but leaves the catalog.)
+ */
+async function catalog(f, url, slugs) {
   const res = await f(url, { redirect: 'manual' });
   if (res.status !== 200) throw new Error(`${url}: ${res.status}, expected 200`);
   const body = await json(res, url);
   if (!Array.isArray(body?.apps)) throw new Error(`${url}: no "apps" list`);
+  const listed = new Set(body.apps.map((a) => a?.slug));
+  if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
   return { warnings: [] };
 }
 
@@ -104,6 +115,9 @@ export async function runChecks(checks, { fetch: f = globalThis.fetch, attempts 
   return results;
 }
 
+/** Escapes a GitHub workflow command message (`%`, CR, LF). */
+export const escapeCommand = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+
 /** A Markdown table for the job summary. */
 export function summary(env, results) {
   const failed = results.filter((r) => !r.ok).length;
@@ -125,8 +139,8 @@ async function main() {
   const results = await runChecks(plan(targets, { maintenance }));
   for (const r of results) {
     console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? r.warnings.map((w) => `\n     warning: ${w}`).join('') : `\n     ${r.error}`}`);
-    for (const w of r.warnings) console.log(`::warning title=Smoke ${r.name}::${w}`);
-    if (!r.ok) console.log(`::error title=Smoke check failed (${env})::${r.name}: ${r.error}`);
+    for (const w of r.warnings) console.log(`::warning title=Smoke ${escapeCommand(r.name)}::${escapeCommand(w)}`);
+    if (!r.ok) console.log(`::error title=Smoke check failed (${env})::${escapeCommand(`${r.name}: ${r.error}`)}`);
   }
   if (maintenance) console.log(`${env} is in maintenance: only health checks ran.`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary(env, results));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { plan, runChecks, summary, targetsFromOutputs } from '../smoke.mjs';
+import { escapeCommand, plan, runChecks, summary, targetsFromOutputs } from '../smoke.mjs';
 
 const portal = 'https://auth.test.example';
 const outputs = {
@@ -36,7 +36,7 @@ const green = (): Record<string, Reply | Reply[]> => ({
   [`${portal}/api/health`]: healthy({ platform: true }),
   'https://hello.test.example/api/health': healthy({ app: 'hello' }),
   'https://pantry.test.example/api/health': healthy({ app: 'pantry' }),
-  [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [] } },
+  [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }, { slug: 'pantry' }, { slug: 'old' }] } },
   'https://hello.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=hello&state=s` },
   [`${portal}/authorize?*`]: { status: 302, location: `${portal}/#/signin?next=%2Fauthorize%3Fapp%3Dhello` },
 });
@@ -85,6 +85,25 @@ describe('smoke check (#100)', () => {
     expect(results.at(-1)).toMatchObject({ ok: false, error: expect.stringContaining('expected 302 to https://auth.test.example/authorize?') });
     const { results: r2 } = await run({ ...green(), [`${portal}/authorize?*`]: { status: 500 } });
     expect(r2.at(-1)).toMatchObject({ ok: false, error: expect.stringContaining('/#/signin?next=') });
+  });
+
+  it('fails a catalog listing none of the deployed apps, but allows archived ones to be missing', async () => {
+    const { results } = await run({ ...green(), [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [] } } });
+    expect(results[3]).toMatchObject({ ok: false, error: expect.stringContaining('lists none of the deployed apps (hello, pantry)') });
+    const { results: some } = await run({ ...green(), [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
+    expect(some[3]).toMatchObject({ ok: true });
+  });
+
+  it('probes sign-in on the reference app even when another sorts first', async () => {
+    const withAardvark = { ...outputs, 'stacks-test-app-aardvark': { SiteURL: 'https://aardvark.test.example' } };
+    const checks = plan(targetsFromOutputs(withAardvark));
+    expect(checks.at(-1).name).toBe('hello sign-in redirects to the portal');
+    const noHello = plan(targetsFromOutputs({ 'stacks-test-platform': { PortalURL: portal }, 'stacks-test-app-pantry': { SiteURL: 'https://pantry.test.example' } }));
+    expect(noHello.at(-1).name).toBe('pantry sign-in redirects to the portal');
+  });
+
+  it('escapes workflow command messages', () => {
+    expect(escapeCommand('next=%2Fa\nline')).toBe('next=%252Fa%0Aline');
   });
 
   it('only warns about missing secrets', async () => {
