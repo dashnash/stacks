@@ -1,7 +1,7 @@
 name: Deploy
 
-# Every merge to main: all of staging first (platform, then every app), so a broken change stops
-# there; then the production platform, then every production app. CloudFormation skips stacks with
+# Every merge to main: all of staging first (platform, then every app), then a smoke check of it
+# (tools/smoke, #100), so a broken change stops there; then the production platform, then every production app. CloudFormation skips stacks with
 # no changes. Zones marked "lookup" in stacks.config.json are resolved first (zones job). Apps on hold for an environment (holdApps in stacks.config.json) are left out of it.
 on:
   push:
@@ -27,20 +27,20 @@ jobs:
     outputs:
       ids: ${{ steps.lookup.outputs.ids }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         id: staging
         with:
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
           aws-region: us-east-1
       # Read-only from here: the staging bootstrap's lookup role (the staging role may assume
       # cdk-stktest-*). No AWS CLI on the runner: the action chains the role, the script signs.
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: arn:aws:iam::${{ steps.staging.outputs.aws-account-id }}:role/cdk-stktest-lookup-role-${{ steps.staging.outputs.aws-account-id }}-us-east-1
           role-chaining: true
@@ -58,8 +58,8 @@ jobs:
     needs: zones
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -81,12 +81,12 @@ jobs:
           npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
       # One artifact per environment: each deploy job downloads only its own (the runners
       # download slowly).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cdk-out-staging
           path: cdk.out-staging
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cdk-out-production
           path: cdk.out
@@ -100,18 +100,18 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
       # An artifact of one folder holds that folder's contents, so they go back into it.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cdk-out-staging
           path: cdk.out-staging
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
           aws-region: us-east-1
@@ -122,6 +122,9 @@ jobs:
       - name: Summary
         run: |
           node -e "const o=require('./outputs-staging.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
+      # CloudFormation finishing isn't the same as working (#100): production waits on this.
+      - name: Smoke check
+        run: node tools/smoke/smoke.mjs outputs-staging.json --env staging
 
   production:
     needs: staging
@@ -131,17 +134,17 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cdk-out-production
           path: cdk.out
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_PRODUCTION_ROLE_ARN }}
           aws-region: us-east-1
@@ -152,3 +155,6 @@ jobs:
       - name: Summary
         run: |
           node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
+      # Production is already live by now: a failure here fails the run loudly (no rollback, #100).
+      - name: Smoke check
+        run: node tools/smoke/smoke.mjs outputs.json --env production
