@@ -82,7 +82,8 @@ async function main() {
   console.log(`#${number} ${headSha.slice(0, 7)}: ${result.state} (${result.description})`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const { pathToFileURL } = await import('node:url');
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [cmd, sha] = process.argv.slice(2);
   if (cmd === 'marker') {
     if (!/^[0-9a-f]{40}$/.test(sha ?? '')) {

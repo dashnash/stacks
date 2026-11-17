@@ -20,7 +20,9 @@ owner, then posts a marker comment; a required status check verifies it.
 ## Manual steps for the owner (after merge)
 
 1. Re-apply the ruleset: `gh api -X PUT repos/dashnash/stacks/rulesets/<id> --input .github/rulesets/main.json`.
-2. Open a PR that touches `.github/` and check that `agent-review` stays pending until the marker is posted.
+2. PRs already open get no `agent-review` status until something re-runs the workflow: comment anything on each (or push) to trigger it.
+3. Open a PR that touches `.github/` and check that `agent-review` stays pending until the marker is posted.
+4. If PRs show `agent-review` as "Expected — waiting for status" although the workflow posted success, the status source doesn't match `integration_id` 15368: remove `"integration_id"` from the `agent-review` entry in `.github/rulesets/main.json` and re-apply.
 
 ## Changes
 
