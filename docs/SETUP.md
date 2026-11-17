@@ -109,7 +109,9 @@ redeploy it from your machine with admin credentials before merging anything tha
   `.github/rulesets/main.json`: no deletion or force push, every change through a PR, the `check`
   job of `CI` green, and code-owner review on `CODEOWNERS` paths (app-only PRs merge on green CI).
   Repository admins may bypass only through a PR (to merge their own), so nobody pushes straight to
-  `main`. Apply it once, and again after editing the file (`PUT …/rulesets/<id>` to update):
+  `main`. PRs touching `packages/infra/`, `.github/` or `platform/api/` also need the `agent-review`
+  status (#111, posted by `.github/workflows/agent-review.yml` once a session records a code review
+  of the head commit). Apply it once, and again after editing the file (`PUT …/rulesets/<id>` to update):
 
   ```bash
   gh api -X POST repos/dashnash/stacks/rulesets --input .github/rulesets/main.json
