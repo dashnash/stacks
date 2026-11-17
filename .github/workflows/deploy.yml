@@ -1,7 +1,7 @@
 name: Deploy
 
-# Every merge to main: all of staging first (platform, then every app), so a broken change stops
-# there; then the production platform, then every production app. CloudFormation skips stacks with
+# Every merge to main: all of staging first (platform, then every app), then a smoke check of it
+# (tools/smoke, #100), so a broken change stops there; then the production platform, then every production app. CloudFormation skips stacks with
 # no changes. Zones marked "lookup" in stacks.config.json are resolved first (zones job). Apps on hold for an environment (holdApps in stacks.config.json) are left out of it.
 on:
   push:
@@ -122,6 +122,9 @@ jobs:
       - name: Summary
         run: |
           node -e "const o=require('./outputs-staging.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
+      # CloudFormation finishing isn't the same as working (#100): production waits on this.
+      - name: Smoke check
+        run: node tools/smoke/smoke.mjs outputs-staging.json --env staging
 
   production:
     needs: staging
@@ -152,3 +155,6 @@ jobs:
       - name: Summary
         run: |
           node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
+      # Production is already live by now: a failure here fails the run loudly (no rollback, #100).
+      - name: Smoke check
+        run: node tools/smoke/smoke.mjs outputs.json --env production
