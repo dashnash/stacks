@@ -138,7 +138,7 @@ jobs:
           fi
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/spm
           key: spm-${{ hashFiles('native/ios/project.yml') }}
@@ -257,7 +257,7 @@ jobs:
           xcodegen generate --spec native/ios/project.yml
       - name: Swift packages (cached)
         if: steps.ready.outputs.go == 'true'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/spm
           key: spm-${{ hashFiles('native/ios/project.yml') }}
