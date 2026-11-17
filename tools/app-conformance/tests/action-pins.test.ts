@@ -33,9 +33,14 @@ describe('unpinnedActions (#99)', () => {
     expect(found[3]).toMatch(/^w\.yml:5: docker:\/\/rhysd\/actionlint:1\.7\.12 \(pin the image by digest/);
   });
 
+  it('ignores uses: text inside run blocks and comments', () => {
+    const text = ['    steps:', '      - run: |', '          echo "uses: actions/checkout@v4"', '      # uses: actions/cache@v4', `      - uses: actions/checkout@${sha}`].join('\n');
+    expect(unpinnedActions({ 'w.yml': text })).toEqual([]);
+  });
+
   it("passes on this repo's workflows", () => {
     const dir = path.resolve(__dirname, '../../../.github/workflows');
-    const files = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.yml')).map((f) => [f, readFileSync(path.join(dir, f), 'utf8')]));
+    const files = Object.fromEntries(readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, readFileSync(path.join(dir, f), 'utf8')]));
     expect(unpinnedActions(files)).toEqual([]);
   });
 });

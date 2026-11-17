@@ -5,7 +5,19 @@
 export function unpinnedActions(files) {
   const found = [];
   for (const [file, text] of Object.entries(files)) {
+    // Skip the body of block scalars (`run: |`): lines indented deeper than the key that opened them.
+    let blockIndent = -1;
     text.split('\n').forEach((line, i) => {
+      const indent = line.search(/\S/);
+      if (blockIndent >= 0) {
+        if (indent === -1 || indent > blockIndent) return;
+        blockIndent = -1;
+      }
+      const key = /^(\s*)(?:-\s+)?[\w-]+:\s*[|>][-+]?\s*$/.exec(line);
+      if (key) {
+        blockIndent = indent;
+        return;
+      }
       const m = /^\s*(?:-\s+)?uses:\s*['"]?([^'"\s#]+)/.exec(line);
       if (!m) return;
       const ref = m[1];
