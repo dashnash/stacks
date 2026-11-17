@@ -16,6 +16,8 @@ owner, then posts a marker comment; a required status check verifies it.
 | Enforcement | Workflow `.github/workflows/agent-review.yml`, job `agent-review`, posts commit status `agent-review` on the PR head (success "not required" when no gated path changed). The ruleset requires `agent-review` (integration 15368, GitHub Actions). |
 | Triggers | `pull_request_target` (opened, synchronize, reopened, ready_for_review) and `issue_comment` (created, edited). It never checks out PR code; it runs `main`'s `scripts/agent-review-gate.mjs` on GitHub-hosted `ubuntu-latest`. |
 | Permissions | `statuses: write`, `pull-requests: read`, `contents: read`. |
+| `pull_request_target` ban (#93) | Found while implementing: `repo-guard.test.ts` bans `pull_request_target`. The gate is the one exception (with `pull_request` a PR's own copy of the workflow would run and could post its own success); the test now pins its safety instead: checks out only the default branch, no `npm`/`setup-node`, GitHub-hosted, no write scopes beyond statuses, runs only the gate script. |
+| Known limit | A writer can post any commit status, so a PR adding a workflow could fake `agent-review`. Such a PR changes `.github/`, so code-owner review remains the backstop. |
 
 ## Manual steps for the owner (after merge)
 
