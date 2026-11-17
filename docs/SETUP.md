@@ -70,7 +70,8 @@ in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
 
 `stacks-ci` also creates the account's monthly cost budget `stacks-monthly` (#98): `budget.monthlyUsd`
 in `stacks.config.json` (50 USD), with emails to the first production `platformAdmins` address at 80%
-of actual and 100% of forecast spend (no confirmation needed). Check Billing → Budgets for an older
+of actual and 100% of forecast spend (no confirmation needed; forecast alerts start once AWS has
+about five weeks of usage history). Check Billing → Budgets for an older
 budget first; keeping both only means two emails.
 
 `stacks-ci` creates the GitHub OIDC provider (pass `existingOidcProviderArn` in `bin/stacks.ts` if
