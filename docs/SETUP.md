@@ -118,6 +118,11 @@ redeploy it from your machine with admin credentials before merging anything tha
   ```bash
   gh api -X POST repos/dashnash/stacks/rulesets --input .github/rulesets/main.json
   ```
+- **Code security** (Settings → Code security, #99): turn on Dependabot alerts, Dependabot
+  security updates, secret scanning and push protection. Then Settings → Actions → General: tick
+  **Require actions to be pinned to a full-length commit SHA** (CI's `check-action-pins` step
+  enforces the same in the repo). Dependabot PRs touch `package-lock.json` or `.github/`, so each
+  needs your code-owner review.
 - **Environments**: check that `staging`, `production` and `ios-release` each allow only `main`:
 
   ```bash
