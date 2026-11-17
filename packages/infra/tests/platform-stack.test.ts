@@ -5,7 +5,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
+import { AppStack, BACKUP_PLAN_NAME, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, CONTENT_NONCURRENT_DAYS, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
 
 const env: EnvConfig = { rootDomain: 'test.example.com', hostedZoneId: 'Z123', hostedZoneName: 'example.com', googleClientId: 'gid', platformAdmins: ['root@x.dev', 'two@x.dev'] };
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -132,6 +132,60 @@ describe('AppStack contentPacks', () => {
       .flatMap((st) => [st.Action].flat());
     expect(actions).toEqual(expect.arrayContaining(['s3:GetObject*', 's3:PutObject', 's3:DeleteObject*']));
     t.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain', Properties: Match.objectLike({ PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true }) }) });
+    // #97: the only copy of members' photos keeps old versions for 90 days.
+    t.hasResourceProperties('AWS::S3::Bucket', {
+      VersioningConfiguration: { Status: 'Enabled' },
+      LifecycleConfiguration: {
+        Rules: [Match.objectLike({ Id: 'ExpireOldVersions', Status: 'Enabled', NoncurrentVersionExpiration: { NoncurrentDays: CONTENT_NONCURRENT_DAYS }, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } })],
+      },
+    });
+    // Only the content bucket is versioned (the web bucket is rebuilt on every deploy).
+    expect(Object.values(t.findResources('AWS::S3::Bucket', { Properties: { VersioningConfiguration: { Status: 'Enabled' } } }))).toHaveLength(1);
+  });
+});
+
+describe('Backups and point-in-time recovery (#97)', () => {
+  const manifest: AppManifest = {
+    slug: 'hello', name: 'Hello', tagline: 't', description: 'd', visibility: 'public',
+    roles: [{ id: 'OWNER', label: 'Owner', canManageAccess: true }, { id: 'MEMBER', label: 'Member' }],
+    topRole: 'OWNER', defaultRole: 'MEMBER', owners: ['o@x.dev'],
+  };
+  const platform = (envName: 'staging' | 'production') =>
+    Template.fromStack(new PlatformStack(new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } }), { envName, env, region: 'us-east-1', repoRoot, webDistPath: webDist, apiEntry: path.join(__dirname, 'fake-entry.ts') }));
+  const appStack = (envName: 'staging' | 'production') =>
+    Template.fromStack(new AppStack(new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } }), { manifest, envName, env, region: 'us-east-1', repoRoot, appDir: '/nowhere', webDistPath: webDist, apiEntry: path.join(__dirname, 'fake-entry.ts') }));
+
+  it('turns on PITR for platform and app tables in both environments', () => {
+    for (const envName of ['staging', 'production'] as const) {
+      for (const t of [platform(envName), appStack(envName)]) {
+        t.hasResourceProperties('AWS::DynamoDB::Table', { PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true } });
+      }
+    }
+  });
+
+  it('backs up every production table monthly, kept a year, in a retained vault', () => {
+    const t = platform('production');
+    t.hasResource('AWS::Backup::BackupVault', { DeletionPolicy: 'Retain', Properties: { BackupVaultName: BACKUP_VAULT_NAME } });
+    t.hasResourceProperties('AWS::Backup::BackupPlan', {
+      BackupPlan: {
+        BackupPlanName: BACKUP_PLAN_NAME,
+        BackupPlanRule: [Match.objectLike({ RuleName: 'Monthly', ScheduleExpression: 'cron(0 5 1 * ? *)', Lifecycle: { DeleteAfterDays: BACKUP_RETENTION_DAYS } })],
+      },
+    });
+    t.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: {
+        SelectionName: 'production-tables',
+        Resources: [Match.objectLike({ 'Fn::Join': Match.arrayWith([Match.arrayWith([':table/*'])]) })],
+        Conditions: { StringEquals: [{ ConditionKey: 'aws:ResourceTag/stacks:env', ConditionValue: 'production' }] },
+      },
+    });
+    expect(JSON.stringify(t.findResources('AWS::Backup::BackupSelection'))).not.toContain('ListOfTags');
+  });
+
+  it('has no backup plan on staging', () => {
+    const t = platform('staging');
+    t.resourceCountIs('AWS::Backup::BackupPlan', 0);
+    t.resourceCountIs('AWS::Backup::BackupVault', 0);
   });
 });
 

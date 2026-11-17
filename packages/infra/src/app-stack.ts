@@ -48,6 +48,9 @@ import { addApiMetricFilters, logGroupName } from './monitoring';
  * CloudFront viewer-request function: every extension-less path serves index.html; files (with a
  * dot) are served as-is. Apps route with #hashes, so nothing more is needed.
  */
+/** How long a content bucket keeps overwritten or deleted object versions (#97). */
+export const CONTENT_NONCURRENT_DAYS = 90;
+
 export const siteRouterCode = (env?: EnvConfig) => `
 function handler(event) {
   var request = event.request;${env ? aasaRoute(env) : ''}
@@ -135,7 +138,8 @@ export class AppStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
+      // Both environments (#97): staging too, so restores are rehearsed on the real path (docs/RESTORE.md).
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'expiresAt',
     });
@@ -220,9 +224,13 @@ export class AppStack extends cdk.Stack {
     // outside git (e.g. photos of people, uploaded through the app) stays. The Lambda can write
     // and delete there too (`contentStore().put/delete`).
     if (hasModule(manifest, 'contentPacks')) {
+      // It holds the only copy of members' photos (#97): keep overwritten and deleted versions for
+      // 90 days (restores: docs/RESTORE.md).
       const content = new s3.Bucket(this, 'ContentBucket', {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         enforceSSL: true,
+        versioned: true,
+        lifecycleRules: [{ id: 'ExpireOldVersions', noncurrentVersionExpiration: cdk.Duration.days(CONTENT_NONCURRENT_DAYS), abortIncompleteMultipartUploadAfter: cdk.Duration.days(7) }],
         removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
         autoDeleteObjects: !isProd,
       });
