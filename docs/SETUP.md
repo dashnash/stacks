@@ -98,9 +98,13 @@ redeploy it from your machine with admin credentials before merging anything tha
 - **Environments** (Settings → Environments): create `staging` and `production`. For each, set
   *Deployment branches* to **Selected branches: `main`**, and add the variable
   `AWS_STAGING_ROLE_ARN` / `AWS_PRODUCTION_ROLE_ARN` with the ARN from step 2.
-- **Fork pull requests** (Settings → Actions → General → Fork pull request workflows): **Require
-  approval for all external contributors**. The repo is public; fork PRs get no secrets or OIDC
-  token, and never run on the self-hosted runners (step 9).
+- **Make the repo public** (Settings → General → Change visibility). Rulesets and the fork-approval
+  setting below need it on GitHub Free. While the repo is private, leave *Run workflows from fork
+  pull requests* unchecked.
+- **Fork pull requests** (Settings → Actions → General; the section is titled *Approval for running
+  fork pull request workflows from contributors* once the repo is public): **Require approval for
+  all external contributors**. Fork PRs get no secrets or OIDC token, and never run on the
+  self-hosted runners (step 9).
 - **Ruleset on `main`** (#93; free because the repo is public). The rules live in
   `.github/rulesets/main.json`: no deletion or force push, every change through a PR, the `check`
   job of `CI` green, and code-owner review on `CODEOWNERS` paths (app-only PRs merge on green CI).
@@ -110,6 +114,19 @@ redeploy it from your machine with admin credentials before merging anything tha
   ```bash
   gh api -X POST repos/dashnash/stacks/rulesets --input .github/rulesets/main.json
   ```
+- **Environments**: check that `staging`, `production` and `ios-release` each allow only `main`:
+
+  ```bash
+  for env in staging production ios-release; do
+    gh api repos/dashnash/stacks/environments/$env/deployment-branch-policies --jq '.branch_policies[]|"\(.type) \(.name)"'
+  done   # each prints only: branch main
+  ```
+- **Claude sessions act as `dashnash-agent`**, never as the owner. A cloud session uses whichever
+  GitHub account is connected to the claude.ai account at https://claude.ai/connect-github; connect
+  `dashnash-agent` (write access, not admin). The ruleset's admin bypass then never applies to a
+  session, and its PRs are authored by the agent, so the owner can approve them as code owner.
+  Check from a session: `curl -sS https://api.github.com/repos/dashnash/stacks/rulesets/<id>` reports
+  `"current_user_can_bypass": "never"`.
 
 ## 5. First deploy
 
