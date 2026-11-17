@@ -24,7 +24,7 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as cdk from 'aws-cdk-lib';
-import { AppStack, CiStack, LegacyRedirectStack, loadStacksConfig, parseZoneIds, PlatformStack, resolveZoneIds, type EnvName } from '@stacks/infra';
+import { AppStack, CiStack, LegacyRedirectStack, loadStacksConfig, parseZoneIds, PlatformStack, resolveZoneIds, stagingRecordNames, stagingRootDomains, type EnvName } from '@stacks/infra';
 import { discoverApps } from '../lib/apps';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -41,8 +41,23 @@ const discovered = discoverApps(repoRoot).filter((a) => !held.has(a.manifest.slu
 // The dashboard's log tables and saved queries list each app's log group by name.
 const platformProps = { envName, env, region: config.region, repoRoot, buildSha, appSlugs: discovered.map((a) => a.manifest.slug) };
 
+/** Never drop the budget silently: a configured budget needs someone to email. */
+function budgetEmail() {
+  const email = config.environments.production.platformAdmins[0];
+  if (!email) throw new Error('stacks.config.json: budget needs a production platformAdmins address to email (#98)');
+  return email;
+}
+
 if (app.node.tryGetContext('ci') === 'true') {
-  new CiStack(app, 'stacks-ci', { githubRepo: config.githubRepo, githubSubjectPrefix: config.githubSubjectPrefix, region: config.region });
+  new CiStack(app, 'stacks-ci', {
+    githubRepo: config.githubRepo,
+    githubSubjectPrefix: config.githubSubjectPrefix,
+    region: config.region,
+    // The only DNS names staging deploys may write (#94).
+    stagingRecordNames: stagingRecordNames(stagingRootDomains(config.environments.staging)),
+    // #98: alerts go to production's first platform admin (no new address in git).
+    ...(config.budget ? { budget: { monthlyUsd: config.budget.monthlyUsd, alertEmail: budgetEmail() } } : {}),
+  });
 } else if (app.node.tryGetContext('only') === 'platform') {
   new PlatformStack(app, platformProps);
 } else {

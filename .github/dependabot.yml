@@ -1,0 +1,23 @@
+# Weekly dependency updates (#99). Minor and patch bumps come grouped, one PR per ecosystem;
+# majors come one per PR; security updates are separate PRs (Dependabot's default). Every PR here
+# touches package-lock.json or .github/, so it needs code-owner review.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]

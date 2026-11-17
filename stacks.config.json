@@ -3,6 +3,7 @@
   "region": "us-east-1",
   "githubRepo": "dashnash/stacks",
   "githubSubjectPrefix": "repo:dashnash@3804293/stacks@1449992124",
+  "budget": { "monthlyUsd": 50 },
   "environments": {
     "production": {
       "rootDomain": "dashnash.ninja",

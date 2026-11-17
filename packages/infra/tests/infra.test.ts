@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -694,6 +694,112 @@ describe('CiStack', () => {
 
     it('still denies everything tagged production in both policies', () => {
       for (const policy of ['stacks-test-cfn-exec', 'stacks-test-boundary']) expect(statement(policy, 'NeverProduction')).toEqual(neverProduction);
+    });
+  });
+
+  describe('production by name, not only by tag (#94)', () => {
+    const names = stagingRecordNames(['test.dashnash.ninja', 'test.iamdashnash.com', 'Test.dashnash.ninja.']);
+    const template = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1', stagingRecordNames: names }));
+    const statements = (policyName: string, t = template): Array<Record<string, any>> =>
+      Object.values(t.findResources('AWS::IAM::ManagedPolicy', { Properties: { ManagedPolicyName: policyName } }))[0]!.Properties.PolicyDocument.Statement;
+    const actions = (s: Record<string, any>) => [s.Action].flat() as string[];
+    const policies = ['stacks-test-cfn-exec', 'stacks-test-boundary'];
+    const arn = (x: unknown) => JSON.stringify(x);
+
+    it('derives each staging root and everything under it, once', () => {
+      expect(names).toEqual(['test.dashnash.ninja', '*.test.dashnash.ninja', 'test.iamdashnash.com', '*.test.iamdashnash.com']);
+    });
+
+    it('allows S3 and SSM reads on no resource "*"', () => {
+      for (const policy of policies) {
+        for (const s of statements(policy).filter((x) => x.Effect === 'Allow' && x.Resource === '*')) {
+          expect(actions(s).filter((a) => a === 's3:*' || a.startsWith('ssm:GetParameter')), `${policy} ${s.Sid}`).toEqual([]);
+        }
+      }
+    });
+
+    it('allows S3 only on staging and stktest buckets, and SSM reads only on staging parameters', () => {
+      for (const policy of policies) {
+        const buckets = statements(policy).find((x) => x.Sid === 'StagingBuckets')!;
+        expect(buckets).toMatchObject({ Effect: 'Allow', Action: 's3:*' });
+        expect(buckets.Resource).toHaveLength(4);
+        expect(arn(buckets.Resource)).toContain(':s3:::stacks-test-*/*');
+        expect(arn(buckets.Resource)).toContain(':s3:::cdk-stktest-*');
+        expect(arn(buckets.Resource)).not.toContain('prod');
+        const params = statements(policy).find((x) => x.Sid === 'StagingParametersRead')!;
+        expect(params.Action).toEqual(['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath']);
+        expect(arn(params.Resource)).toContain(':parameter/stacks/test/*');
+        expect(arn(params.Resource)).toContain(':parameter/cdk-bootstrap/stktest/*');
+        expect(arn(params.Resource)).not.toContain('prod');
+      }
+    });
+
+    it('denies production buckets and parameters by name in both policies, next to the tag deny', () => {
+      for (const policy of policies) {
+        const deny = statements(policy).find((x) => x.Sid === 'NeverProductionByName')!;
+        expect(deny).toMatchObject({ Effect: 'Deny', Action: ['s3:*', 'ssm:*'] });
+        const resources = arn(deny.Resource);
+        for (const r of [':s3:::stacks-prod-*"', ':s3:::stacks-prod-*/*', ':s3:::cdk-stkprod-*"', ':s3:::cdk-stkprod-*/*', ':parameter/stacks/prod/*', ':parameter/cdk-bootstrap/stkprod/*']) {
+          expect(resources).toContain(r);
+        }
+        expect(statements(policy).find((x) => x.Sid === 'NeverProduction')).toMatchObject({ Effect: 'Deny', Action: '*' });
+      }
+    });
+
+    it('lets staging change DNS records only under the staging names', () => {
+      const exec = statements('stacks-test-cfn-exec');
+      const changers = exec.filter((x) => x.Effect === 'Allow' && actions(x).some((a) => a === 'route53:ChangeResourceRecordSets' || a === 'route53:*'));
+      expect(changers.map((x) => x.Sid)).toEqual(['StagingRecords']);
+      expect(changers[0]!.Condition).toEqual({
+        'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': names },
+        Null: { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': 'false' },
+      });
+      expect(arn(statements('stacks-test-boundary'))).not.toContain('route53');
+    });
+
+    it('takes the staging roots, legacy ones included, from the real stacks.config.json', () => {
+      const config = JSON.parse(fs.readFileSync(path.join(repoRoot, 'stacks.config.json'), 'utf8'));
+      const roots = stagingRootDomains(config.environments.staging);
+      expect(roots[0]).toBe(config.environments.staging.rootDomain);
+      expect(roots).toHaveLength(1 + (config.environments.staging.legacyRedirects ?? []).length);
+      for (const root of roots) expect(stagingRecordNames(roots)).toEqual(expect.arrayContaining([root, `*.${root}`]));
+      expect(roots).not.toContain(config.environments.production.rootDomain);
+    });
+
+    it('allows no DNS change at all without staging names', () => {
+      const bare = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+      expect(arn(statements('stacks-test-cfn-exec', bare))).not.toContain('route53:ChangeResourceRecordSets');
+    });
+  });
+
+  describe('monthly budget (#98)', () => {
+    const ci = (budget?: { monthlyUsd: number; alertEmail: string }) =>
+      Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1', ...(budget ? { budget } : {}) }));
+
+    it('emails at 80% of actual and 100% of forecast spend', () => {
+      const t = ci({ monthlyUsd: 50, alertEmail: 'owner@example.com' });
+      t.resourceCountIs('AWS::Budgets::Budget', 1);
+      const subscribers = [{ SubscriptionType: 'EMAIL', Address: 'owner@example.com' }];
+      t.hasResourceProperties('AWS::Budgets::Budget', {
+        Budget: { BudgetName: BUDGET_NAME, BudgetType: 'COST', TimeUnit: 'MONTHLY', BudgetLimit: { Amount: 50, Unit: 'USD' } },
+        NotificationsWithSubscribers: [
+          { Notification: { NotificationType: 'ACTUAL', ComparisonOperator: 'GREATER_THAN', Threshold: 80, ThresholdType: 'PERCENTAGE' }, Subscribers: subscribers },
+          { Notification: { NotificationType: 'FORECASTED', ComparisonOperator: 'GREATER_THAN', Threshold: 100, ThresholdType: 'PERCENTAGE' }, Subscribers: subscribers },
+        ],
+      });
+    });
+
+    it('has no budget without one configured', () => {
+      ci().resourceCountIs('AWS::Budgets::Budget', 0);
+    });
+
+    it('is configured at 50 USD in stacks.config.json, and rejects a bad amount', () => {
+      const file = path.join(repoRoot, 'stacks.config.json');
+      expect(loadStacksConfig(file).budget).toEqual({ monthlyUsd: 50 });
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-budget-'));
+      const bad = path.join(dir, 'c.json');
+      fs.writeFileSync(bad, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), budget: { monthlyUsd: 0 } }));
+      expect(() => loadStacksConfig(bad)).toThrow(/budget.monthlyUsd must be a positive number/);
     });
   });
 

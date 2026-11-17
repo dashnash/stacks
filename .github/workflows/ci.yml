@@ -17,21 +17,23 @@ jobs:
     # Public repo: PRs from forks never run on the self-hosted runner (#93).
     runs-on: ${{ (vars.LINUX_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - name: Lint workflows
         # The official image bundles shellcheck; no download step to flake.
-        uses: docker://rhysd/actionlint:1.7.12
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: -color
       - name: Import rule
         run: node scripts/check-imports.mjs
+      - name: Actions pinned to commit SHAs (#99)
+        run: node scripts/check-action-pins.mjs
       - name: PR paths (app PRs change one app; anything else is platform work)
         if: github.event_name == 'pull_request'
         env:
