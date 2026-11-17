@@ -25,6 +25,12 @@ export interface CiStackProps {
   stagingRecordNames?: string[];
 }
 
+/** The staging root domains in a config: `rootDomain` and each legacy redirect's. */
+export const stagingRootDomains = (env: { rootDomain: string; legacyRedirects?: Array<{ rootDomain: string }> }) => [
+  env.rootDomain,
+  ...(env.legacyRedirects ?? []).map((r) => r.rootDomain),
+];
+
 /** The record names a staging deploy may write: each staging root domain (and legacy root), and everything under it. */
 export const stagingRecordNames = (rootDomains: string[]) =>
   [...new Set(rootDomains.map((d) => d.toLowerCase().replace(/\.$/, '')))].flatMap((d) => [d, `*.${d}`]);
@@ -96,11 +102,11 @@ export class CiStack extends cdk.Stack {
     const ssmRead = ['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath'];
     const neverProductionByName = () =>
       new iam.PolicyStatement({
-      sid: 'NeverProductionByName',
-      effect: iam.Effect.DENY,
-      actions: ['s3:*', 'ssm:*'],
-      resources: [...buckets('stacks-prod-*', 'cdk-stkprod-*'), ...parameters('stacks/prod/*', 'cdk-bootstrap/stkprod/*')],
-    });
+        sid: 'NeverProductionByName',
+        effect: iam.Effect.DENY,
+        actions: ['s3:*', 'ssm:*'],
+        resources: [...buckets('stacks-prod-*', 'cdk-stkprod-*'), ...parameters('stacks/prod/*', 'cdk-bootstrap/stkprod/*')],
+      });
     const recordNames = props.stagingRecordNames ?? [];
 
     new iam.ManagedPolicy(this, 'StagingBoundary', {
@@ -168,7 +174,11 @@ export class CiStack extends cdk.Stack {
                 sid: 'StagingRecords',
                 actions: ['route53:ChangeResourceRecordSets'],
                 resources: [`arn:${this.partition}:route53:::hostedzone/*`],
-                conditions: { 'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': recordNames } },
+                // ForAllValues is vacuously true when the key is missing, so require it to be present.
+                conditions: {
+                  'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': recordNames },
+                  Null: { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': 'false' },
+                },
               }),
             ]
           : []),

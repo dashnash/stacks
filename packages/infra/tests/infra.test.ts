@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, stagingRecordNames, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -750,8 +750,20 @@ describe('CiStack', () => {
       const exec = statements('stacks-test-cfn-exec');
       const changers = exec.filter((x) => x.Effect === 'Allow' && actions(x).some((a) => a === 'route53:ChangeResourceRecordSets' || a === 'route53:*'));
       expect(changers.map((x) => x.Sid)).toEqual(['StagingRecords']);
-      expect(changers[0]!.Condition).toEqual({ 'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': names } });
+      expect(changers[0]!.Condition).toEqual({
+        'ForAllValues:StringLike': { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': names },
+        Null: { 'route53:ChangeResourceRecordSetsNormalizedRecordNames': 'false' },
+      });
       expect(arn(statements('stacks-test-boundary'))).not.toContain('route53');
+    });
+
+    it('takes the staging roots, legacy ones included, from the real stacks.config.json', () => {
+      const config = JSON.parse(fs.readFileSync(path.join(repoRoot, 'stacks.config.json'), 'utf8'));
+      const roots = stagingRootDomains(config.environments.staging);
+      expect(roots[0]).toBe(config.environments.staging.rootDomain);
+      expect(roots).toHaveLength(1 + (config.environments.staging.legacyRedirects ?? []).length);
+      for (const root of roots) expect(stagingRecordNames(roots)).toEqual(expect.arrayContaining([root, `*.${root}`]));
+      expect(roots).not.toContain(config.environments.production.rootDomain);
     });
 
     it('allows no DNS change at all without staging names', () => {

@@ -24,7 +24,7 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as cdk from 'aws-cdk-lib';
-import { AppStack, CiStack, LegacyRedirectStack, stagingRecordNames, loadStacksConfig, parseZoneIds, PlatformStack, resolveZoneIds, type EnvName } from '@stacks/infra';
+import { AppStack, CiStack, LegacyRedirectStack, loadStacksConfig, parseZoneIds, PlatformStack, resolveZoneIds, stagingRecordNames, stagingRootDomains, type EnvName } from '@stacks/infra';
 import { discoverApps } from '../lib/apps';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -42,13 +42,12 @@ const discovered = discoverApps(repoRoot).filter((a) => !held.has(a.manifest.slu
 const platformProps = { envName, env, region: config.region, repoRoot, buildSha, appSlugs: discovered.map((a) => a.manifest.slug) };
 
 if (app.node.tryGetContext('ci') === 'true') {
-  const staging = config.environments.staging;
   new CiStack(app, 'stacks-ci', {
     githubRepo: config.githubRepo,
     githubSubjectPrefix: config.githubSubjectPrefix,
     region: config.region,
     // The only DNS names staging deploys may write (#94).
-    stagingRecordNames: stagingRecordNames([staging.rootDomain, ...(staging.legacyRedirects ?? []).map((r) => r.rootDomain)]),
+    stagingRecordNames: stagingRecordNames(stagingRootDomains(config.environments.staging)),
   });
 } else if (app.node.tryGetContext('only') === 'platform') {
   new PlatformStack(app, platformProps);
