@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, CiStack, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -769,6 +769,37 @@ describe('CiStack', () => {
     it('allows no DNS change at all without staging names', () => {
       const bare = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
       expect(arn(statements('stacks-test-cfn-exec', bare))).not.toContain('route53:ChangeResourceRecordSets');
+    });
+  });
+
+  describe('monthly budget (#98)', () => {
+    const ci = (budget?: { monthlyUsd: number; alertEmail: string }) =>
+      Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1', ...(budget ? { budget } : {}) }));
+
+    it('emails at 80% of actual and 100% of forecast spend', () => {
+      const t = ci({ monthlyUsd: 50, alertEmail: 'owner@example.com' });
+      t.resourceCountIs('AWS::Budgets::Budget', 1);
+      const subscribers = [{ SubscriptionType: 'EMAIL', Address: 'owner@example.com' }];
+      t.hasResourceProperties('AWS::Budgets::Budget', {
+        Budget: { BudgetName: BUDGET_NAME, BudgetType: 'COST', TimeUnit: 'MONTHLY', BudgetLimit: { Amount: 50, Unit: 'USD' } },
+        NotificationsWithSubscribers: [
+          { Notification: { NotificationType: 'ACTUAL', ComparisonOperator: 'GREATER_THAN', Threshold: 80, ThresholdType: 'PERCENTAGE' }, Subscribers: subscribers },
+          { Notification: { NotificationType: 'FORECASTED', ComparisonOperator: 'GREATER_THAN', Threshold: 100, ThresholdType: 'PERCENTAGE' }, Subscribers: subscribers },
+        ],
+      });
+    });
+
+    it('has no budget without one configured', () => {
+      ci().resourceCountIs('AWS::Budgets::Budget', 0);
+    });
+
+    it('is configured at 50 USD in stacks.config.json, and rejects a bad amount', () => {
+      const file = path.join(repoRoot, 'stacks.config.json');
+      expect(loadStacksConfig(file).budget).toEqual({ monthlyUsd: 50 });
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stacks-budget-'));
+      const bad = path.join(dir, 'c.json');
+      fs.writeFileSync(bad, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), budget: { monthlyUsd: 0 } }));
+      expect(() => loadStacksConfig(bad)).toThrow(/budget.monthlyUsd must be a positive number/);
     });
   });
 

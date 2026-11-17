@@ -298,7 +298,9 @@ the persona switcher · **Sign out** (of every app).
 ## Monitoring
 
 Built for troubleshooting, not paging (#75): the owner looks when someone says something broke.
-AWS-native only (CloudWatch), no third-party tracker, no alerts.
+AWS-native only (CloudWatch), no third-party tracker, no alerts. The one exception is cost: an AWS
+Budget `stacks-monthly` in `stacks-ci` (#98, `budget.monthlyUsd` in `stacks.config.json`, 50 USD)
+emails the first production platform admin at 80% of actual and 100% of forecast monthly spend.
 
 - **One JSON line per API request**, from every app and the platform, written by `@stacks/api`'s
   router: `type: "request"`, `method`, `route` (the matched pattern, e.g. `/api/books/:id`;

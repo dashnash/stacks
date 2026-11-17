@@ -1,6 +1,6 @@
 export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, GAME_ALARM_AFTER_HOURS, GAME_CONTAINER_NAME, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
 export type { AppStackProps } from './app-stack';
-export { CiStack, STAGING_EXEC_POLICY_NAME, stagingRecordNames, stagingRootDomains } from './ci-stack';
+export { BUDGET_NAME, CiStack, STAGING_EXEC_POLICY_NAME, stagingRecordNames, stagingRootDomains } from './ci-stack';
 export type { CiStackProps } from './ci-stack';
 export { buildCsp } from './csp';
 export {

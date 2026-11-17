@@ -48,6 +48,10 @@ if (app.node.tryGetContext('ci') === 'true') {
     region: config.region,
     // The only DNS names staging deploys may write (#94).
     stagingRecordNames: stagingRecordNames(stagingRootDomains(config.environments.staging)),
+    // #98: alerts go to production's first platform admin (no new address in git).
+    ...(config.budget && config.environments.production.platformAdmins[0]
+      ? { budget: { monthlyUsd: config.budget.monthlyUsd, alertEmail: config.environments.production.platformAdmins[0] } }
+      : {}),
   });
 } else if (app.node.tryGetContext('only') === 'platform') {
   new PlatformStack(app, platformProps);

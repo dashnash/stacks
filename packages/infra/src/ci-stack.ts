@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 import { bootstrapQualifier, STAGING_BOUNDARY_NAME, type EnvName } from './config';
@@ -23,7 +24,14 @@ export interface CiStackProps {
    * `*.<root>` (`stagingRecordNames()`). Without it staging may change no record at all.
    */
   stagingRecordNames?: string[];
+  /**
+   * The account-wide monthly cost budget (#98): email at 80% of actual and 100% of forecast spend.
+   * Both or neither; without them there is no budget.
+   */
+  budget?: { monthlyUsd: number; alertEmail: string };
 }
+
+export const BUDGET_NAME = 'stacks-monthly';
 
 /** The staging root domains in a config: `rootDomain` and each legacy redirect's. */
 export const stagingRootDomains = (env: { rootDomain: string; legacyRedirects?: Array<{ rootDomain: string }> }) => [
@@ -253,6 +261,20 @@ export class CiStack extends cdk.Stack {
         }),
       ],
     });
+
+    // A cost guardrail, not ops alerting (#98, compatible with pull-only monitoring #75): the
+    // account has open sign-up, public APIs and game servers, and nothing else watches spend.
+    if (props.budget) {
+      const subscribers = [{ subscriptionType: 'EMAIL', address: props.budget.alertEmail }];
+      const alert = (notificationType: 'ACTUAL' | 'FORECASTED', threshold: number) => ({
+        notification: { notificationType, comparisonOperator: 'GREATER_THAN', threshold, thresholdType: 'PERCENTAGE' },
+        subscribers,
+      });
+      new budgets.CfnBudget(this, 'MonthlyBudget', {
+        budget: { budgetName: BUDGET_NAME, budgetType: 'COST', timeUnit: 'MONTHLY', budgetLimit: { amount: props.budget.monthlyUsd, unit: 'USD' } },
+        notificationsWithSubscribers: [alert('ACTUAL', 80), alert('FORECASTED', 100)],
+      });
+    }
 
     new cdk.CfnOutput(this, 'StagingRoleArn', { value: this.roles.staging.roleArn });
     new cdk.CfnOutput(this, 'ProductionRoleArn', { value: this.roles.production.roleArn });
