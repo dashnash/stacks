@@ -20,6 +20,21 @@ Set the profile once per shell:
 export AWS_PROFILE=admin AWS_REGION=us-east-1
 ```
 
+## 0. Once: check AWS Backup covers DynamoDB
+
+AWS Backup only backs up resource types that are opted in for the region. Check once after the
+first production deploy, and look for a recovery point after the 1st of the next month:
+
+```bash
+aws backup describe-region-settings --query "ResourceTypeOptInPreference.DynamoDB"
+```
+
+```bash
+aws backup list-recovery-points-by-backup-vault --backup-vault-name stacks-prod-backups --query "RecoveryPoints[].[ResourceArn,CreationDate,Status]" --output table
+```
+
+If the first prints `false`, turn it on (AWS Backup console → Settings → Service opt-in → DynamoDB).
+
 ## 1. Find the live table
 
 The platform's table is in its stack outputs (`stacks-prod-platform`, or `stacks-test-platform` on staging):
@@ -38,15 +53,20 @@ Use `/stacks/test/...` for staging. Below, `LIVE` is that name.
 
 ## 2. Restore to a new table
 
+Name the new table first:
+
+```bash
+RESTORED="$LIVE-restore-$(date -u +%Y%m%d%H%M)"
+```
+
 **From PITR** (last 35 days). Pick a time just before the damage, in UTC:
 
 ```bash
-aws dynamodb restore-table-to-point-in-time --source-table-name "$LIVE" --target-table-name "$LIVE-restore-$(date -u +%Y%m%d%H%M)" --restore-date-time 2026-11-17T09:30:00Z
+aws dynamodb restore-table-to-point-in-time --source-table-name "$LIVE" --target-table-name "$RESTORED" --restore-date-time 2026-11-17T09:30:00Z
 ```
 
 **From a monthly backup** (older than 35 days, production only): AWS Backup console → Backup vaults →
-`stacks-prod-backups` → pick the table's recovery point → **Restore**. Give it a new table name
-(`<LIVE>-restore-<date>`) and use the `BackupRole` from `stacks-prod-platform` as the IAM role.
+`stacks-prod-backups` → pick the table's recovery point → **Restore**. Give it the name in `$RESTORED` and use the `BackupRole` from `stacks-prod-platform` as the IAM role.
 
 Either way, wait until the new table is `ACTIVE`. That takes minutes for small tables.
 

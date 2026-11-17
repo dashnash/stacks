@@ -230,7 +230,15 @@ export class AppStack extends cdk.Stack {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         enforceSSL: true,
         versioned: true,
-        lifecycleRules: [{ id: 'ExpireOldVersions', noncurrentVersionExpiration: cdk.Duration.days(CONTENT_NONCURRENT_DAYS), abortIncompleteMultipartUploadAfter: cdk.Duration.days(7) }],
+        lifecycleRules: [
+          {
+            id: 'ExpireOldVersions',
+            noncurrentVersionExpiration: cdk.Duration.days(CONTENT_NONCURRENT_DAYS),
+            // Once a deleted key's old versions expire, its delete marker goes too.
+            expiredObjectDeleteMarker: true,
+            abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
+          },
+        ],
         removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
         autoDeleteObjects: !isProd,
       });

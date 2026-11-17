@@ -19,7 +19,7 @@ PITR so restores can be rehearsed, and `docs/RESTORE.md` plus a copy-back script
 
 1. After deploy: rehearse once on staging following `docs/RESTORE.md` (restore the staging platform
    table to a point a few minutes ago, dry-run then copy back, delete the restored table). Note how long it took in the runbook.
-2. Check AWS Backup → Backup plans shows `stacks-prod-monthly` with the selection, and after the 1st of next month that a recovery point exists.
+2. Check DynamoDB is opted in for AWS Backup in us-east-1 (`docs/RESTORE.md` §0). Check AWS Backup → Backup plans shows `stacks-prod-monthly` with the selection, and after the 1st of next month that a recovery point exists.
 
 ## Changes
 

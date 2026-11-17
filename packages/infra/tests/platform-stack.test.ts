@@ -136,7 +136,7 @@ describe('AppStack contentPacks', () => {
     t.hasResourceProperties('AWS::S3::Bucket', {
       VersioningConfiguration: { Status: 'Enabled' },
       LifecycleConfiguration: {
-        Rules: [Match.objectLike({ Id: 'ExpireOldVersions', Status: 'Enabled', NoncurrentVersionExpiration: { NoncurrentDays: CONTENT_NONCURRENT_DAYS }, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } })],
+        Rules: [Match.objectLike({ Id: 'ExpireOldVersions', Status: 'Enabled', NoncurrentVersionExpiration: { NoncurrentDays: CONTENT_NONCURRENT_DAYS }, ExpiredObjectDeleteMarker: true, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } })],
       },
     });
     // Only the content bucket is versioned (the web bucket is rebuilt on every deploy).
