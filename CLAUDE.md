@@ -48,7 +48,11 @@ its tests) rather than rewriting from scratch.
 - **App tasks** (building or changing one app, e.g. via `/new-app`): edit only `apps/<slug>/`. If the
   app needs something the SDK lacks, stop and propose a separate platform change.
 - **Platform tasks**: changes to `packages/`, `platform/`, `infra/` or `.github/` need review from
-  `@dashnash` (`CODEOWNERS`). Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
+  `@dashnash` (`CODEOWNERS`). PRs touching `packages/infra/`, `.github/` or `platform/api/` also
+  need an agent code review of the head commit (#111): run `/code-review` on the PR, fix or answer
+  the findings, then comment the summary plus `node scripts/agent-review-gate.mjs marker <head sha>`
+  on the PR. Repeat after every push; the `agent-review` check stays pending until then.
+  Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.
 - Store people by `v.user.id`, never by email.

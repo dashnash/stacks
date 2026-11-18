@@ -11,10 +11,10 @@
   "dependencies": {
     "@stacks/infra": "*",
     "@stacks/manifest": "*",
-    "aws-cdk-lib": "^2.200.0",
+    "aws-cdk-lib": "^2.277.0",
     "constructs": "^10.4.2"
   },
   "devDependencies": {
-    "aws-cdk": "^2.1100.0"
+    "aws-cdk": "^2.1148.0"
   }
 }

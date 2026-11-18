@@ -22,13 +22,14 @@
     "build": "npm run build --workspaces --if-present",
     "new-app": "npm run new-app -w tools/new-app --",
     "verify-app": "npm run verify-app -w tools/new-app --",
-    "app-usage": "npm run app-usage -w tools/new-app --"
+    "app-usage": "npm run app-usage -w tools/new-app --",
+    "table-copy": "npm run table-copy -w tools/table-copy --"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.7",
+    "vitest": "^5.1.0",
     "@stacks/infra": "*"
   }
 }

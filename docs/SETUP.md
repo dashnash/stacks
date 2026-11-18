@@ -41,7 +41,11 @@ In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) cre
 ID** of type **Web application** for each environment. Under **Authorised JavaScript origins** add
 exactly one origin: `https://auth.<rootDomain>` (e.g. `https://auth.dashnash.ninja` and
 `https://auth.test.dashnash.ninja`). No redirect URIs and no client secret are needed; apps never
-talk to Google. Put each client ID in `googleClientId`.
+talk to Google. Put each client ID in `googleClientId`. The two must differ (a test in
+`packages/infra/tests/config.test.ts` fails otherwise, #96): the platform accepts any credential
+addressed to its client, so a shared one would make a staging credential good on production. Create
+the web clients in the same Google Cloud project as that environment's iOS client, and after changing
+one run `node scripts/ios-xcconfig.mjs` (the iOS app embeds it as `GIDServerClientID`).
 
 ## 2. Bootstrap production and deploy the CI stack
 
@@ -67,6 +71,12 @@ gh api repos/dashnash/stacks/actions/oidc/customization/sub
 If it says `"use_immutable_subject": true`, copy its `sub_claim_prefix` into `githubSubjectPrefix`
 in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
 `repo:dashnash@3804293/stacks@1449992124`, which survives renames). Otherwise leave it out.
+
+`stacks-ci` also creates the account's monthly cost budget `stacks-monthly` (#98): `budget.monthlyUsd`
+in `stacks.config.json` (50 USD), with emails to the first production `platformAdmins` address at 80%
+of actual and 100% of forecast spend (no confirmation needed; forecast alerts start once AWS has
+about five weeks of usage history). Check Billing → Budgets for an older
+budget first; keeping both only means two emails.
 
 `stacks-ci` creates the GitHub OIDC provider (pass `existingOidcProviderArn` in `bin/stacks.ts` if
 the account already has one), the roles `stacks-ci-production` and `stacks-ci-staging`, and the
@@ -113,11 +123,18 @@ redeploy it from your machine with admin credentials before merging anything tha
   `.github/rulesets/main.json`: no deletion or force push, every change through a PR, the `check`
   job of `CI` green, and code-owner review on `CODEOWNERS` paths (app-only PRs merge on green CI).
   Repository admins may bypass only through a PR (to merge their own), so nobody pushes straight to
-  `main`. Apply it once, and again after editing the file (`PUT …/rulesets/<id>` to update):
+  `main`. PRs touching `packages/infra/`, `.github/` or `platform/api/` also need the `agent-review`
+  status (#111, posted by `.github/workflows/agent-review.yml` once a session records a code review
+  of the head commit). Apply it once, and again after editing the file (`PUT …/rulesets/<id>` to update):
 
   ```bash
   gh api -X POST repos/dashnash/stacks/rulesets --input .github/rulesets/main.json
   ```
+- **Code security** (Settings → Code security, #99): turn on Dependabot alerts, Dependabot
+  security updates, secret scanning and push protection. Then Settings → Actions → General: tick
+  **Require actions to be pinned to a full-length commit SHA** (CI's `check-action-pins` step
+  enforces the same in the repo). Dependabot PRs touch `package-lock.json` or `.github/`, so each
+  needs your code-owner review.
 - **Environments**: check that `staging`, `production` and `ios-release` each allow only `main`:
 
   ```bash

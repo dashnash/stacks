@@ -43,11 +43,16 @@ describe('main ruleset', () => {
     });
   });
 
-  it('requires the CI check, which must be a real job in ci.yml', () => {
+  it('requires the CI check and the agent review status (#111), each a real job', () => {
     const checks = rule('required_status_checks').parameters.required_status_checks;
-    expect(checks).toEqual([{ context: 'check', integration_id: 15368 }]);
+    expect(checks).toEqual([
+      { context: 'check', integration_id: 15368 },
+      { context: 'agent-review', integration_id: 15368 },
+    ]);
     const ci = workflows.find((w) => w.file === 'ci.yml')!;
     expect(jobs(ci.text).map((j) => j.id)).toContain('check');
+    const review = workflows.find((w) => w.file === 'agent-review.yml')!;
+    expect(jobs(review.text).map((j) => j.id)).toEqual(['agent-review']);
   });
 
   it('lets only repo admins bypass, and only through a pull request (no direct pushes)', () => {
@@ -56,8 +61,18 @@ describe('main ruleset', () => {
 });
 
 describe('workflows on a public repo', () => {
-  it('never use pull_request_target', () => {
-    for (const w of workflows) expect(w.text, w.file).not.toMatch(/pull_request_target/);
+  it('never use pull_request_target, except the agent review gate, which never touches PR code', () => {
+    for (const w of workflows.filter((x) => x.file !== 'agent-review.yml')) expect(w.text, w.file).not.toMatch(/pull_request_target/);
+    // #111: it must run main's workflow and script (pull_request would let a PR post its own
+    // success), so it holds a write token next to PR events. It may only read the base branch.
+    const gate = workflows.find((w) => w.file === 'agent-review.yml')!.text;
+    const steps = gate.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    expect(steps).toMatch(/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+    expect(steps).not.toMatch(/github\.event\.pull_request\.head|github\.head_ref|refs\/pull\//);
+    expect(steps).not.toMatch(/\bnpm\b|\bnpx\b|actions\/setup-node/);
+    expect(steps).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(steps).not.toMatch(/contents: write|pull-requests: write/);
+    expect(steps).toMatch(/run: node scripts\/agent-review-gate\.mjs$/m);
   });
 
   it('keep fork PRs off self-hosted runners', () => {

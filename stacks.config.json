@@ -3,6 +3,7 @@
   "region": "us-east-1",
   "githubRepo": "dashnash/stacks",
   "githubSubjectPrefix": "repo:dashnash@3804293/stacks@1449992124",
+  "budget": { "monthlyUsd": 50 },
   "environments": {
     "production": {
       "rootDomain": "dashnash.ninja",
@@ -20,7 +21,7 @@
       "hostedZoneId": "lookup",
       "hostedZoneName": "dashnash.ninja",
       "legacyRedirects": [{ "rootDomain": "test.iamdashnash.com", "hostedZoneId": "Z34UPUIR94DZXQ", "hostedZoneName": "iamdashnash.com" }],
-      "googleClientId": "880697273676-vlauu5kq3khc7ou3oc2aja6mgpapph86.apps.googleusercontent.com",
+      "googleClientId": "880697273676-0vn742qkc5913023l6c4kvsn1ocqqqrd.apps.googleusercontent.com",
       "platformAdmins": ["dashiell.nash@gmail.com"],
       "maintenance": false,
       "native": { "appleTeamId": "47ZUZ59AHR", "iosBundleId": "ninja.dashnash.stacks.test", "googleIosClientIds": ["880697273676-10cfvrilb7te3h8hfc57nrp0dsaouosj.apps.googleusercontent.com"], "minShellVersion": "1.0.0" },

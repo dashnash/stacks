@@ -1,6 +1,8 @@
 import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
+import * as backup from 'aws-cdk-lib/aws-backup';
+import * as events from 'aws-cdk-lib/aws-events';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -24,6 +26,11 @@ import { addApiMetricFilters, logGroupName, Monitoring } from './monitoring';
 import { aasaRoute, authOrigin, bootstrapQualifier, envTag, gameAlarmTopicName, gameClusterName, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
 
 /** The portal needs Google Identity Services; nothing else may load from elsewhere. */
+/** AWS Backup for production tables (#97). */
+export const BACKUP_VAULT_NAME = 'stacks-prod-backups';
+export const BACKUP_PLAN_NAME = 'stacks-prod-monthly';
+export const BACKUP_RETENTION_DAYS = 365;
+
 export const PORTAL_CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client https://appleid.cdn-apple.com",
@@ -137,7 +144,8 @@ export class PlatformStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
+      // Both environments (#97): staging too, so restores are rehearsed on the real path (docs/RESTORE.md).
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'expiresAt',
     });
@@ -146,6 +154,41 @@ export class PlatformStack extends cdk.Stack {
       partitionKey: { name: 'GSI1PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'GSI1SK', type: dynamodb.AttributeType.STRING },
     });
+
+    // Monthly backups of every production table, kept a year (#97). PITR covers 35 days; this is
+    // the longer tail. Production only (staging data is disposable). Restores: docs/RESTORE.md.
+    if (isProd) {
+      const vault = new backup.BackupVault(this, 'BackupVault', { backupVaultName: BACKUP_VAULT_NAME, removalPolicy: cdk.RemovalPolicy.RETAIN });
+      const plan = new backup.BackupPlan(this, 'BackupPlan', {
+        backupPlanName: BACKUP_PLAN_NAME,
+        backupVault: vault,
+        backupPlanRules: [
+          new backup.BackupPlanRule({
+            ruleName: 'Monthly',
+            scheduleExpression: events.Schedule.cron({ minute: '0', hour: '5', day: '1', month: '*', year: '*' }),
+            deleteAfter: cdk.Duration.days(BACKUP_RETENTION_DAYS),
+          }),
+        ],
+      });
+      const role = new iam.Role(this, 'BackupRole', {
+        assumedBy: new iam.ServicePrincipal('backup.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSBackupServiceRolePolicyForBackup'),
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSBackupServiceRolePolicyForRestores'),
+        ],
+      });
+      // Every DynamoDB table tagged stacks:env=production (the platform's and each app's), and
+      // nothing else: tags alone would also pick up buckets. Resources AND conditions must match.
+      new backup.CfnBackupSelection(this, 'BackupTables', {
+        backupPlanId: plan.backupPlanId,
+        backupSelection: {
+          selectionName: 'production-tables',
+          iamRoleArn: role.roleArn,
+          resources: [this.formatArn({ service: 'dynamodb', resource: 'table', resourceName: '*' })],
+          conditions: { StringEquals: [{ ConditionKey: 'aws:ResourceTag/stacks:env', ConditionValue: 'production' }] },
+        },
+      });
+    }
 
     // 3. The Platform API.
     const apiLogs = new logs.LogGroup(this, 'ApiLogs', {
