@@ -1,0 +1,13 @@
+{
+  "name": "@stacks/table-copy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "table-copy": "node table-copy.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1164.0"
+  }
+}

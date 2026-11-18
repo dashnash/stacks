@@ -1,4 +1,4 @@
-export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, GAME_ALARM_AFTER_HOURS, GAME_CONTAINER_NAME, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
+export { AppStack, API_BURST_LIMIT, API_RATE_LIMIT, CONTENT_NONCURRENT_DAYS, GAME_ALARM_AFTER_HOURS, GAME_CONTAINER_NAME, REALTIME_ON_PUBLISH_CODE, SITE_ROUTER_CODE, siteRouterCode } from './app-stack';
 export type { AppStackProps } from './app-stack';
 export { BUDGET_NAME, CiStack, STAGING_EXEC_POLICY_NAME, stagingRecordNames, stagingRootDomains } from './ci-stack';
 export type { CiStackProps } from './ci-stack';
@@ -31,6 +31,6 @@ export type { LegacyRedirectStackProps } from './legacy-redirect-stack';
 export { checkAssembly } from './assembly-check';
 export { addApiMetricFilters, API_METRIC_FILTERS, dashboardName, logGroupName, metricNamespace, Monitoring, SAVED_QUERIES } from './monitoring';
 export type { MonitoringProps } from './monitoring';
-export { PlatformStack, PORTAL_CSP, portalRouterCode } from './platform-stack';
+export { BACKUP_PLAN_NAME, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, PlatformStack, PORTAL_CSP, portalRouterCode } from './platform-stack';
 export type { PlatformStackProps } from './platform-stack';
 export { bundleGameServer, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, gameBootstrapCommand, GAME_SERVER_IMAGE } from './game-bundle';
