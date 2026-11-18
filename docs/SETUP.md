@@ -41,7 +41,11 @@ In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) cre
 ID** of type **Web application** for each environment. Under **Authorised JavaScript origins** add
 exactly one origin: `https://auth.<rootDomain>` (e.g. `https://auth.dashnash.ninja` and
 `https://auth.test.dashnash.ninja`). No redirect URIs and no client secret are needed; apps never
-talk to Google. Put each client ID in `googleClientId`.
+talk to Google. Put each client ID in `googleClientId`. The two must differ (a test in
+`packages/infra/tests/config.test.ts` fails otherwise, #96): the platform accepts any credential
+addressed to its client, so a shared one would make a staging credential good on production. Create
+the web clients in the same Google Cloud project as that environment's iOS client, and after changing
+one run `node scripts/ios-xcconfig.mjs` (the iOS app embeds it as `GIDServerClientID`).
 
 ## 2. Bootstrap production and deploy the CI stack
 
