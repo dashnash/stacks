@@ -51,7 +51,7 @@ jobs:
     outputs:
       app: ${{ steps.changes.outputs.app }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Did anything that goes into the app change?
@@ -100,7 +100,7 @@ jobs:
     runs-on: ${{ (github.event.pull_request.head.repo.full_name == github.repository && (vars.MACOS_PR_RUNNER || vars.MACOS_RUNNER)) && fromJSON(vars.MACOS_PR_RUNNER || vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Use the newest Xcode
         run: |
           # For this job only: no sudo, and the machine's Xcode selection is left alone (the runner may be a shared Mac).
@@ -178,7 +178,7 @@ jobs:
     outputs:
       build: ${{ steps.upload.outputs.build }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
@@ -437,7 +437,7 @@ jobs:
     timeout-minutes: 30
     environment: ios-release
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
