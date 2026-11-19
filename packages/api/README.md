@@ -62,6 +62,8 @@ await deps.platform.notify(userId, 'Your pick won', url); // their platform inbo
 `GET /stacks/access` (`members`, `pending`, `blocked`) + `PUT /stacks/access/:userId {role|null|"BLOCKED"}`
 (approvers: the app's own access page, same rules as the portal grid), `GET /admin/audit` (approvers; `?before&actor&action&limit`),
 `POST /stacks/client-error` (browser errors from `@stacks/web`; logged, never stored).
+`GET /health` answers `{ ok: true, app, build }`: `build` is the commit the stack runs (`buildSha()`,
+`STACKS_BUILD_SHA`, `dev` locally), so the smoke check can spot mixed versions (#105).
 
 ## Logs and error refs
 

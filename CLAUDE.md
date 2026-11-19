@@ -57,6 +57,9 @@ its tests) rather than rewriting from scratch.
   Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.
+- The Platform API stays compatible with the previous SDK for one release (spec: "Compatibility across a
+  deploy"): add the new route or field first, remove the old one in a later PR. Check it in `/code-review` of
+  `platform/api/` and `packages/api/` changes. A failed or mixed deploy: `docs/ROLLBACK.md`.
 - Store people by `v.user.id`, never by email.
 - Every app has `<AccountMenu />` at the top right of its header, shows `<BuildVersion />` (usually in
   its footer) signed in and out, and exports `App` + `demoOptions()` from `web/src/demo/setup.ts`;

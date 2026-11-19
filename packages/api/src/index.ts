@@ -19,7 +19,7 @@ export {
   unauthorized,
 } from './http';
 export type { RouteResult } from './http';
-export { log, logClientError, serializeError, setLogApp, setLogSink, setLogUser } from './log';
+export { buildSha, log, logClientError, serializeError, setLogApp, setLogSink, setLogUser } from './log';
 export type { LogFields, LogLevel, LogLine, LogSink, LogType } from './log';
 export type { AppConfig, AppDeps, StacksUser, Viewer } from './model';
 export { HttpPlatformClient, PlatformError } from './platform';

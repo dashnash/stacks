@@ -6,7 +6,8 @@ TestFlight. Background: `docs/NATIVE_APP_SPEC.md`. You do these steps once, in a
 to `main` that touches the app uploads new builds.
 
 Nothing here is pasted into a Claude session except the values marked **not secret**. The App Store
-Connect key goes straight into GitHub.
+Connect key goes straight into GitHub. Everything set up here is also listed, with where its source
+value is kept, in [SETUP.md](SETUP.md) §0.
 
 | What | Who | Where it ends up | Secret? |
 | --- | --- | --- | --- |

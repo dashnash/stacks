@@ -134,7 +134,7 @@ jobs:
           node -e "const o=require('./outputs-staging.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
       # CloudFormation finishing isn't the same as working (#100): production waits on this.
       - name: Smoke check
-        run: node tools/smoke/smoke.mjs outputs-staging.json --env staging
+        run: node tools/smoke/smoke.mjs outputs-staging.json --env staging --sha "$GITHUB_SHA"
 
   production:
     needs: staging
@@ -165,6 +165,7 @@ jobs:
       - name: Summary
         run: |
           node -e "const o=require('./outputs.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
-      # Production is already live by now: a failure here fails the run loudly (no rollback, #100).
+      # Production is already live by now: a failure here fails the run loudly (no automatic
+      # rollback, #100; what to do then: docs/ROLLBACK.md). --sha warns about stacks on another commit (#105).
       - name: Smoke check
-        run: node tools/smoke/smoke.mjs outputs.json --env production
+        run: node tools/smoke/smoke.mjs outputs.json --env production --sha "$GITHUB_SHA"

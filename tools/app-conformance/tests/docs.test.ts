@@ -56,3 +56,35 @@ describe('PLATFORM_SPEC.md repo layout', () => {
     expect(paths.filter((p) => !existsSync(join(root, p)))).toEqual([]);
   });
 });
+
+// #105: the rollback runbook and the inventory of hand-made state point at other docs; those must exist.
+/** Relative Markdown link targets (no URLs, no pure anchors), without their `#anchor`. */
+export function relativeLinks(markdown: string): string[] {
+  return [...markdown.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]!).filter((t) => !/^[a-z]+:/i.test(t) && !t.startsWith('#')).map((t) => t.split('#')[0]!);
+}
+
+/** Repo paths written in backticks (`docs/X.md`, `.github/workflows/y.yml`, `scripts/z.mjs`, `packages/a/src/b.ts`). */
+export function backtickedPaths(markdown: string): string[] {
+  return [...markdown.matchAll(/`((?:docs|scripts|tools|packages|platform|\.github|\.claude)\/[\w./-]+)`/g)].map((m) => m[1]!).filter((p) => !p.includes('<'));
+}
+
+describe('runbooks and the inventory (#105)', () => {
+  const docsDir = join(root, 'docs');
+  const setup = readFileSync(join(docsDir, 'SETUP.md'), 'utf8');
+  const inventory = setup.slice(setup.indexOf('## 0. What lives outside the repo'), setup.indexOf('## 1. '));
+  const rollback = readFileSync(join(docsDir, 'ROLLBACK.md'), 'utf8');
+
+  it('finds links and paths (parser sanity check)', () => {
+    expect(relativeLinks('[a](ROLLBACK.md) [b](https://x.dev) [c](#top) [d](SETUP.md#0)')).toEqual(['ROLLBACK.md', 'SETUP.md']);
+    expect(backtickedPaths('`docs/RESTORE.md` and `.github/workflows/deploy.yml` but not `stacks-ci` or `/stacks/<env>/x`')).toEqual(['docs/RESTORE.md', '.github/workflows/deploy.yml']);
+    expect(inventory).toMatch(/\| Name \| Where it lives \| Source value \|/);
+  });
+
+  it('link only to files that exist', () => {
+    for (const [name, text] of [['ROLLBACK.md', rollback], ['SETUP.md §0', inventory]] as const) {
+      expect(relativeLinks(text).filter((t) => !existsSync(join(docsDir, t))), name).toEqual([]);
+      expect(backtickedPaths(text).filter((p) => !existsSync(join(root, p))), name).toEqual([]);
+    }
+  });
+});
+

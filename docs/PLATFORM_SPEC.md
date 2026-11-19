@@ -384,7 +384,7 @@ stacks/
     PLATFORM_SPEC.md         # this spec
     NATIVE_APP_SPEC.md       # the iOS app
     SETUP.md  IOS_SETUP.md  OWNER_STEPS.md   # one-time setup and the owner's manual steps
-    DEBUGGING.md  RESTORE.md   # runbooks
+    DEBUGGING.md  RESTORE.md  ROLLBACK.md   # runbooks
     specs/                   # one spec per refined issue
 ```
 
@@ -431,10 +431,14 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 **Pipelines**
 
 - `ci.yml` on every PR and push to `main`: one `check` job installs (`--ignore-scripts`), then runs actionlint, the import rule, the action-pin and install-script checks, the PR path check (PRs only), typecheck, **every** workspace's tests (manifests are validated there), the build, and `cdk synth` of every stack for both environments. Nothing is filtered by what changed.
-- `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
+- `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). Every `/api/health` names the commit it runs (`build`), the smoke table shows it, and with the run's `--sha` a stack on another commit is a warning (#105). What to do when a run fails or leaves mixed versions: `docs/ROLLBACK.md` (re-run the same artifacts, or revert in a new PR). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
 - `ci-drift.yml` (#101) daily, on changes to the CI stack, and from `deploy.yml` as a warning: synthesizes `stacks-ci` (no credentials), reads the live default version of `stacks-test-boundary` and `stacks-test-cfn-exec` with the read-only `stacks-ci-drift-check` role (trusted only from `main`, by ref), and fails on any difference (`scripts/check-ci-drift.mjs`). `stacks-ci` is deployed by hand, so this is what says a merged guardrail change hasn't reached AWS.
 - `deploy-test.yml`: one app from a branch to staging, before merging; posts the URL as the run summary.
 - Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
+
+**Compatibility across a deploy** (#105)
+
+`cdk deploy --all` rolls back each stack on its own, so after a failed run the platform and the apps can be on different commits for a while. Rule: **the Platform API stays compatible with the previous SDK release for one release.** A change to anything an app's `@stacks/api` calls or relies on (`/authorize`, the token exchange `POST /api/apps/:slug/token`, `/api/apps/:slug/*`, the app-session cookies and the handshake's query parameters) first adds the new field or route alongside the old one; a later PR removes the old one once every app has deployed with the new SDK. The platform deploys first, so it is always the newer side; apps must also keep working against the previous platform for one release when a change starts in the SDK. Reviews of `platform/api/` and `packages/api/` PRs check this.
 
 **Staging deploys without AWS credentials**
 
