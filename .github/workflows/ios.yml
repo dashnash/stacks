@@ -80,7 +80,7 @@ jobs:
             echo "::notice title=No macOS build::Nothing that goes into the app changed (only $(printf '%s\n' "$changed" | wc -l | tr -d ' ') other file(s))."
             echo "app=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Build settings match stacks.config.json
@@ -179,7 +179,7 @@ jobs:
       build: ${{ steps.upload.outputs.build }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Set up yet?
@@ -438,7 +438,7 @@ jobs:
     environment: ios-release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Write "What to Test"
