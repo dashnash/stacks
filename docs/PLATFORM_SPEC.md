@@ -355,7 +355,7 @@ stacks/
   .claude/skills/refine-backlog/  # /refine-backlog: turn backlog items into specs
   .github/CODEOWNERS         # @dashnash owns every path outside apps/ (packages/, platform/, infra/, .github/, scripts/, …)
   .github/rulesets/main.json # the merge gate on main (#93)
-  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand), agent-review.yml, ios*.yml
+  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand), ci-drift.yml (#101), agent-review.yml, ios*.yml
   stacks.config.json         # rootDomain, hostedZoneId (or "lookup"), legacyRedirects, googleClientId per env, PLATFORM_ADMINS
   platform/                  # the platform app itself
     api/                     # auth, handshake, grants, registry, audit feed, notifications
@@ -432,6 +432,7 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 
 - `ci.yml` on every PR and push to `main`: one `check` job installs (`--ignore-scripts`), then runs actionlint, the import rule, the action-pin and install-script checks, the PR path check (PRs only), typecheck, **every** workspace's tests (manifests are validated there), the build, and `cdk synth` of every stack for both environments. Nothing is filtered by what changed.
 - `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
+- `ci-drift.yml` (#101) daily, on changes to the CI stack, and from `deploy.yml` as a warning: synthesizes `stacks-ci` (no credentials), reads the live default version of `stacks-test-boundary` and `stacks-test-cfn-exec` with the read-only `stacks-ci-drift-check` role (trusted only from `main`, by ref), and fails on any difference (`scripts/check-ci-drift.mjs`). `stacks-ci` is deployed by hand, so this is what says a merged guardrail change hasn't reached AWS.
 - `deploy-test.yml`: one app from a branch to staging, before merging; posts the URL as the run summary.
 - Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
 

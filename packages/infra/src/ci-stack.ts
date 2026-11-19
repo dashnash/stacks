@@ -5,6 +5,8 @@ import type { Construct } from 'constructs';
 import { bootstrapQualifier, STAGING_BOUNDARY_NAME, type EnvName } from './config';
 
 export const STAGING_EXEC_POLICY_NAME = 'stacks-test-cfn-exec';
+/** Read-only: the drift check compares the live staging policies with this stack (#101). */
+export const DRIFT_CHECK_ROLE_NAME = 'stacks-ci-drift-check';
 const GITHUB_OIDC = 'token.actions.githubusercontent.com';
 
 export interface CiStackProps {
@@ -52,7 +54,8 @@ export const stagingRecordNames = (rootDomains: string[]) =>
  * - each role may only assume its own environment's CDK bootstrap roles (qualifier `stktest` / `stkprod`);
  * - `stacks-test-cfn-exec`: what CloudFormation may do for staging deploys (staging is bootstrapped
  *   with it instead of AdministratorAccess);
- * - `stacks-test-boundary`: the permissions boundary every role a staging deploy creates must carry.
+ * - `stacks-test-boundary`: the permissions boundary every role a staging deploy creates must carry;
+ * - `stacks-ci-drift-check`: reads those two policies, from `main` only, to detect drift (#101).
  *
  * Both staging policies deny anything on resources tagged `stacks:env=production`, and (#94) name
  * production's buckets and parameters explicitly, because S3 buckets and hand-made SSM parameters
@@ -262,6 +265,29 @@ export class CiStack extends cdk.Stack {
       ],
     });
 
+    // #101: this stack is deployed by hand, so a merged guardrail change may never reach AWS. A
+    // daily job on main (.github/workflows/ci-drift.yml) reads the two live policies with this
+    // role and compares them with the synthesized ones. No `environment:` in that job, so GitHub
+    // sends a ref-based subject: only main can assume it, never a PR.
+    const driftRole = new iam.Role(this, 'DriftCheckRole', {
+      roleName: DRIFT_CHECK_ROLE_NAME,
+      description: 'GitHub Actions on main reads the staging guardrail policies to detect drift (read-only)',
+      maxSessionDuration: cdk.Duration.hours(1),
+      assumedBy: new iam.WebIdentityPrincipal(providerArn, {
+        StringEquals: {
+          [`${GITHUB_OIDC}:aud`]: 'sts.amazonaws.com',
+          [`${GITHUB_OIDC}:sub`]: `${subjectPrefix}:ref:refs/heads/main`,
+        },
+      }),
+    });
+    driftRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'ReadStagingGuardrails',
+        actions: ['iam:GetPolicy', 'iam:GetPolicyVersion'],
+        resources: [STAGING_BOUNDARY_NAME, STAGING_EXEC_POLICY_NAME].map((n) => `arn:${this.partition}:iam::${this.account}:policy/${n}`),
+      }),
+    );
+
     // A cost guardrail, not ops alerting (#98, compatible with pull-only monitoring #75): the
     // account has open sign-up, public APIs and game servers, and nothing else watches spend.
     if (props.budget) {
@@ -278,5 +304,6 @@ export class CiStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'StagingRoleArn', { value: this.roles.staging.roleArn });
     new cdk.CfnOutput(this, 'ProductionRoleArn', { value: this.roles.production.roleArn });
+    new cdk.CfnOutput(this, 'DriftCheckRoleArn', { value: driftRole.roleArn });
   }
 }

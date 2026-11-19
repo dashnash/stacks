@@ -15,6 +15,16 @@ permissions:
   contents: read
 
 jobs:
+  # #101: are the live stacks-ci guardrail policies what main says? Warnings only; nothing waits on it.
+  ci-drift:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci-drift.yml
+    with:
+      warn: true
+
   # Zones marked "lookup" in stacks.config.json, resolved by name (read-only, through staging's
   # CDK lookup role) and handed to synth. Everything here is main's code; nothing is deployed.
   zones:

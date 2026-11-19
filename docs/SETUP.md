@@ -72,6 +72,14 @@ If it says `"use_immutable_subject": true`, copy its `sub_claim_prefix` into `gi
 in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
 `repo:dashnash@3804293/stacks@1449992124`, which survives renames). Otherwise leave it out.
 
+`stacks-ci` also creates the read-only role `stacks-ci-drift-check` (#101; output
+`DriftCheckRoleArn`): only GitHub Actions on `main` (by ref, no environment) can assume it, and it
+may only read `stacks-test-boundary` and `stacks-test-cfn-exec`. Put its ARN in the repository
+variable `AWS_DRIFT_ROLE_ARN` (step 4). The **CI policy drift** workflow then compares those two live
+policies with `main` every day (and Deploy does, as a warning): **when it fails, the guardrails in
+AWS are not what `main` says; redeploy `stacks-ci` with the command above.** Because only you deploy
+this stack, re-run that command after every merge that changes `packages/infra/src/ci-stack.ts`.
+
 `stacks-ci` also creates the account's monthly cost budget `stacks-monthly` (#98): `budget.monthlyUsd`
 in `stacks.config.json` (50 USD), with emails to the first production `platformAdmins` address at 80%
 of actual and 100% of forecast spend (no confirmation needed; forecast alerts start once AWS has
@@ -112,6 +120,9 @@ redeploy it from your machine with admin credentials before merging anything tha
 - **Environments** (Settings → Environments): create `staging` and `production`. For each, set
   *Deployment branches* to **Selected branches: `main`**, and add the variable
   `AWS_STAGING_ROLE_ARN` / `AWS_PRODUCTION_ROLE_ARN` with the ARN from step 2.
+- **Repository variable** (Settings → Secrets and variables → Actions → Variables, not an
+  environment): `AWS_DRIFT_ROLE_ARN` with the `DriftCheckRoleArn` from step 2 (#101). Until it's set
+  the drift check only says so.
 - **Make the repo public** (Settings → General → Change visibility). Rulesets and the fork-approval
   setting below need it on GitHub Free. While the repo is private, leave *Run workflows from fork
   pull requests* unchecked.

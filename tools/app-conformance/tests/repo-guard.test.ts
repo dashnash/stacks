@@ -108,6 +108,24 @@ describe('workflows on a public repo', () => {
     }
   });
 
+  it('run the policy drift check only from main, with no environment (#101)', () => {
+    const drift = workflows
+      .find((w) => w.file === 'ci-drift.yml')!
+      .text.split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    expect(triggersOnPr(drift)).toBe(false);
+    expect(drift).not.toMatch(/pull_request/);
+    expect(drift).not.toMatch(/^\s+environment:/m);
+    expect(drift).toMatch(/^ {4}if: github\.ref == 'refs\/heads\/main'$/m);
+    // Deploy calls it as a warning that nothing waits on.
+    const deploy = jobs(workflows.find((w) => w.file === 'deploy.yml')!.text);
+    const call = deploy.find((j) => j.id === 'ci-drift')!.body;
+    expect(call).toMatch(/uses: \.\/\.github\/workflows\/ci-drift\.yml/);
+    expect(call).toMatch(/warn: true/);
+    for (const j of deploy) expect(j.body.match(/^ {4}needs:.*$/m)?.[0] ?? '', j.id).not.toContain('ci-drift');
+  });
+
   it('install without dependency install scripts (#104)', () => {
     for (const w of workflows) {
       for (const line of w.text.split('\n').filter((l) => /\bnpm (ci|install|i)\b/.test(l) && !l.trim().startsWith('#'))) {
@@ -117,7 +135,7 @@ describe('workflows on a public repo', () => {
   });
 
   it('finds every job (the parser sanity check)', () => {
-    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['zones', 'build', 'staging', 'production']);
+    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['ci-drift', 'zones', 'build', 'staging', 'production']);
   });
 });
 

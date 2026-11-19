@@ -44,7 +44,9 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   function (`legacyRedirectCode(old, new)`) 301s to the same label + path + query on the new root
   (bare old root → `auth.`, anything odd → the portal's front page). `infra/bin/stacks.ts` makes it
   depend on every other stack so it deploys last.
-- `CiStack` (`stacks-ci`): GitHub OIDC roles per environment and the staging guardrail policies.
+- `CiStack` (`stacks-ci`): GitHub OIDC roles per environment, the staging guardrail policies, the
+  budget, and `stacks-ci-drift-check` (`DRIFT_CHECK_ROLE_NAME`, #101): reads those two policies, from
+  `main` only, for `scripts/check-ci-drift.mjs`.
 - `checkAssembly(dir, stack)`: the staging deploy gate (one stack, bounded roles, no asset that runs
   a command, and no container image at all: app stacks ship plain files only).
 - `buildCsp`, `loadStacksConfig` (validates zones and `legacyRedirects`), naming helpers.
