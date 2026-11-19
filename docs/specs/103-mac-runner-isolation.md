@@ -14,7 +14,7 @@ GitHub-hosted `macos-26`), and the release runner never runs PR code.
 | Variables | `vars.MACOS_RUNNER` stays the release runner (`release` job). New repository variable `MACOS_PR_RUNNER` (JSON array, for example `["self-hosted","macOS","ARM64","stacks-ios-pr"]`) for the `app` job. |
 | Fail-safe default | When `MACOS_PR_RUNNER` is unset, PR builds go to GitHub-hosted `macos-26`, **never** to `MACOS_RUNNER`. Fork PRs always go to `macos-26` (unchanged guard). |
 | `app` job `runs-on` | `${{ (vars.MACOS_PR_RUNNER && github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.MACOS_PR_RUNNER) \|\| 'macos-26' }}` |
-| `release` job `runs-on` | `${{ vars.MACOS_RUNNER && fromJSON(vars.MACOS_RUNNER) \|\| 'macos-26' }}`. It already runs only on `main`; drop the now-dead PR clause. |
+| `release` job `runs-on` | Unchanged (`vars.MACOS_RUNNER`). It runs only on `main`; its fork clause is moot but stays, because `repo-guard.test.ts` requires the guard on every runner expression in a workflow that runs on PRs (found while implementing). |
 | Labels must differ | The two label sets must not overlap in their distinctive label: the PR runner must not carry `stacks-ios`, or GitHub could route a release job to it. Documented, and checked in the test where the labels are literal. |
 | Docs | Document the setup in `docs/IOS_SETUP.md` (new section "Self-hosted Mac runners"): two users, which label each has, that the release user owns the keychains, that the PR user is non-admin, and how to fall back (unset the variable). Fix the drift in `docs/SETUP.md` §9, which says iOS jobs "always stay on GitHub-hosted runners". |
 

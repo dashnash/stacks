@@ -236,7 +236,9 @@ to run them on the owner's own hardware: two ephemeral runners managed as code i
 runner and its own Docker daemon, and job traffic can reach the internet but not the home network.
 The production deploy runs there too; its AWS access is still the GitHub OIDC role, unchanged.
 
-The iOS app build jobs (`macos-26`) always stay on GitHub-hosted runners. Jobs that run on pull
+The iOS app's macOS jobs use `macos-26` unless `MACOS_RUNNER` / `MACOS_PR_RUNNER` point them at a
+self-hosted Mac, split so PR code never runs where releases are signed (`docs/IOS_SETUP.md`,
+"Self-hosted Mac runners"). Jobs that run on pull
 requests add `github.event.pull_request.head.repo.full_name == github.repository` to that
 condition, so a PR from a fork always runs on `ubuntu-latest`, never on the owner's hardware
 (`tools/app-conformance/tests/repo-guard.test.ts` checks it).

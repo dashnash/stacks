@@ -194,6 +194,28 @@ No key or secret is involved: the portal receives Apple's identity token directl
 platform checks it against Apple's public keys. People who choose **Hide My Email** get an
 `@privaterelay.appleid.com` address; the platform never emails anyone, so nothing more is needed.
 
+## Self-hosted Mac runners (optional, #103)
+
+Without these variables every macOS job runs on GitHub-hosted `macos-26`. With them, the jobs run
+on your Mac, split so that **PR code never runs where the signing key is used**:
+
+| Variable (repository, Settings → Secrets and variables → Actions → Variables) | Jobs | macOS user on the Mac |
+| --- | --- | --- |
+| `MACOS_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios"]` | the release job (`main` only, holds the App Store Connect key, makes the signing keychain) | the release user, which owns that keychain |
+| `MACOS_PR_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios-pr"]` | the unsigned simulator build on PRs | a separate **standard (non-admin)** user, e.g. `gh-runner-pr` |
+
+- PR builds never use `MACOS_RUNNER`. With `MACOS_PR_RUNNER` unset, or for a PR from a fork, they
+  use `macos-26`. `tools/app-conformance/tests/repo-guard.test.ts` checks all of this.
+- The PR runner must not carry the release runner's distinctive label (`stacks-ios`). GitHub sends a
+  job only to a runner with every label it asks for, so the PR runner can never pick up a release.
+- The PR user can't read the release user's home folder (macOS default for standard users; check
+  with `sudo -u gh-runner-pr ls ~<release-user>`, which must fail). Xcode in `/Applications` is
+  shared; run `xcodebuild -runFirstLaunch` once as each user.
+- Set up the second runner: on the Mac, as the PR user, download the runner from the repo's
+  Settings → Actions → Runners → New self-hosted runner (macOS, ARM64), `./config.sh` with
+  `--labels stacks-ios-pr`, then `./svc.sh install && ./svc.sh start` (a launchd agent for that user).
+- To fall back, delete either variable (no PR needed). Cancel and re-run jobs already queued.
+
 ## Later
 
 - Builds expire after 90 days in TestFlight; the workflow rebuilds every two months (the 1st of

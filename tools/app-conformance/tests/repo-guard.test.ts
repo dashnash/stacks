@@ -86,6 +86,28 @@ describe('workflows on a public repo', () => {
     }
   });
 
+  it('keep PR code off the Mac that signs releases (#103)', () => {
+    const ios = jobs(workflows.find((w) => w.file === 'ios.yml')!.text);
+    const runsOn = (id: string) => ios.find((j) => j.id === id)!.body.match(/^ {4}runs-on:.*$/m)?.[0] ?? '';
+    // The PR build: only the PR runner, fork-guarded, never the release runner.
+    expect(runsOn('app')).toContain('vars.MACOS_PR_RUNNER');
+    expect(runsOn('app')).not.toContain('vars.MACOS_RUNNER');
+    expect(runsOn('app')).toContain(FORK_GUARD);
+    // Jobs that hold the App Store Connect key never use the PR runner.
+    for (const job of ios.filter((j) => j.id === 'release' || /^ {4}environment: ios-release$/m.test(j.body))) {
+      expect(job.body, job.id).not.toContain('MACOS_PR_RUNNER');
+    }
+    // Every job that can run on a pull request stays off the release runner.
+    for (const w of workflows.filter((x) => triggersOnPr(x.text))) {
+      for (const job of jobs(w.text)) {
+        const cond = job.body.match(/^ {4}if:.*$/m)?.[0] ?? '';
+        const prOnly = /github\.event_name == 'pull_request'/.test(cond);
+        const neverPr = /github\.event_name != 'pull_request'/.test(cond);
+        if (prOnly || !neverPr) expect(job.body.match(/^ {4}runs-on:.*$/m)?.[0] ?? '', `${w.file} ${job.id}`).not.toContain('vars.MACOS_RUNNER');
+      }
+    }
+  });
+
   it('install without dependency install scripts (#104)', () => {
     for (const w of workflows) {
       for (const line of w.text.split('\n').filter((l) => /\bnpm (ci|install|i)\b/.test(l) && !l.trim().startsWith('#'))) {
