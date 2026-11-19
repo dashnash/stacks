@@ -24,7 +24,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+      # No dependency's install script runs in CI (#104); this keeps the list of packages that
+      # have one reviewed (scripts/install-scripts-allowlist.json).
+      - name: Install scripts allowlisted (#104)
+        run: node scripts/check-install-scripts.mjs
       - name: Lint workflows
         # The official image bundles shellcheck; no download step to flake.
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667

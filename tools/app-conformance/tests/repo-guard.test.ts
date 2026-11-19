@@ -86,6 +86,14 @@ describe('workflows on a public repo', () => {
     }
   });
 
+  it('install without dependency install scripts (#104)', () => {
+    for (const w of workflows) {
+      for (const line of w.text.split('\n').filter((l) => /\bnpm (ci|install|i)\b/.test(l) && !l.trim().startsWith('#'))) {
+        expect(line, w.file).toMatch(/--ignore-scripts/);
+      }
+    }
+  });
+
   it('finds every job (the parser sanity check)', () => {
     expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['zones', 'build', 'staging', 'production']);
   });

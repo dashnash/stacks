@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm test
       - name: Build (stamps the commit into every app's and the portal's footer)
         env:
