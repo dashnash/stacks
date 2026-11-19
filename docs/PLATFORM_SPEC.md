@@ -350,17 +350,22 @@ One npm-workspaces monorepo, Node 22, TypeScript everywhere, Vitest for tests. A
 ```
 stacks/
   CLAUDE.md                  # rules for every agent: read SDK READMEs, never edit packages/ from an app task
+  .claude/settings.json      # Claude Code denies aws, cdk deploy and pushes to main (#107)
   .claude/skills/new-app/    # the /new-app skill (interview, scaffold, build, verify, ship)
-  .github/CODEOWNERS         # @dashnash owns packages/, infra/, platform/, .github/
-  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand)
+  .claude/skills/refine-backlog/  # /refine-backlog: turn backlog items into specs
+  .github/CODEOWNERS         # @dashnash owns every path outside apps/ (packages/, platform/, infra/, .github/, scripts/, …)
+  .github/rulesets/main.json # the merge gate on main (#93)
+  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand), agent-review.yml, ios*.yml
   stacks.config.json         # rootDomain, hostedZoneId (or "lookup"), legacyRedirects, googleClientId per env, PLATFORM_ADMINS
   platform/                  # the platform app itself
     api/                     # auth, handshake, grants, registry, audit feed, notifications
     web/                     # portal: catalog, profile, access grid, admin
-    portal-bar/              # the overlay web component
   packages/
-    api/  web/  infra/  testing/  demo/  manifest/
-    modules/                 # comments, votes, content-packs, uploads, scheduled-jobs, email
+    api/  web/  infra/  testing/  demo/  manifest/  native/  game-server/
+    modules/
+      comments/
+      votes/  content-packs/  uploads/  scheduled-jobs/  email/   # (planned)
+  native/                    # the iOS app (ios/) and the bridge's wire format (protocol/v1.json)
   templates/app/             # what new-app copies; placeholders filled from the manifest
   apps/
     mofobookklub/
@@ -368,13 +373,19 @@ stacks/
       api/  web/  content/  tests/   # no stack file: infra/ builds one AppStack per manifest
   infra/
     bin/stacks.ts            # instantiates platform + one stack per apps/*/app.manifest.json
+  scripts/                   # CI checks and helpers (import rule, action pins, install scripts, zone lookup, …)
   tools/
     new-app/                 # deterministic scaffold (npm run new-app -- <slug>)
-    app-conformance/         # platform rules every app must pass
+    app-conformance/         # platform rules every app must pass, and the repo's own guards
+    smoke/                   # the post-deploy smoke check (#100)
+    table-copy/              # copy a DynamoDB table's items (npm run table-copy)
     migrate-user-ids/        # one-time email → user-id cut-over (N1a; migrate-book-club was removed then, it is in git history)
   docs/
     PLATFORM_SPEC.md         # this spec
-    ARCHITECTURE.md
+    NATIVE_APP_SPEC.md       # the iOS app
+    SETUP.md  IOS_SETUP.md  OWNER_STEPS.md   # one-time setup and the owner's manual steps
+    DEBUGGING.md  RESTORE.md   # runbooks
+    specs/                   # one spec per refined issue
 ```
 
 Import rule: `apps/*` may import only `@stacks/*` packages, never another app or `platform/` internals; a lint rule enforces it.
@@ -419,7 +430,7 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 
 **Pipelines**
 
-- `ci.yml` on every PR: install, lint (incl. the import rule and the path guard for app branches), typecheck, tests for changed workspaces, manifest validation, `cdk synth` of changed stacks.
+- `ci.yml` on every PR and push to `main`: one `check` job installs (`--ignore-scripts`), then runs actionlint, the import rule, the action-pin and install-script checks, the PR path check (PRs only), typecheck, **every** workspace's tests (manifests are validated there), the build, and `cdk synth` of every stack for both environments. Nothing is filtered by what changed.
 - `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
 - `deploy-test.yml`: one app from a branch to staging, before merging; posts the URL as the run summary.
 - Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
@@ -464,7 +475,7 @@ Done when every existing member can sign in at the new URL and sees their histor
 
 The design assumes any single app may be buggy or malicious and limits what it can reach.
 
-- **Sessions**: master session cookie `__Host-stacks` on `auth.<domain>` only. App sessions are opaque 256-bit tokens in an HttpOnly, Secure, `SameSite=Lax`, host-only cookie on the app's own subdomain. Only SHA-256 hashes are stored. No tokens in `localStorage` (a change from Book Club).
+- **Sessions**: master session cookie `__Host-stacks-portal` on `auth.<domain>` only (`PORTAL_COOKIE`); apps use `__Host-stacks-session`, and `__Host-stacks-login` during the sign-in handshake. App sessions are opaque 256-bit tokens in an HttpOnly, Secure, `SameSite=Lax`, host-only cookie on the app's own subdomain. Only SHA-256 hashes are stored. No tokens in `localStorage` (a change from Book Club).
 - **Handshake**: `state` and PKCE-style verifier, single-use authorization codes valid 60 seconds, `redirect_uri` must equal a registered app's origin, codes bound to the app slug.
 - **IAM**: each app Lambda can read and write only its own table and buckets; it reaches the platform only through the platform API with a per-app credential, never the platform table directly. Audit writes are restricted to that app's partition. CI deploy roles follow the staging rules under Environments and CI/CD, including a permissions boundary on the staging role.
 - **CSRF**: state-changing app routes need the cookie plus a custom header (`X-Stacks-Request: 1`) added by `@stacks/web`; CORS stays off because API and SPA share an origin.
