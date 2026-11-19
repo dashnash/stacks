@@ -423,8 +423,8 @@ client and the Swift handlers can't drift. The protocol version is in the user a
 
 - Runner: `macos-26`, or the Mac (#103, `docs/IOS_SETUP.md` "Self-hosted Mac runners"): the release job
   uses the repository variable `MACOS_RUNNER` (a JSON array of labels, such as `["self-hosted","macOS","ARM64","stacks-ios"]`)
-  and PR builds use `MACOS_PR_RUNNER` (a second runner under a separate, non-admin macOS user), never `MACOS_RUNNER`.
-  Unset means `macos-26`. PRs from forks always use `macos-26`.
+  and PR builds use `MACOS_PR_RUNNER` (a second runner under a separate, non-admin macOS user), falling back to
+  `MACOS_RUNNER` until that runner is set up. Neither set means `macos-26`. PRs from forks always use `macos-26`.
   The newest installed Xcode is used, set as `DEVELOPER_DIR` for the job (no `sudo`). `xcodegen generate`, then
   `xcodebuild archive` with **manual signing** by a certificate made for that run: the runner
   makes a key and CSR, `scripts/asc-provision.mjs --release-signing` revokes the previous run's

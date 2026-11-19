@@ -77,7 +77,7 @@ Specs: `docs/specs/` (order in `docs/specs/README.md`). Only three of the seven 
 
 - [ ] On the Mac, create a standard (non-admin) user such as `gh-runner-pr`, and register a second runner for `dashnash/stacks` as that user with the label `stacks-ios-pr` (not `stacks-ios`). Run `xcodebuild -runFirstLaunch` as that user.
 - [ ] Check that the PR user can't read the release user's home folder.
-- [ ] Add the repository variable `MACOS_PR_RUNNER` = `["self-hosted","macOS","ARM64","stacks-ios-pr"]`. Until then PR builds use GitHub-hosted `macos-26`.
+- [ ] Add the repository variable `MACOS_PR_RUNNER` = `["self-hosted","macOS","ARM64","stacks-ios-pr"]`. Until then PR builds keep using the existing Mac runner (`MACOS_RUNNER`), sharing the release user as before.
 - [ ] Open a PR that touches `native/ios/` and check which runner the simulator build used.
 
 ## #101 Policy drift check ([spec](specs/101-ci-policy-drift-check.md))

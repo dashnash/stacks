@@ -198,15 +198,17 @@ platform checks it against Apple's public keys. People who choose **Hide My Emai
 ## Self-hosted Mac runners (optional, #103)
 
 Without these variables every macOS job runs on GitHub-hosted `macos-26`. With them, the jobs run
-on your Mac, split so that **PR code never runs where the signing key is used**:
+on your Mac, split so that **PR code doesn't run where the signing key is used** (once both runners exist):
 
 | Variable (repository, Settings → Secrets and variables → Actions → Variables) | Jobs | macOS user on the Mac |
 | --- | --- | --- |
 | `MACOS_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios"]` | the release job (`main` only, holds the App Store Connect key, makes the signing keychain) | the release user, which owns that keychain |
 | `MACOS_PR_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios-pr"]` | the unsigned simulator build on PRs | a separate **standard (non-admin)** user, e.g. `gh-runner-pr` |
 
-- PR builds never use `MACOS_RUNNER`. With `MACOS_PR_RUNNER` unset, or for a PR from a fork, they
-  use `macos-26`. `tools/app-conformance/tests/repo-guard.test.ts` checks all of this.
+- PR builds use `MACOS_PR_RUNNER` when it's set. **Until then they fall back to `MACOS_RUNNER`**,
+  as before #103, so PR code still shares the release user's account: set up the PR runner and the
+  variable to end that. With neither set, or for a PR from a fork, they use `macos-26`.
+  `tools/app-conformance/tests/repo-guard.test.ts` checks all of this.
 - The PR runner must not carry the release runner's distinctive label (`stacks-ios`). GitHub sends a
   job only to a runner with every label it asks for, so the PR runner can never pick up a release.
 - The PR user can't read the release user's home folder (macOS default for standard users; check
