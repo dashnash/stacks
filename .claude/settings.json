@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(aws:*)",
+      "Bash(npx cdk deploy:*)",
+      "Bash(cdk deploy:*)",
+      "Bash(npx aws-cdk deploy:*)",
+      "Bash(cdk destroy:*)",
+      "Bash(npx cdk destroy:*)",
+      "Bash(cdk bootstrap:*)",
+      "Bash(npx cdk bootstrap:*)",
+      "Bash(git push origin main*)",
+      "Bash(git push * main)",
+      "Bash(git push origin HEAD:main*)",
+      "Bash(git push * HEAD:main)"
+    ]
+  }
+}

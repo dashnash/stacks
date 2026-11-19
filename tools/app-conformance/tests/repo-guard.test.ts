@@ -90,3 +90,31 @@ describe('workflows on a public repo', () => {
     expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['zones', 'build', 'staging', 'production']);
   });
 });
+
+// #107: Claude Code refuses AWS, deploys and pushes to main in every session on this repo.
+describe('.claude/settings.json', () => {
+  const settings = JSON.parse(readFileSync(join(root, '.claude/settings.json'), 'utf8'));
+  const required = [
+    'Bash(aws:*)',
+    'Bash(npx cdk deploy:*)',
+    'Bash(cdk deploy:*)',
+    'Bash(npx aws-cdk deploy:*)',
+    'Bash(cdk destroy:*)',
+    'Bash(npx cdk destroy:*)',
+    'Bash(cdk bootstrap:*)',
+    'Bash(npx cdk bootstrap:*)',
+    'Bash(git push origin main*)',
+    'Bash(git push * main)',
+    'Bash(git push origin HEAD:main*)',
+    'Bash(git push * HEAD:main)',
+  ];
+
+  it('denies AWS, cdk deploy/destroy/bootstrap and pushes to main', () => {
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining(required));
+  });
+
+  it('allows none of them back', () => {
+    const allow: string[] = settings.permissions.allow ?? [];
+    expect(allow.filter((r) => /^Bash\((aws|cdk|npx cdk|npx aws-cdk|git push)/.test(r))).toEqual([]);
+  });
+});

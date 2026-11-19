@@ -402,6 +402,7 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 **Guardrails for non-technical creators**
 
 - No AWS credentials in sessions; only CI deploys.
+- `.claude/settings.json` (#107) makes Claude Code refuse `aws`, `cdk deploy`/`destroy`/`bootstrap` and `git push` to `main` in every session on the repo. Prefix rules miss other spellings (`bash -c`, scripts), so it backs up the real controls (the ruleset, the OIDC roles, CI); it doesn't replace them.
 - `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task. CI's path check (`scripts/pr-paths.mjs`): a PR from an `app/<slug>/…` branch may change only `apps/<slug>/` (and the lockfile); any other PR that changes only `apps/` may change one app, never two; a PR that changes anything outside `apps/` is platform work for `CODEOWNERS` review. The check writes the PR's kind to the run summary.
 - Enforcement at merge: the repo is public, so GitHub Free enforces the ruleset in `.github/rulesets/main.json` (see Security → Merge gate). Every push to `main` deploys production, so this ruleset, not `CODEOWNERS` alone, is what keeps write access from being production access.
 - The manifest schema caps CSP additions and module choices; anything else needs a platform PR.

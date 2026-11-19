@@ -44,6 +44,8 @@ its tests) rather than rewriting from scratch.
 
 - Node 22, TypeScript, npm workspaces, Vitest. AWS CDK v2 in us-east-1.
 - Only CI deploys. Never ask for or use AWS credentials in a session.
+- `.claude/settings.json` denies `aws`, `cdk deploy`/`destroy`/`bootstrap` and pushes to `main` (#107); don't
+  work around it. It is a guard rail, not the control: the ruleset, the OIDC roles and CI are.
 - `apps/*` may import only `@stacks/*` packages, never another app or `platform/` internals.
 - **App tasks** (building or changing one app, e.g. via `/new-app`): edit only `apps/<slug>/`. If the
   app needs something the SDK lacks, stop and propose a separate platform change.
