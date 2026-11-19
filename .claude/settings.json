@@ -10,9 +10,11 @@
       "Bash(npx cdk destroy:*)",
       "Bash(cdk bootstrap:*)",
       "Bash(npx cdk bootstrap:*)",
-      "Bash(git push origin main*)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main *)",
       "Bash(git push * main)",
-      "Bash(git push origin HEAD:main*)",
+      "Bash(git push origin HEAD:main)",
+      "Bash(git push origin HEAD:main *)",
       "Bash(git push * HEAD:main)"
     ]
   }

@@ -60,6 +60,13 @@ describe('check-ci-drift (#101)', () => {
     expect(summary).toMatch(/\*\*differs\*\*: only in the repo: New; only live: Old; changed: A/);
   });
 
+  it('reports a difference outside the statements (Version)', () => {
+    const statements = [{ Sid: 'A', Effect: 'Allow', Action: 's3:*', Resource: '*' }];
+    const d = diffPolicies({ Version: '2012-10-17', Statement: statements }, { Version: '2008-10-17', Statement: statements });
+    expect(inSync(d)).toBe(false);
+    expect(d.changed.map((c: { sid: string }) => c.sid)).toEqual(['(document)']);
+  });
+
   it('decodes the URL-encoded document IAM returns', () => {
     const doc = { Version: '2012-10-17', Statement: [{ Effect: 'Allow', Action: 'iam:GetPolicy', Resource: 'arn:aws:iam::1:policy/a b' }] };
     expect(parsePolicyVersion(`<Document>${encodeURIComponent(JSON.stringify(doc))}</Document>`)).toEqual(doc);

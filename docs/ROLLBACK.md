@@ -38,11 +38,16 @@ back means deploying older code **through a new merge**.
 
 ## 3. Re-run
 
+**Only re-run the latest Deploy run on `main`.** A re-run deploys that run's own commit, so
+re-running an older run after a newer merge has deployed puts the older code back, and its smoke
+check won't warn (it compares with the re-run's own commit). If a newer run exists, let it (or a fix
+PR) carry the change instead, or revert (§4).
+
 Actions → Deploy → the failed run → **Re-run failed jobs**. It redeploys the **same artifacts**
 (the cloud assemblies the run's `build` job made; kept 7 days), so nothing is rebuilt and nothing new
 ships. Failed jobs re-run with the jobs after them, so a re-run `staging` continues to `production`.
 CloudFormation skips the stacks that already succeeded. Deploy runs one at a time (`concurrency:
-deploy-main`), so a re-run waits for any newer run.
+deploy-main`), so a re-run waits while another run is in progress.
 
 After 7 days the artifacts are gone; revert, or merge a no-op change, instead.
 

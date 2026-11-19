@@ -153,14 +153,20 @@ describe('.claude/settings.json', () => {
     'Bash(npx cdk destroy:*)',
     'Bash(cdk bootstrap:*)',
     'Bash(npx cdk bootstrap:*)',
-    'Bash(git push origin main*)',
+    'Bash(git push origin main)',
+    'Bash(git push origin main *)',
     'Bash(git push * main)',
-    'Bash(git push origin HEAD:main*)',
+    'Bash(git push origin HEAD:main)',
+    'Bash(git push origin HEAD:main *)',
     'Bash(git push * HEAD:main)',
   ];
 
   it('denies AWS, cdk deploy/destroy/bootstrap and pushes to main', () => {
     expect(settings.permissions.deny).toEqual(expect.arrayContaining(required));
+  });
+
+  it('names main exactly, so branches like main-fix or maintenance stay pushable', () => {
+    expect(settings.permissions.deny.filter((r: string) => /main\*\)$/.test(r))).toEqual([]);
   });
 
   it('allows none of them back', () => {

@@ -216,7 +216,13 @@ on your Mac, split so that **PR code doesn't run where the signing key is used**
   shared; run `xcodebuild -runFirstLaunch` once as each user.
 - Set up the second runner: on the Mac, as the PR user, download the runner from the repo's
   Settings → Actions → Runners → New self-hosted runner (macOS, ARM64), `./config.sh` with
-  `--labels stacks-ios-pr`, then `./svc.sh install && ./svc.sh start` (a launchd agent for that user).
+  `--labels stacks-ios-pr`. Don't use `./svc.sh install`: on macOS it makes a LaunchAgent, which
+  runs only while that user is logged in, and the PR user never is. Run it as a LaunchDaemon
+  instead: a plist in `/Library/LaunchDaemons/` (owned by root) whose `ProgramArguments` is the
+  runner folder's `run.sh`, with `UserName` set to the PR user, `WorkingDirectory` the runner folder,
+  and `RunAtLoad` and `KeepAlive` true; load it with `sudo launchctl bootstrap system <plist>`.
+  Check that the runner shows **Idle** under Settings → Actions → Runners (also after a reboot)
+  **before** setting `MACOS_PR_RUNNER`, or PR builds wait for a runner that isn't there.
 - To fall back, delete either variable (no PR needed). Cancel and re-run jobs already queued.
 
 ## Later

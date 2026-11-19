@@ -85,6 +85,9 @@ export function diffPolicies(repoDoc, liveDoc) {
     else if (JSON.stringify(other) !== JSON.stringify(s)) changed.push({ sid: key(s), repo: s, live: other });
   }
   const onlyLive = live.filter((s) => !repoBy.has(key(s)));
+  // Everything but the statements (Version, Id): a difference there is drift too.
+  const rest = (doc) => JSON.stringify(Object.fromEntries(Object.keys(doc).filter((k) => k !== 'Statement').sort().map((k) => [k, doc[k]])));
+  if (rest(repoDoc) !== rest(liveDoc)) changed.push({ sid: '(document)', repo: JSON.parse(rest(repoDoc)), live: JSON.parse(rest(liveDoc)) });
   return { onlyRepo, onlyLive, changed };
 }
 

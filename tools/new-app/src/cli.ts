@@ -39,8 +39,9 @@ try {
   const result = scaffold({ repoRoot, slug, flags });
   console.log(`Created apps/${slug}/ (${result.created.length} files${result.kept.length ? `; kept ${result.kept.join(', ')}` : ''}).`);
   if (!switches.has('no-install')) {
-    // Registers the new workspace in package-lock.json (CI's npm ci needs it).
-    execFileSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: repoRoot, stdio: 'inherit' });
+    // Registers the new workspace in package-lock.json (CI's npm ci needs it). No dependency's
+    // install script runs, as in CI (#104).
+    execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: repoRoot, stdio: 'inherit' });
   }
   console.log(`
 Next:
