@@ -4,7 +4,7 @@ import { listAudit, recordAudit, sanitize } from './audit';
 import { codeChallenge, randomToken } from './crypto';
 import { gamesOff, registerGameRoutes } from './games';
 import { badRequest, forbidden, HttpError, maintenance, MAINTENANCE_OPEN_PATHS, unauthorized, type RouteResult } from './http';
-import { log, logClientError, setLogApp, setLogUser } from './log';
+import { buildSha, log, logClientError, setLogApp, setLogUser } from './log';
 import { appMembers, forgetMembers } from './people';
 import { PlatformError } from './platform';
 import { ChannelRegistry, parseTokenRequest, realtimeOff, signRealtimeToken, TOKEN_TTL_SECONDS, type RealtimeChannels, type RealtimeTokenResponse } from './realtime';
@@ -236,7 +236,8 @@ export function createStacksApp<D extends AppDeps>(opts: StacksAppOptions<D>) {
       // Platform keys the app's modules use that nobody has stored yet (the TURN key for game servers).
       const missingKeys = gamesOn ? await Promise.resolve(deps.games.missingKeys?.() ?? []).catch(() => []) : [];
       return {
-        body: { ok: true, app: manifest.slug, ...(missing.length ? { missingSecrets: missing } : {}), ...(missingKeys.length ? { missingPlatformKeys: missingKeys } : {}) },
+        // `build`: the commit this stack runs, so mixed versions after a partial deploy show (#105).
+        body: { ok: true, app: manifest.slug, build: buildSha(), ...(missing.length ? { missingSecrets: missing } : {}), ...(missingKeys.length ? { missingPlatformKeys: missingKeys } : {}) },
       };
     })
     // Step 2 of the handshake: send the browser to the platform with a PKCE challenge.

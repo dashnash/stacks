@@ -8,6 +8,10 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   (PK/SK, GSI1, TTL `expiresAt`), a Secrets Manager credential for the Platform API.
   Stack names: `stacks-<prod|test>-app-<slug>`. Staging stacks use bootstrap qualifier `stktest`
   and put the `stacks-test-boundary` permissions boundary on every role.
+- Throttles (`throttles.ts`, #102): each HTTP API stage allows `API_RATE_LIMIT` rps / `API_BURST_LIMIT`
+  (the platform twice that), and the public sign-in, access-request and client-error routes get their
+  own lower caps (`APP_ROUTE_THROTTLES`, `PLATFORM_ROUTE_THROTTLES`; `addRouteThrottles` creates each
+  as its own route to the same Lambda). The caps are shared by every caller, not per IP.
 - With the `realtime` module, `AppStack` adds an AppSync Event API (`stacks-<env>-<slug>`, namespace
   `app`, IAM + Lambda auth, an onPublish handler dropping events over 4 KB), its Lambda authorizer
   (`@stacks/api/realtime-authorizer`, results never cached), the `stacks-<env>-app-<slug>-realtime-key`
@@ -40,7 +44,9 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   function (`legacyRedirectCode(old, new)`) 301s to the same label + path + query on the new root
   (bare old root → `auth.`, anything odd → the portal's front page). `infra/bin/stacks.ts` makes it
   depend on every other stack so it deploys last.
-- `CiStack` (`stacks-ci`): GitHub OIDC roles per environment and the staging guardrail policies.
+- `CiStack` (`stacks-ci`): GitHub OIDC roles per environment, the staging guardrail policies, the
+  budget, and `stacks-ci-drift-check` (`DRIFT_CHECK_ROLE_NAME`, #101): reads those two policies, from
+  `main` only, for `scripts/check-ci-drift.mjs`.
 - `checkAssembly(dir, stack)`: the staging deploy gate (one stack, bounded roles, no asset that runs
   a command, and no container image at all: app stacks ship plain files only).
 - `buildCsp`, `loadStacksConfig` (validates zones and `legacyRedirects`), naming helpers.

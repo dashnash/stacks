@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { API_BURST_LIMIT, API_RATE_LIMIT, APP_ROUTE_THROTTLES, AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, DRIFT_CHECK_ROLE_NAME, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -124,6 +124,28 @@ describe('AppStack', () => {
       }),
     });
     template.hasResourceProperties('AWS::ApiGatewayV2::Stage', { DefaultRouteSettings: { ThrottlingRateLimit: 25, ThrottlingBurstLimit: 50 } });
+  });
+
+  it('caps sign-in and error reports per route, each on its own route to the same Lambda (#102)', () => {
+    const { template } = synth('staging');
+    const json = template.toJSON() as { Resources: Record<string, { Type: string; Properties: Record<string, unknown>; DependsOn?: string[] }> };
+    const resources = Object.entries(json.Resources);
+    const routes = resources.filter(([, r]) => r.Type === 'AWS::ApiGatewayV2::Route');
+    const target = (key: string) => routes.find(([, r]) => r.Properties.RouteKey === key)?.[1].Properties.Target;
+    expect(target('ANY /api/{proxy+}')).toBeDefined();
+    for (const { routeKey } of APP_ROUTE_THROTTLES) expect(target(routeKey), routeKey).toEqual(target('ANY /api/{proxy+}'));
+    expect(routes).toHaveLength(APP_ROUTE_THROTTLES.length + 1);
+    const [, stage] = resources.find(([, r]) => r.Type === 'AWS::ApiGatewayV2::Stage')!;
+    expect(stage.Properties.DefaultRouteSettings).toEqual({ ThrottlingRateLimit: API_RATE_LIMIT, ThrottlingBurstLimit: API_BURST_LIMIT });
+    expect(stage.Properties.RouteSettings).toEqual(
+      Object.fromEntries(APP_ROUTE_THROTTLES.map((r) => [r.routeKey, { ThrottlingRateLimit: r.rate, ThrottlingBurstLimit: r.burst }])),
+    );
+    for (const r of APP_ROUTE_THROTTLES) {
+      expect(r.rate, r.routeKey).toBeLessThan(API_RATE_LIMIT);
+      expect(r.burst, r.routeKey).toBeLessThan(API_BURST_LIMIT);
+      const [id] = routes.find(([, x]) => x.Properties.RouteKey === r.routeKey)!;
+      expect(stage.DependsOn ?? [], r.routeKey).toContain(id);
+    }
   });
 
   it('falls back to the CloudFront domain when no hosted zone is configured', () => {
@@ -817,6 +839,46 @@ describe('CiStack', () => {
           }),
         ],
       },
+    });
+  });
+
+  describe('drift check role (#101)', () => {
+    const resources = (prefix?: string) =>
+      Object.values(
+        (
+          Template.fromStack(
+            new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1', ...(prefix ? { githubSubjectPrefix: prefix } : {}) }),
+          ).toJSON() as { Resources: Record<string, { Type: string; Properties: Record<string, any> }> }
+        ).Resources,
+      );
+    const roleOf = (r: ReturnType<typeof resources>) => r.find((x) => x.Type === 'AWS::IAM::Role' && x.Properties.RoleName === DRIFT_CHECK_ROLE_NAME)!;
+
+    it('is trusted only from main, by ref (never a GitHub environment or a PR)', () => {
+      const role = roleOf(resources());
+      expect(role).toBeDefined();
+      const [statement] = role.Properties.AssumeRolePolicyDocument.Statement;
+      expect(statement.Condition).toEqual({
+        StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': 'repo:dashnash/stacks:ref:refs/heads/main' },
+      });
+      expect(role.Properties.MaxSessionDuration).toBe(3600);
+      const immutable = roleOf(resources('repo:dashnash@3804293/stacks@1449992124'));
+      expect(immutable.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals['token.actions.githubusercontent.com:sub']).toBe(
+        'repo:dashnash@3804293/stacks@1449992124:ref:refs/heads/main',
+      );
+    });
+
+    it('may only read the two staging policies', () => {
+      const r = resources();
+      const policies = r.filter((x) => x.Type === 'AWS::IAM::Policy' && JSON.stringify(x.Properties.Roles).includes('DriftCheckRole'));
+      expect(policies).toHaveLength(1);
+      const statements = policies[0]!.Properties.PolicyDocument.Statement;
+      expect(statements).toHaveLength(1);
+      expect(statements[0].Action).toEqual(['iam:GetPolicy', 'iam:GetPolicyVersion']);
+      const arns = JSON.stringify(statements[0].Resource);
+      expect(statements[0].Resource).toHaveLength(2);
+      expect(arns).toContain(':policy/stacks-test-boundary');
+      expect(arns).toContain(':policy/stacks-test-cfn-exec');
+      expect(r.some((x) => x.Type === 'AWS::IAM::ManagedPolicy' && JSON.stringify(x.Properties.Roles ?? []).includes('DriftCheckRole'))).toBe(false);
     });
   });
 });

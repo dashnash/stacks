@@ -124,4 +124,42 @@ describe('smoke check (#100)', () => {
     expect(results[3]).toMatchObject({ ok: false, error: expect.stringContaining('"apps"') });
     expect(summary('production', results)).toMatch(/^### Smoke check \(production\): 2 failed/);
   });
+
+  describe('which commit each stack runs (#105)', () => {
+    const sha = 'a'.repeat(40);
+    const other = 'b'.repeat(40);
+    const withBuild = (build?: string) => ({
+      ...green(),
+      [`${portal}/api/health`]: healthy({ platform: true, build: sha }),
+      'https://hello.test.example/api/health': healthy({ app: 'hello', build: sha }),
+      'https://pantry.test.example/api/health': healthy({ app: 'pantry', ...(build ? { build } : {}) }),
+    });
+    const runSha = async (routes: Record<string, Reply | Reply[]>, opts: { sha?: string } = {}) => {
+      const { fetch } = stub(routes);
+      return runChecks(plan(targetsFromOutputs(outputs), opts), { fetch, sleep: async () => {}, delayMs: 0 });
+    };
+
+    it('shows each stack\'s build in the table', async () => {
+      const results = await runSha(withBuild(sha), { sha });
+      expect(results.every((r: any) => r.ok && !r.warnings.length)).toBe(true);
+      expect(summary('staging', results)).toContain('| ✅ | hello /api/health | build aaaaaaa |');
+    });
+
+    it('warns, and still passes, when a stack runs another commit', async () => {
+      const results = await runSha(withBuild(other), { sha });
+      const pantry = results.find((r: any) => r.name === 'pantry /api/health');
+      expect(pantry.ok).toBe(true);
+      expect(pantry.warnings).toEqual(['runs bbbbbbb, not aaaaaaa: mixed versions (docs/ROLLBACK.md)']);
+    });
+
+    it('warns "unknown" for a stack that doesn\'t say (deployed before #105)', async () => {
+      const results = await runSha(withBuild(undefined), { sha });
+      expect(results.find((r: any) => r.name === 'pantry /api/health').warnings).toEqual(['build unknown (no "build" in /api/health), expected aaaaaaa']);
+    });
+
+    it('says nothing about builds without --sha', async () => {
+      const results = await runSha(withBuild(other));
+      expect(results.every((r: any) => !r.warnings.length)).toBe(true);
+    });
+  });
 });

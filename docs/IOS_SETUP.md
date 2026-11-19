@@ -6,7 +6,8 @@ TestFlight. Background: `docs/NATIVE_APP_SPEC.md`. You do these steps once, in a
 to `main` that touches the app uploads new builds.
 
 Nothing here is pasted into a Claude session except the values marked **not secret**. The App Store
-Connect key goes straight into GitHub.
+Connect key goes straight into GitHub. Everything set up here is also listed, with where its source
+value is kept, in [SETUP.md](SETUP.md) §0.
 
 | What | Who | Where it ends up | Secret? |
 | --- | --- | --- | --- |
@@ -193,6 +194,36 @@ environment:
 No key or secret is involved: the portal receives Apple's identity token directly (popup) and the
 platform checks it against Apple's public keys. People who choose **Hide My Email** get an
 `@privaterelay.appleid.com` address; the platform never emails anyone, so nothing more is needed.
+
+## Self-hosted Mac runners (optional, #103)
+
+Without these variables every macOS job runs on GitHub-hosted `macos-26`. With them, the jobs run
+on your Mac, split so that **PR code doesn't run where the signing key is used** (once both runners exist):
+
+| Variable (repository, Settings → Secrets and variables → Actions → Variables) | Jobs | macOS user on the Mac |
+| --- | --- | --- |
+| `MACOS_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios"]` | the release job (`main` only, holds the App Store Connect key, makes the signing keychain) | the release user, which owns that keychain |
+| `MACOS_PR_RUNNER`, e.g. `["self-hosted","macOS","ARM64","stacks-ios-pr"]` | the unsigned simulator build on PRs | a separate **standard (non-admin)** user, e.g. `gh-runner-pr` |
+
+- PR builds use `MACOS_PR_RUNNER` when it's set. **Until then they fall back to `MACOS_RUNNER`**,
+  as before #103, so PR code still shares the release user's account: set up the PR runner and the
+  variable to end that. With neither set, or for a PR from a fork, they use `macos-26`.
+  `tools/app-conformance/tests/repo-guard.test.ts` checks all of this.
+- The PR runner must not carry the release runner's distinctive label (`stacks-ios`). GitHub sends a
+  job only to a runner with every label it asks for, so the PR runner can never pick up a release.
+- The PR user can't read the release user's home folder (macOS default for standard users; check
+  with `sudo -u gh-runner-pr ls ~<release-user>`, which must fail). Xcode in `/Applications` is
+  shared; run `xcodebuild -runFirstLaunch` once as each user.
+- Set up the second runner: on the Mac, as the PR user, download the runner from the repo's
+  Settings → Actions → Runners → New self-hosted runner (macOS, ARM64), `./config.sh` with
+  `--labels stacks-ios-pr`. Don't use `./svc.sh install`: on macOS it makes a LaunchAgent, which
+  runs only while that user is logged in, and the PR user never is. Run it as a LaunchDaemon
+  instead: a plist in `/Library/LaunchDaemons/` (owned by root) whose `ProgramArguments` is the
+  runner folder's `run.sh`, with `UserName` set to the PR user, `WorkingDirectory` the runner folder,
+  and `RunAtLoad` and `KeepAlive` true; load it with `sudo launchctl bootstrap system <plist>`.
+  Check that the runner shows **Idle** under Settings → Actions → Runners (also after a reboot)
+  **before** setting `MACOS_PR_RUNNER`, or PR builds wait for a runner that isn't there.
+- To fall back, delete either variable (no PR needed). Cancel and re-run jobs already queued.
 
 ## Later
 

@@ -49,10 +49,25 @@ describe('appSecrets', () => {
 describe('/health and secrets', () => {
   it('lists required secrets nobody has set (names only), ignoring optional ones', async () => {
     const missing = createTestHarness({ manifest, routes });
-    expect((await missing.call('GET', '/health')).body).toEqual({ ok: true, app: manifest.slug, missingSecrets: ['MAPS_KEY'] });
+    expect((await missing.call('GET', '/health')).body).toEqual({ ok: true, app: manifest.slug, build: 'dev', missingSecrets: ['MAPS_KEY'] });
     const set = createTestHarness({ manifest, routes, secrets: { MAPS_KEY: 'shh' } });
     const body = (await set.call('GET', '/health')).body;
-    expect(body).toEqual({ ok: true, app: manifest.slug });
+    expect(body).toEqual({ ok: true, app: manifest.slug, build: 'dev' });
     expect(JSON.stringify(body)).not.toContain('shh');
+  });
+});
+
+describe('/health build (#105)', () => {
+  it('names the commit the stack runs, dev when unset', async () => {
+    const before = process.env.STACKS_BUILD_SHA;
+    try {
+      delete process.env.STACKS_BUILD_SHA;
+      expect((await createTestHarness({ manifest, routes }).call('GET', '/health')).body.build).toBe('dev');
+      process.env.STACKS_BUILD_SHA = 'c'.repeat(40);
+      expect((await createTestHarness({ manifest, routes }).call('GET', '/health')).body.build).toBe('c'.repeat(40));
+    } finally {
+      if (before === undefined) delete process.env.STACKS_BUILD_SHA;
+      else process.env.STACKS_BUILD_SHA = before;
+    }
   });
 });

@@ -350,17 +350,22 @@ One npm-workspaces monorepo, Node 22, TypeScript everywhere, Vitest for tests. A
 ```
 stacks/
   CLAUDE.md                  # rules for every agent: read SDK READMEs, never edit packages/ from an app task
+  .claude/settings.json      # Claude Code denies aws, cdk deploy and pushes to main (#107)
   .claude/skills/new-app/    # the /new-app skill (interview, scaffold, build, verify, ship)
-  .github/CODEOWNERS         # @dashnash owns packages/, infra/, platform/, .github/
-  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand)
+  .claude/skills/refine-backlog/  # /refine-backlog: turn backlog items into specs
+  .github/CODEOWNERS         # @dashnash owns every path outside apps/ (packages/, platform/, infra/, .github/, scripts/, …)
+  .github/rulesets/main.json # the merge gate on main (#93)
+  .github/workflows/         # ci.yml, deploy.yml (all of staging, then production), deploy-test.yml (a branch, on demand), ci-drift.yml (#101), agent-review.yml, ios*.yml
   stacks.config.json         # rootDomain, hostedZoneId (or "lookup"), legacyRedirects, googleClientId per env, PLATFORM_ADMINS
   platform/                  # the platform app itself
     api/                     # auth, handshake, grants, registry, audit feed, notifications
     web/                     # portal: catalog, profile, access grid, admin
-    portal-bar/              # the overlay web component
   packages/
-    api/  web/  infra/  testing/  demo/  manifest/
-    modules/                 # comments, votes, content-packs, uploads, scheduled-jobs, email
+    api/  web/  infra/  testing/  demo/  manifest/  native/  game-server/
+    modules/
+      comments/
+      votes/  content-packs/  uploads/  scheduled-jobs/  email/   # (planned)
+  native/                    # the iOS app (ios/) and the bridge's wire format (protocol/v1.json)
   templates/app/             # what new-app copies; placeholders filled from the manifest
   apps/
     mofobookklub/
@@ -368,13 +373,19 @@ stacks/
       api/  web/  content/  tests/   # no stack file: infra/ builds one AppStack per manifest
   infra/
     bin/stacks.ts            # instantiates platform + one stack per apps/*/app.manifest.json
+  scripts/                   # CI checks and helpers (import rule, action pins, install scripts, zone lookup, …)
   tools/
     new-app/                 # deterministic scaffold (npm run new-app -- <slug>)
-    app-conformance/         # platform rules every app must pass
+    app-conformance/         # platform rules every app must pass, and the repo's own guards
+    smoke/                   # the post-deploy smoke check (#100)
+    table-copy/              # copy a DynamoDB table's items (npm run table-copy)
     migrate-user-ids/        # one-time email → user-id cut-over (N1a; migrate-book-club was removed then, it is in git history)
   docs/
     PLATFORM_SPEC.md         # this spec
-    ARCHITECTURE.md
+    NATIVE_APP_SPEC.md       # the iOS app
+    SETUP.md  IOS_SETUP.md  OWNER_STEPS.md   # one-time setup and the owner's manual steps
+    DEBUGGING.md  RESTORE.md  ROLLBACK.md   # runbooks
+    specs/                   # one spec per refined issue
 ```
 
 Import rule: `apps/*` may import only `@stacks/*` packages, never another app or `platform/` internals; a lint rule enforces it.
@@ -402,6 +413,7 @@ The `/new-app` skill turns a short description into a tested app on staging; scr
 **Guardrails for non-technical creators**
 
 - No AWS credentials in sessions; only CI deploys.
+- `.claude/settings.json` (#107) makes Claude Code refuse `aws`, `cdk deploy`/`destroy`/`bootstrap` and `git push` to `main` in every session on the repo. Prefix rules miss other spellings (`bash -c`, scripts), so it backs up the real controls (the ruleset, the OIDC roles, CI); it doesn't replace them.
 - `CLAUDE.md` forbids edits outside `apps/<slug>/` during an app task. CI's path check (`scripts/pr-paths.mjs`): a PR from an `app/<slug>/…` branch may change only `apps/<slug>/` (and the lockfile); any other PR that changes only `apps/` may change one app, never two; a PR that changes anything outside `apps/` is platform work for `CODEOWNERS` review. The check writes the PR's kind to the run summary.
 - Enforcement at merge: the repo is public, so GitHub Free enforces the ruleset in `.github/rulesets/main.json` (see Security → Merge gate). Every push to `main` deploys production, so this ruleset, not `CODEOWNERS` alone, is what keeps write access from being production access.
 - The manifest schema caps CSP additions and module choices; anything else needs a platform PR.
@@ -418,10 +430,15 @@ There are three environments, and only GitHub Actions ever holds AWS credentials
 
 **Pipelines**
 
-- `ci.yml` on every PR: install, lint (incl. the import rule and the path guard for app branches), typecheck, tests for changed workspaces, manifest validation, `cdk synth` of changed stacks.
-- `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
+- `ci.yml` on every PR and push to `main`: one `check` job installs (`--ignore-scripts`), then runs actionlint, the import rule, the action-pin and install-script checks, the PR path check (PRs only), typecheck, **every** workspace's tests (manifests are validated there), the build, and `cdk synth` of every stack for both environments. Nothing is filtered by what changed.
+- `deploy.yml` on `main`: staging first (platform, then every app, max 4 at a time), then a **smoke check** of staging (`tools/smoke`, #100: `/api/health` on the portal and every deployed app, `/api/public/catalog` (listing at least one deployed app), and one app (`hello` when deployed)'s sign-in redirecting through `/authorize` to the portal's sign-in page; up to 4 tries per check; missing secrets only warn; health only during maintenance), so a broken change stops before production; then the production platform, then every production app, then the same smoke check on production, which fails the run loudly (no automatic rollback). Every `/api/health` names the commit it runs (`build`), the smoke table shows it, and with the run's `--sha` a stack on another commit is a warning (#105). What to do when a run fails or leaves mixed versions: `docs/ROLLBACK.md` (re-run the same artifacts, or revert in a new PR). CloudFormation skips unchanged stacks. Apps in an environment's `holdApps` are left out of it.
+- `ci-drift.yml` (#101) daily, on changes to the CI stack, and from `deploy.yml` as a warning: synthesizes `stacks-ci` (no credentials), reads the live default version of `stacks-test-boundary` and `stacks-test-cfn-exec` with the read-only `stacks-ci-drift-check` role (trusted only from `main`, by ref), and fails on any difference (`scripts/check-ci-drift.mjs`). `stacks-ci` is deployed by hand, so this is what says a merged guardrail change hasn't reached AWS.
 - `deploy-test.yml`: one app from a branch to staging, before merging; posts the URL as the run summary.
 - Auth to AWS uses GitHub OIDC with an IAM role per environment (no long-lived keys, unlike Book Club today). Both roles trust only their GitHub environment (`staging`, `production`), and both environments allow only `main`.
+
+**Compatibility across a deploy** (#105)
+
+`cdk deploy --all` rolls back each stack on its own, so after a failed run the platform and the apps can be on different commits for a while. Rule: **the Platform API stays compatible with the previous SDK release for one release.** A change to anything an app's `@stacks/api` calls or relies on (`/authorize`, the token exchange `POST /api/apps/:slug/token`, `/api/apps/:slug/*`, the app-session cookies and the handshake's query parameters) first adds the new field or route alongside the old one; a later PR removes the old one once every app has deployed with the new SDK. The platform deploys first, so it is always the newer side; apps must also keep working against the previous platform for one release when a change starts in the SDK. Reviews of `platform/api/` and `packages/api/` PRs check this.
 
 **Staging deploys without AWS credentials**
 
@@ -463,17 +480,17 @@ Done when every existing member can sign in at the new URL and sees their histor
 
 The design assumes any single app may be buggy or malicious and limits what it can reach.
 
-- **Sessions**: master session cookie `__Host-stacks` on `auth.<domain>` only. App sessions are opaque 256-bit tokens in an HttpOnly, Secure, `SameSite=Lax`, host-only cookie on the app's own subdomain. Only SHA-256 hashes are stored. No tokens in `localStorage` (a change from Book Club).
+- **Sessions**: master session cookie `__Host-stacks-portal` on `auth.<domain>` only (`PORTAL_COOKIE`); apps use `__Host-stacks-session`, and `__Host-stacks-login` during the sign-in handshake. App sessions are opaque 256-bit tokens in an HttpOnly, Secure, `SameSite=Lax`, host-only cookie on the app's own subdomain. Only SHA-256 hashes are stored. No tokens in `localStorage` (a change from Book Club).
 - **Handshake**: `state` and PKCE-style verifier, single-use authorization codes valid 60 seconds, `redirect_uri` must equal a registered app's origin, codes bound to the app slug.
 - **IAM**: each app Lambda can read and write only its own table and buckets; it reaches the platform only through the platform API with a per-app credential, never the platform table directly. Audit writes are restricted to that app's partition. CI deploy roles follow the staging rules under Environments and CI/CD, including a permissions boundary on the staging role.
 - **CSRF**: state-changing app routes need the cookie plus a custom header (`X-Stacks-Request: 1`) added by `@stacks/web`; CORS stays off because API and SPA share an origin.
 - **Headers**: CSP per app (default from Book Club's policy plus manifest additions), HSTS, `nosniff`, `frame-ancestors 'none'`, strict referrer policy.
-- **Throttling**: API Gateway rate limits per app; the platform API has its own, tighter limits on login and request-access.
+- **Throttling** (#102): API Gateway throttles each API's stage (apps 25 rps / burst 50, the platform 50 / 100), and caps sign-in, request-access and client-error per route, below that (numbers in `packages/infra/src/throttles.ts`; for example `POST /api/stacks/client-error` 1 rps per app). The caps are shared by every caller, not per IP: a flood on one of those routes uses up that route, not the whole API. A throttled call gets API Gateway's 429, which `@stacks/web` shows as "Too many requests right now".
 - **Backups and restores** (#97): point-in-time recovery on every table in both environments (35 days); production tables also get a monthly AWS Backup (plan `stacks-prod-monthly`, vault `stacks-prod-backups`, kept 365 days; every DynamoDB table tagged `stacks:env=production`). Content buckets are versioned and keep overwritten or deleted versions for 90 days. A restore always makes a new table and `npm run table-copy` copies its items back into the live table, so stacks and the registry are never repointed. Runbook: `docs/RESTORE.md`.
 - **Revocation**: removing a grant or a user deletes their app sessions at once; super-admin can force sign-out everywhere.
 - **Merge gate** (#93): every push to `main` deploys production, so `main` is protected by the ruleset in `.github/rulesets/main.json`, applied with `gh api` (`docs/SETUP.md` §4): no direct pushes, deletion or force pushes; `CI / check` must pass; `CODEOWNERS` paths need the owner's review (dismissed by a later push); repository admins may bypass only through a PR. Claude sessions act as `dashnash-agent` (write, not admin; the claude.ai GitHub connection), so the bypass never applies to them and their PRs wait for the owner's review. The repo is public so this is free; fork PRs need the owner's approval to run, get no secrets or OIDC token, and never run on self-hosted runners.
   - **Agent code review** (#111): a PR that changes `packages/infra/`, `.github/` or `platform/api/` also needs an agent code review of its head commit before it can merge. The session runs `/code-review` on the PR, fixes or answers what it finds, then posts a PR comment as `dashnash-agent` with its summary and the line `<!-- agent-code-review sha=<head sha> -->` (`node scripts/agent-review-gate.mjs marker <sha>`). The `Agent review` workflow (`pull_request_target` and `issue_comment`; runs `main`'s script, never the PR's code) posts the commit status `agent-review`, which the ruleset requires: success once the marker for the current head is there ("not required" for PRs outside those paths), pending otherwise. A new push needs a new review. Findings don't block by themselves; the owner weighs them during code-owner review. Allowed reviewers: repository variable `AGENT_REVIEWERS` (default `dashnash-agent`). It is the one workflow allowed `pull_request_target` (`pull_request` would run the PR's own copy, which could post its own success); `tools/app-conformance/tests/repo-guard.test.ts` pins that it only checks out the default branch, installs nothing and runs only the gate script. Limit: anyone with write access can post a commit status, so a PR that adds a workflow could fake `agent-review`; such a PR changes `.github/`, so the owner's code-owner review is still the backstop.
-- **Supply chain**: `CODEOWNERS` review on shared code (enforced by the merge gate), lockfile committed, no install scripts from new dependencies without review. Dependabot (`.github/dependabot.yml`, #99) opens weekly updates for npm and GitHub Actions (minor and patch grouped, majors one per PR) plus security updates; Dependabot alerts and secret scanning with push protection are on in the repo settings. Every action in a workflow is pinned to a full commit SHA with a `# vX.Y.Z` comment, and Docker images by digest; `scripts/check-action-pins.mjs` fails CI otherwise, and the repo setting requires SHA pinning.
+- **Supply chain**: `CODEOWNERS` review on shared code (enforced by the merge gate), lockfile committed, no install scripts from new dependencies without review: every workflow installs with `npm ci --ignore-scripts`, and `scripts/check-install-scripts.mjs` (#104) fails CI when the set of packages in `package-lock.json` with an install script changes from `scripts/install-scripts-allowlist.json` (owner-reviewed), or a workspace gains an install lifecycle script. Dependabot (`.github/dependabot.yml`, #99) opens weekly updates for npm and GitHub Actions (minor and patch grouped, majors one per PR) plus security updates; Dependabot alerts and secret scanning with push protection are on in the repo settings. Every action in a workflow is pinned to a full commit SHA with a `# vX.Y.Z` comment, and Docker images by digest; `scripts/check-action-pins.mjs` fails CI otherwise, and the repo setting requires SHA pinning.
 - **Privacy**: apps see only the user id, display name and avatar of users with a grant, plus the email for apps whose manifest has `needsEmail` (a code-owner decision: CI flags a PR that turns it on, and refuses it on an app branch); full Google names are never sent, as in Book Club.
 
 ## Build plan

@@ -68,3 +68,24 @@ All P1 PRs are merged and deployed.
 - [x] Check Billing → Budgets for an older budget.
 - [x] Redeploy `stacks-ci` (the same command as #94; one deploy after both merge covers both).
 - [x] Budgets → `stacks-monthly` should show the 80% actual and 100% forecast alerts.
+
+# Owner steps for the P2 fixes
+
+Specs: `docs/specs/` (order in `docs/specs/README.md`). Only three of the seven need you after merge.
+
+## #103 Mac runner split ([spec](specs/103-mac-runner-isolation.md))
+
+- [ ] On the Mac, create a standard (non-admin) user such as `gh-runner-pr`, and register a second runner for `dashnash/stacks` as that user with the label `stacks-ios-pr` (not `stacks-ios`). Run `xcodebuild -runFirstLaunch` as that user.
+- [ ] Check that the PR user can't read the release user's home folder.
+- [ ] Add the repository variable `MACOS_PR_RUNNER` = `["self-hosted","macOS","ARM64","stacks-ios-pr"]`. Until then PR builds keep using the existing Mac runner (`MACOS_RUNNER`), sharing the release user as before.
+- [ ] Open a PR that touches `native/ios/` and check which runner the simulator build used.
+
+## #101 Policy drift check ([spec](specs/101-ci-policy-drift-check.md))
+
+- [ ] Redeploy the CI stack (adds the read-only role): `cd infra && npx cdk deploy -c ci=true stacks-ci`. Note `DriftCheckRoleArn`.
+- [ ] Add the repository variable `AWS_DRIFT_ROLE_ARN` with that ARN.
+- [ ] Run **CI policy drift** by hand on `main`: both policies "in sync".
+
+## #105 Rollback and inventory ([spec](specs/105-rollback-and-manual-state.md))
+
+- [ ] Read `docs/ROLLBACK.md` and the inventory in `docs/SETUP.md` §0, and fill in where you keep each source value.

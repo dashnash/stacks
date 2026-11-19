@@ -2,7 +2,8 @@
 
 How to go from "something broke" to the request and the stack trace. Everything is in the AWS
 console under **CloudWatch** (us-east-1). Nothing alerts you: you look when someone tells you.
-What is logged, and what never is, is in `docs/PLATFORM_SPEC.md` ("Monitoring").
+What is logged, and what never is, is in `docs/PLATFORM_SPEC.md` ("Monitoring"). A deploy that
+failed or left stacks on different commits: [ROLLBACK.md](ROLLBACK.md).
 
 ## Where to look
 

@@ -81,7 +81,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Test and build the app
         env:
           VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}

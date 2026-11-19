@@ -78,6 +78,8 @@ const store: ScopeStore = nodeStore() ?? simpleStore();
 const envVar = (name: string): string | undefined => (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 
 // STACKS_APP_SLUG: for functions with no `createStacksApp` (the realtime authorizer).
+/** The commit this Lambda runs (`STACKS_BUILD_SHA`, set at deploy), `dev` when unset. On every log line and in `/api/health` (#105). */
+export const buildSha = (): string => envVar('STACKS_BUILD_SHA') || 'dev';
 let defaultApp = envVar('STACKS_APP_SLUG') ?? 'unknown';
 /** The slug for lines written outside a request (`createStacksApp` and the platform set it). */
 export function setLogApp(app: string): void {
@@ -141,7 +143,7 @@ export function writeLog(type: LogType, level: LogLevel, message: string, fields
       message,
       app: scope?.app ?? defaultApp,
       env: envVar('STACKS_ENV_TAG') ?? 'dev',
-      build: envVar('STACKS_BUILD_SHA') || 'dev',
+      build: buildSha(),
       ...(scope ? { requestId: scope.requestId, ref: scope.ref, ...(scope.route ? { route: scope.route } : {}), ...(scope.userId ? { userId: scope.userId } : {}) } : {}),
       ...extra,
     };

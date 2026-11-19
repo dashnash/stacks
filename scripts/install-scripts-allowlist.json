@@ -1,0 +1,7 @@
+{
+  "$comment": "Packages in package-lock.json allowed to have an install script (#104). CI installs with --ignore-scripts, so none of these scripts run; each value says why the package works anyway. Adding a key needs @dashnash's review (CODEOWNERS).",
+  "packages": {
+    "esbuild": "Its postinstall only checks the binary, which comes from the @esbuild/<platform> optional dependency; not run, not rebuilt.",
+    "fsevents": "macOS-only optional dependency of the file watchers; never installed on the Linux runners."
+  }
+}

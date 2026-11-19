@@ -6,6 +6,11 @@ name: iOS
 # and uploaded to TestFlight (docs/IOS_SETUP.md); and every two months, so testers never hit
 # TestFlight's 90-day expiry. Workflow, script, test and docs changes stay on Linux; run the
 # workflow by hand on main to release anyway.
+#
+# Runners (#103): releases use vars.MACOS_RUNNER (the Mac's release user, which holds the signing
+# keychain); PR simulator builds use vars.MACOS_PR_RUNNER (a second runner under a separate,
+# non-admin macOS user). Until that runner exists (MACOS_PR_RUNNER unset), same-repo PRs fall back
+# to MACOS_RUNNER, as before #103; set MACOS_PR_RUNNER to end the sharing. Unset means macos-26.
 on:
   pull_request:
     paths:
@@ -89,7 +94,10 @@ jobs:
     needs: core
     # PRs that change the app only. On main the release job builds (and signs) the same code.
     if: github.event_name == 'pull_request' && needs.core.outputs.app == 'true'
-    runs-on: ${{ (vars.MACOS_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.MACOS_RUNNER) || 'macos-26' }}
+    # PR code belongs on its own runner under a separate macOS user (MACOS_PR_RUNNER, #103), away
+    # from the Mac that signs releases. Until it is set up, the release Mac (MACOS_RUNNER) as before;
+    # forks and an unset Mac: GitHub-hosted macos-26.
+    runs-on: ${{ (github.event.pull_request.head.repo.full_name == github.repository && (vars.MACOS_PR_RUNNER || vars.MACOS_RUNNER)) && fromJSON(vars.MACOS_PR_RUNNER || vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -160,6 +168,8 @@ jobs:
     needs: core
     # On main: when the app changed, every two months, or by hand.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.core.outputs.app == 'true'
+    # The release Mac (MACOS_RUNNER) runs only main's code; the fork clause is moot here (no PRs)
+    # but keeps the workflow-wide guard uniform.
     runs-on: ${{ (vars.MACOS_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.MACOS_RUNNER) || 'macos-26' }}
     timeout-minutes: 45
     # Only main may use this environment (docs/IOS_SETUP.md); its secrets are the App Store Connect

@@ -86,7 +86,91 @@ describe('workflows on a public repo', () => {
     }
   });
 
+  it('keep PR code off the Mac that signs releases (#103)', () => {
+    const ios = jobs(workflows.find((w) => w.file === 'ios.yml')!.text);
+    const runsOn = (id: string) => ios.find((j) => j.id === id)!.body.match(/^ {4}runs-on:.*$/m)?.[0] ?? '';
+    // The PR build: the PR runner first, fork-guarded. Until that runner is set up it may fall back
+    // to the release runner (owner's call), but only after MACOS_PR_RUNNER, so setting it wins.
+    const app = runsOn('app');
+    expect(app).toContain(FORK_GUARD);
+    expect(app).toContain('fromJSON(vars.MACOS_PR_RUNNER || vars.MACOS_RUNNER)');
+    expect(app.replace(/vars\.MACOS_PR_RUNNER \|\| vars\.MACOS_RUNNER/g, '')).not.toMatch(/vars\.MACOS_(PR_)?RUNNER/);
+    // Jobs that hold the App Store Connect key never use the PR runner.
+    for (const job of ios.filter((j) => j.id === 'release' || /^ {4}environment: ios-release$/m.test(j.body))) {
+      expect(job.body, job.id).not.toContain('MACOS_PR_RUNNER');
+    }
+    // Every other job that can run on a pull request stays off the release runner.
+    for (const w of workflows.filter((x) => triggersOnPr(x.text))) {
+      for (const job of jobs(w.text).filter((j) => !(w.file === 'ios.yml' && j.id === 'app'))) {
+        const cond = job.body.match(/^ {4}if:.*$/m)?.[0] ?? '';
+        const prOnly = /github\.event_name == 'pull_request'/.test(cond);
+        const neverPr = /github\.event_name != 'pull_request'/.test(cond);
+        if (prOnly || !neverPr) expect(job.body.match(/^ {4}runs-on:.*$/m)?.[0] ?? '', `${w.file} ${job.id}`).not.toContain('vars.MACOS_RUNNER');
+      }
+    }
+  });
+
+  it('run the policy drift check only from main, with no environment (#101)', () => {
+    const drift = workflows
+      .find((w) => w.file === 'ci-drift.yml')!
+      .text.split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    expect(triggersOnPr(drift)).toBe(false);
+    expect(drift).not.toMatch(/pull_request/);
+    expect(drift).not.toMatch(/^\s+environment:/m);
+    expect(drift).toMatch(/^ {4}if: github\.ref == 'refs\/heads\/main'$/m);
+    // Deploy calls it as a warning that nothing waits on.
+    const deploy = jobs(workflows.find((w) => w.file === 'deploy.yml')!.text);
+    const call = deploy.find((j) => j.id === 'ci-drift')!.body;
+    expect(call).toMatch(/uses: \.\/\.github\/workflows\/ci-drift\.yml/);
+    expect(call).toMatch(/warn: true/);
+    for (const j of deploy) expect(j.body.match(/^ {4}needs:.*$/m)?.[0] ?? '', j.id).not.toContain('ci-drift');
+  });
+
+  it('install without dependency install scripts (#104)', () => {
+    for (const w of workflows) {
+      for (const line of w.text.split('\n').filter((l) => /\bnpm (ci|install|i)\b/.test(l) && !l.trim().startsWith('#'))) {
+        expect(line, w.file).toMatch(/--ignore-scripts/);
+      }
+    }
+  });
+
   it('finds every job (the parser sanity check)', () => {
-    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['zones', 'build', 'staging', 'production']);
+    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['ci-drift', 'zones', 'build', 'staging', 'production']);
+  });
+});
+
+// #107: Claude Code refuses AWS, deploys and pushes to main in every session on this repo.
+describe('.claude/settings.json', () => {
+  const settings = JSON.parse(readFileSync(join(root, '.claude/settings.json'), 'utf8'));
+  const required = [
+    'Bash(aws:*)',
+    'Bash(npx cdk deploy:*)',
+    'Bash(cdk deploy:*)',
+    'Bash(npx aws-cdk deploy:*)',
+    'Bash(cdk destroy:*)',
+    'Bash(npx cdk destroy:*)',
+    'Bash(cdk bootstrap:*)',
+    'Bash(npx cdk bootstrap:*)',
+    'Bash(git push origin main)',
+    'Bash(git push origin main *)',
+    'Bash(git push * main)',
+    'Bash(git push origin HEAD:main)',
+    'Bash(git push origin HEAD:main *)',
+    'Bash(git push * HEAD:main)',
+  ];
+
+  it('denies AWS, cdk deploy/destroy/bootstrap and pushes to main', () => {
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining(required));
+  });
+
+  it('names main exactly, so branches like main-fix or maintenance stay pushable', () => {
+    expect(settings.permissions.deny.filter((r: string) => /main\*\)$/.test(r))).toEqual([]);
+  });
+
+  it('allows none of them back', () => {
+    const allow: string[] = settings.permissions.allow ?? [];
+    expect(allow.filter((r) => /^Bash\((aws|cdk|npx cdk|npx aws-cdk|git push)/.test(r))).toEqual([]);
   });
 });

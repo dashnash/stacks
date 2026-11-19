@@ -306,3 +306,18 @@ describe('emails for apps', () => {
     expect(ok.body.user).toMatchObject({ email: 'max@test.dev' });
   });
 });
+
+describe('/health (#105)', () => {
+  it('names the commit the platform runs, dev when unset', async () => {
+    const before = process.env.STACKS_BUILD_SHA;
+    try {
+      delete process.env.STACKS_BUILD_SHA;
+      expect((await createPlatformHarness().call('GET', '/health')).body).toEqual({ ok: true, platform: true, build: 'dev' });
+      process.env.STACKS_BUILD_SHA = 'd'.repeat(40);
+      expect((await createPlatformHarness().call('GET', '/health')).body.build).toBe('d'.repeat(40));
+    } finally {
+      if (before === undefined) delete process.env.STACKS_BUILD_SHA;
+      else process.env.STACKS_BUILD_SHA = before;
+    }
+  });
+});

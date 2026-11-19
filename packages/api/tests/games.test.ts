@@ -177,11 +177,11 @@ describe('joining', () => {
     const t = harness();
     const room = await openRoom(t);
     expect((await t.call('POST', `/rooms/${room.id}/join`, { as: bob })).body.iceServers).toEqual([{ urls: ['stun:stun.cloudflare.com:3478'] }]);
-    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes', missingPlatformKeys: ['CLOUDFLARE_TURN_KEY_ID', 'CLOUDFLARE_TURN_API_TOKEN'] });
+    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes', build: 'dev', missingPlatformKeys: ['CLOUDFLARE_TURN_KEY_ID', 'CLOUDFLARE_TURN_API_TOKEN'] });
 
     t.games.turn = [{ urls: ['turns:turn.cloudflare.com:443?transport=tcp'], username: 'u', credential: 'c' }];
     expect((await t.call('POST', `/rooms/${room.id}/join`, { as: bob })).body.iceServers).toEqual([...STUN_ONLY, ...t.games.turn]);
-    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes' });
+    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes', build: 'dev' });
   });
 
   it('still lets people in (STUN only) when TURN credentials cannot be fetched', async () => {
@@ -307,7 +307,7 @@ describe('without the module', () => {
     const t = harness({ ...base, modules: ['realtime'] });
     expect((await t.call('POST', '/rooms', { as: ann, body: {} })).status).toBe(404);
     await expect(t.deps.games.start('r1')).rejects.toThrow(/add "gameServer" \(and "realtime"\) to "modules"/);
-    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes' });
+    expect((await t.call('GET', '/health')).body).toEqual({ ok: true, app: 'notes', build: 'dev' });
   });
 
   it('refuses gameServer without realtime', () => {

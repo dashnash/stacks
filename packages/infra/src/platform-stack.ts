@@ -22,6 +22,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import { API_BURST_LIMIT, API_RATE_LIMIT } from './app-stack';
+import { addRouteThrottles, PLATFORM_ROUTE_THROTTLES } from './throttles';
 import { addApiMetricFilters, logGroupName, Monitoring } from './monitoring';
 import { aasaRoute, authOrigin, bootstrapQualifier, envTag, gameAlarmTopicName, gameClusterName, ssmNames, stackName, STAGING_BOUNDARY_NAME, type EnvConfig, type EnvName } from './config';
 
@@ -253,8 +254,9 @@ export class PlatformStack extends cdk.Stack {
     stage.defaultRouteSettings = { throttlingRateLimit: API_RATE_LIMIT * 2, throttlingBurstLimit: API_BURST_LIMIT * 2 };
     const integration = new integrations.HttpLambdaIntegration('LambdaIntegration', this.handler);
     httpApi.addRoutes({ path: '/api/{proxy+}', methods: [apigw.HttpMethod.ANY], integration });
-    httpApi.addRoutes({ path: '/authorize', methods: [apigw.HttpMethod.GET], integration });
     httpApi.addRoutes({ path: '/logout', methods: [apigw.HttpMethod.GET], integration });
+    // Sign-in (incl. GET /authorize), access requests and error reports get their own, lower caps (#102).
+    addRouteThrottles(httpApi, stage, integration, PLATFORM_ROUTE_THROTTLES);
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split('/', httpApi.apiEndpoint));
 
     // 4. The portal site: auth.<rootDomain>, plus the bare domain (redirects to it).

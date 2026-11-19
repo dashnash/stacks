@@ -3,6 +3,33 @@
 Everything after this is done by CI. These steps need AWS admin credentials on your own machine,
 once. Nothing here goes into a Claude session.
 
+## 0. What lives outside the repo
+
+Everything below was made by hand, once, and isn't rebuilt from git (#105). Names and places only:
+no values here, ever. "Source value" is where the original is kept, so you can rotate or re-create
+it. Rotate by redoing the step in the last column.
+
+| Name | Where it lives | Source value | How to rotate / re-create | Doc |
+| --- | --- | --- | --- | --- |
+| `stacks-ci` stack: OIDC provider, roles `stacks-ci-production` / `stacks-ci-staging` / `stacks-ci-drift-check`, policies `stacks-test-boundary` / `stacks-test-cfn-exec`, budget `stacks-monthly` | AWS (CloudFormation, IAM, Budgets) | the repo (`packages/infra/src/ci-stack.ts`); nothing secret | redeploy `stacks-ci` with admin credentials; the daily drift check says when it's needed | §2, §3 |
+| CDK bootstraps `CDKToolkit-stkprod`, `CDKToolkit-stktest` | AWS (CloudFormation, S3, IAM) | re-creatable | rerun the `cdk bootstrap` commands | §2, §3 |
+| Platform secrets `/stacks/<env>/secrets/platform/{APNS_KEY, APNS_KEY_ID, CLOUDFLARE_TURN_KEY_ID, CLOUDFLARE_TURN_API_TOKEN}` | SSM Parameter Store (SecureString) per environment; production ones tagged `stacks:env=production` | Apple Developer (APNs key, downloaded once: keep the `.p8` in your password manager); Cloudflare dashboard (TURN) | make a new key at the source, `put-parameter --overwrite`, tag the prod copy | APNs: [IOS_SETUP.md](IOS_SETUP.md) §9; TURN: §8 here |
+| App secrets `/stacks/<env>/secrets/<slug>/<NAME>` (from each manifest's `secrets`) | SSM Parameter Store (SecureString) | the third-party service each one is for | `put-parameter --overwrite`, tag the prod copy; `/api/health` lists missing ones | §7 |
+| Each app's Platform API credential | Secrets Manager, made by the app's stack | generated in AWS; never seen | not rotated by hand. Never delete it in the console: CloudFormation still thinks it exists and won't make a new one. To replace it, change how the stack generates it in a PR, so the deploy replaces it | §1 |
+| GitHub environments `staging`, `production` (variables `AWS_STAGING_ROLE_ARN`, `AWS_PRODUCTION_ROLE_ARN`; deployment branch `main`) | GitHub → Settings → Environments | `stacks-ci` outputs | copy the ARNs again after re-creating `stacks-ci` | §4 |
+| GitHub environment `ios-release` (secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`; branch `main`) | GitHub → Settings → Environments | App Store Connect → Users and Access → Integrations (the `.p8` downloads once: keep it in your password manager) | revoke the key, make a new one, replace the three secrets | [IOS_SETUP.md](IOS_SETUP.md) §2, §3 |
+| Repository variables `LINUX_RUNNER`, `MACOS_RUNNER`, `MACOS_PR_RUNNER`, `AWS_DRIFT_ROLE_ARN`, `AGENT_REVIEWERS` | GitHub → Settings → Secrets and variables → Actions → Variables | this doc / `stacks-ci` outputs; not secret | set again | §4, §9, [IOS_SETUP.md](IOS_SETUP.md) "Self-hosted Mac runners" |
+| Ruleset on `main` | GitHub → Settings → Rules | `.github/rulesets/main.json` | `gh api -X PUT …/rulesets/<id> --input .github/rulesets/main.json` | §4 |
+| Repo settings: visibility public, fork-PR approval, Code security (Dependabot, secret scanning, push protection), "require actions pinned to a SHA" | GitHub → Settings | this doc | set again | §4 |
+| The agent's GitHub account `dashnash-agent` (write, not admin) and its claude.ai connection | GitHub, claude.ai | your password manager | reconnect at claude.ai's GitHub connection | §4 |
+| Google OAuth clients: one web client per environment, two iOS clients | Google Cloud Console, project 880697273676 → Credentials | the console (client IDs are in `stacks.config.json`; there is no client secret) | make a new client, update `stacks.config.json` in a PR | §1b, [IOS_SETUP.md](IOS_SETUP.md) §6 |
+| Apple: Team ID, bundle IDs, the two App Store Connect apps, TestFlight groups, Sign in with Apple Services IDs | Apple Developer, App Store Connect | the consoles; IDs are in `stacks.config.json` | redo the step (the **iOS provision** workflow re-creates bundle IDs and groups) | [IOS_SETUP.md](IOS_SETUP.md) §1, §4, §5, §10 |
+| Route 53 hosted zones (`hostedZoneId` or `"lookup"`) and the domain registrations | AWS Route 53 | the registrar | zones are looked up by name in CI | §1 |
+| Self-hosted runners: two ephemeral Linux runners; the Mac's release and PR runners | homelab repo (`homelab:roles/github_runner`, runbook `homelab:docs/runbooks/github-runner.md`); the Mac | homelab repo; the Mac's users | re-register (delete the variable to fall back to GitHub-hosted meanwhile) | §9, [IOS_SETUP.md](IOS_SETUP.md) "Self-hosted Mac runners" |
+| Backups: vault `stacks-prod-backups`, the AWS Backup DynamoDB opt-in | AWS Backup | made by the platform stack; the opt-in is an account setting | re-check the opt-in | [RESTORE.md](RESTORE.md) §0 |
+
+What to do when a deploy goes wrong: [ROLLBACK.md](ROLLBACK.md).
+
 ## 1. Fill in `stacks.config.json`
 
 For each environment: `rootDomain` (apps live at `<slug>.<rootDomain>`), the Route 53
@@ -72,6 +99,14 @@ If it says `"use_immutable_subject": true`, copy its `sub_claim_prefix` into `gi
 in `stacks.config.json` (GitHub then identifies the repo by IDs, e.g.
 `repo:dashnash@3804293/stacks@1449992124`, which survives renames). Otherwise leave it out.
 
+`stacks-ci` also creates the read-only role `stacks-ci-drift-check` (#101; output
+`DriftCheckRoleArn`): only GitHub Actions on `main` (by ref, no environment) can assume it, and it
+may only read `stacks-test-boundary` and `stacks-test-cfn-exec`. Put its ARN in the repository
+variable `AWS_DRIFT_ROLE_ARN` (step 4). The **CI policy drift** workflow then compares those two live
+policies with `main` every day (and Deploy does, as a warning): **when it fails, the guardrails in
+AWS are not what `main` says; redeploy `stacks-ci` with the command above.** Because only you deploy
+this stack, re-run that command after every merge that changes `packages/infra/src/ci-stack.ts`.
+
 `stacks-ci` also creates the account's monthly cost budget `stacks-monthly` (#98): `budget.monthlyUsd`
 in `stacks.config.json` (50 USD), with emails to the first production `platformAdmins` address at 80%
 of actual and 100% of forecast spend (no confirmation needed; forecast alerts start once AWS has
@@ -112,6 +147,9 @@ redeploy it from your machine with admin credentials before merging anything tha
 - **Environments** (Settings → Environments): create `staging` and `production`. For each, set
   *Deployment branches* to **Selected branches: `main`**, and add the variable
   `AWS_STAGING_ROLE_ARN` / `AWS_PRODUCTION_ROLE_ARN` with the ARN from step 2.
+- **Repository variable** (Settings → Secrets and variables → Actions → Variables, not an
+  environment): `AWS_DRIFT_ROLE_ARN` with the `DriftCheckRoleArn` from step 2 (#101). Until it's set
+  the drift check only says so.
 - **Make the repo public** (Settings → General → Change visibility). Rulesets and the fork-approval
   setting below need it on GitHub Free. While the repo is private, leave *Run workflows from fork
   pull requests* unchecked.
@@ -236,7 +274,9 @@ to run them on the owner's own hardware: two ephemeral runners managed as code i
 runner and its own Docker daemon, and job traffic can reach the internet but not the home network.
 The production deploy runs there too; its AWS access is still the GitHub OIDC role, unchanged.
 
-The iOS app build jobs (`macos-26`) always stay on GitHub-hosted runners. Jobs that run on pull
+The iOS app's macOS jobs use `macos-26` unless `MACOS_RUNNER` / `MACOS_PR_RUNNER` point them at a
+self-hosted Mac, split so PR code doesn't run where releases are signed once `MACOS_PR_RUNNER` is set (`docs/IOS_SETUP.md`,
+"Self-hosted Mac runners"). Jobs that run on pull
 requests add `github.event.pull_request.head.repo.full_name == github.repository` to that
 condition, so a PR from a fork always runs on `ubuntu-latest`, never on the owner's hardware
 (`tools/app-conformance/tests/repo-guard.test.ts` checks it).

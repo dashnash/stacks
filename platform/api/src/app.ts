@@ -6,6 +6,7 @@ import {
   clearCookie,
   cookie,
   forbidden,
+  buildSha,
   logClientError,
   maintenance,
   MAINTENANCE_OPEN_PATHS,
@@ -169,7 +170,8 @@ export function createPlatformApp(deps: PlatformDeps) {
   });
 
   router
-    .add('GET', '/health', async () => ({ body: { ok: true, platform: true } }))
+    // `build`: the commit this stack runs, so mixed versions after a partial deploy show (#105).
+    .add('GET', '/health', async () => ({ body: { ok: true, platform: true, build: buildSha() } }))
     // Browser errors from the portal, sent by @stacks/web (signed in or out). Logged, never stored.
     .add('POST', '/stacks/client-error', async (req) => {
       csrf(req);

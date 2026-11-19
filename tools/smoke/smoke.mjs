@@ -2,12 +2,16 @@
 /**
  * Smoke check after a deploy (#100): is every API up, does the catalog answer, does sign-in start?
  *
- *   node tools/smoke/smoke.mjs <outputs.json> --env staging|production
+ *   node tools/smoke/smoke.mjs <outputs.json> --env staging|production [--sha <commit>]
  *
  * `outputs.json` is `cdk deploy --outputs-file`: the platform stack's `PortalURL` and each app
  * stack's `SiteURL` (held apps aren't deployed, so they aren't checked). Fails on network errors,
  * 5xx, a wrong status or a wrong redirect. Missing secrets in a health body are warnings. While the
  * environment is in maintenance (stacks.config.json) only the health checks run.
+ *
+ * Every `/api/health` names the commit it runs (`build`, #105); the table shows it. With `--sha`
+ * (the commit just deployed) a stack on another commit, or one that doesn't say, is a warning, never
+ * a failure: after a partly failed `cdk deploy --all` that is how mixed versions show (docs/ROLLBACK.md).
  */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -32,10 +36,10 @@ export const SIGN_IN_PROBE = 'hello';
 export const probeApp = (apps) => apps.find((a) => a.slug === SIGN_IN_PROBE) ?? apps[0];
 
 /** The checks to run, in order. Each `run(fetch)` resolves to `{ warnings? }` or throws with the reason. */
-export function plan({ portal, apps }, { maintenance = false } = {}) {
+export function plan({ portal, apps }, { maintenance = false, sha } = {}) {
   const checks = [
-    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`) },
-    ...apps.map((a) => ({ name: `${a.slug} /api/health`, run: (f) => health(f, `${a.url}/api/health`) })),
+    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, sha) },
+    ...apps.map((a) => ({ name: `${a.slug} /api/health`, run: (f) => health(f, `${a.url}/api/health`, sha) })),
   ];
   if (maintenance) return checks;
   checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug)) });
@@ -52,7 +56,10 @@ async function json(res, url) {
   }
 }
 
-async function health(f, url) {
+/** The short form of a commit for the table (`dev` and other non-hex values stay as they are). */
+export const shortSha = (sha) => (/^[0-9a-f]{40}$/.test(String(sha)) ? String(sha).slice(0, 7) : String(sha));
+
+async function health(f, url, sha) {
   const res = await f(url, { redirect: 'manual' });
   if (res.status !== 200) throw new Error(`${url}: ${res.status}, expected 200`);
   const body = await json(res, url);
@@ -60,7 +67,10 @@ async function health(f, url) {
   const warnings = [];
   if (body.missingSecrets?.length) warnings.push(`missing secrets: ${body.missingSecrets.join(', ')}`);
   if (body.missingPlatformKeys?.length) warnings.push(`missing platform keys: ${body.missingPlatformKeys.join(', ')}`);
-  return { warnings };
+  const build = typeof body.build === 'string' ? body.build : undefined;
+  if (sha && !build) warnings.push(`build unknown (no "build" in /api/health), expected ${shortSha(sha)}`);
+  else if (sha && build !== sha) warnings.push(`runs ${shortSha(build)}, not ${shortSha(sha)}: mixed versions (docs/ROLLBACK.md)`);
+  return { warnings, build };
 }
 
 /**
@@ -101,8 +111,8 @@ export async function runChecks(checks, { fetch: f = globalThis.fetch, attempts 
     let error;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        const { warnings = [] } = (await check.run(timed)) ?? {};
-        results.push({ name: check.name, ok: true, attempts: attempt, warnings });
+        const { warnings = [], build } = (await check.run(timed)) ?? {};
+        results.push({ name: check.name, ok: true, attempts: attempt, warnings, ...(build ? { build } : {}) });
         error = undefined;
         break;
       } catch (err) {
@@ -121,7 +131,8 @@ export const escapeCommand = (s) => String(s).replace(/%/g, '%25').replace(/\r/g
 /** A Markdown table for the job summary. */
 export function summary(env, results) {
   const failed = results.filter((r) => !r.ok).length;
-  const rows = results.map((r) => `| ${r.ok ? (r.warnings.length ? '⚠️' : '✅') : '❌'} | ${r.name} | ${r.ok ? r.warnings.join('; ') || (r.attempts > 1 ? `ok after ${r.attempts} tries` : '') : r.error} |`);
+  const notes = (r) => [...r.warnings, ...(r.build ? [`build ${shortSha(r.build)}`] : []), ...(r.attempts > 1 ? [`ok after ${r.attempts} tries`] : [])].join('; ');
+  const rows = results.map((r) => `| ${r.ok ? (r.warnings.length ? '⚠️' : '✅') : '❌'} | ${r.name} | ${r.ok ? notes(r) : r.error} |`);
   return [`### Smoke check (${env}): ${failed ? `${failed} failed` : 'all passed'}`, '', '| | Check | Notes |', '| --- | --- | --- |', ...rows, ''].join('\n');
 }
 
@@ -130,15 +141,16 @@ async function main() {
   const file = args.find((a) => !a.startsWith('--'));
   const env = args[args.indexOf('--env') + 1];
   if (!file || !['staging', 'production'].includes(env)) {
-    console.error('Usage: smoke.mjs <outputs.json> --env staging|production');
+    console.error('Usage: smoke.mjs <outputs.json> --env staging|production [--sha <commit>]');
     process.exit(2);
   }
   const config = JSON.parse(readFileSync(new URL('../../stacks.config.json', import.meta.url), 'utf8'));
   const maintenance = config.environments?.[env]?.maintenance === true;
   const targets = targetsFromOutputs(JSON.parse(readFileSync(file, 'utf8')));
-  const results = await runChecks(plan(targets, { maintenance }));
+  const sha = args.includes('--sha') ? args[args.indexOf('--sha') + 1] : undefined;
+  const results = await runChecks(plan(targets, { maintenance, sha }));
   for (const r of results) {
-    console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? r.warnings.map((w) => `\n     warning: ${w}`).join('') : `\n     ${r.error}`}`);
+    console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.build ? ` (build ${shortSha(r.build)})` : ''}${r.ok ? r.warnings.map((w) => `\n     warning: ${w}`).join('') : `\n     ${r.error}`}`);
     for (const w of r.warnings) console.log(`::warning title=Smoke ${escapeCommand(r.name)}::${escapeCommand(w)}`);
     if (!r.ok) console.log(`::error title=Smoke check failed (${env})::${escapeCommand(`${r.name}: ${r.error}`)}`);
   }

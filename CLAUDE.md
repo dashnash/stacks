@@ -44,6 +44,8 @@ its tests) rather than rewriting from scratch.
 
 - Node 22, TypeScript, npm workspaces, Vitest. AWS CDK v2 in us-east-1.
 - Only CI deploys. Never ask for or use AWS credentials in a session.
+- `.claude/settings.json` denies `aws`, `cdk deploy`/`destroy`/`bootstrap` and pushes to `main` (#107); don't
+  work around it. It is a guard rail, not the control: the ruleset, the OIDC roles and CI are.
 - `apps/*` may import only `@stacks/*` packages, never another app or `platform/` internals.
 - **App tasks** (building or changing one app, e.g. via `/new-app`): edit only `apps/<slug>/`. If the
   app needs something the SDK lacks, stop and propose a separate platform change.
@@ -55,6 +57,9 @@ its tests) rather than rewriting from scratch.
   Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.
+- The Platform API stays compatible with the previous SDK for one release (spec: "Compatibility across a
+  deploy"): add the new route or field first, remove the old one in a later PR. Check it in `/code-review` of
+  `platform/api/` and `packages/api/` changes. A failed or mixed deploy: `docs/ROLLBACK.md`.
 - Store people by `v.user.id`, never by email.
 - Every app has `<AccountMenu />` at the top right of its header, shows `<BuildVersion />` (usually in
   its footer) signed in and out, and exports `App` + `demoOptions()` from `web/src/demo/setup.ts`;

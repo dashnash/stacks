@@ -3,6 +3,8 @@
 What to do when data is lost or overwritten: a DynamoDB table (the platform's or an app's) or a file in
 an app's content bucket (e.g. Book Club's photos). Everything here runs from your machine with the
 admin profile; CI never restores. Decisions behind it: `docs/specs/97-content-versioning-and-restore.md`.
+A bad deploy (not lost data) is [ROLLBACK.md](ROLLBACK.md); everything made by hand is listed in
+[SETUP.md](SETUP.md) §0.
 
 | What | Protection | Window |
 | --- | --- | --- |
