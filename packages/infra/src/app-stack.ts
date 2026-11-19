@@ -43,6 +43,7 @@ import {
 import { buildCsp } from './csp';
 import { bundleGameServer, gameBootstrapCommand, GAME_SERVER_IMAGE } from './game-bundle';
 import { addApiMetricFilters, logGroupName } from './monitoring';
+import { addRouteThrottles, APP_ROUTE_THROTTLES } from './throttles';
 
 /**
  * CloudFront viewer-request function: every extension-less path serves index.html; files (with a
@@ -513,11 +514,10 @@ export class AppStack extends cdk.Stack {
     const httpApi = new apigw.HttpApi(this, 'HttpApi');
     const stage = httpApi.defaultStage!.node.defaultChild as apigw.CfnStage;
     stage.defaultRouteSettings = { throttlingRateLimit: API_RATE_LIMIT, throttlingBurstLimit: API_BURST_LIMIT };
-    httpApi.addRoutes({
-      path: '/api/{proxy+}',
-      methods: [apigw.HttpMethod.ANY],
-      integration: new integrations.HttpLambdaIntegration('LambdaIntegration', this.handler),
-    });
+    const integration = new integrations.HttpLambdaIntegration('LambdaIntegration', this.handler);
+    httpApi.addRoutes({ path: '/api/{proxy+}', methods: [apigw.HttpMethod.ANY], integration });
+    // Sign-in and browser error reports (public routes) get their own, lower caps (#102).
+    addRouteThrottles(httpApi, stage, integration, APP_ROUTE_THROTTLES);
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split('/', httpApi.apiEndpoint));
 
     // 5. Domain: <slug>.<rootDomain> with the platform's wildcard certificate (read from SSM at deploy time).

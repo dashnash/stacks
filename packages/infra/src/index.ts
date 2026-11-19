@@ -34,3 +34,4 @@ export type { MonitoringProps } from './monitoring';
 export { BACKUP_PLAN_NAME, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, PlatformStack, PORTAL_CSP, portalRouterCode } from './platform-stack';
 export type { PlatformStackProps } from './platform-stack';
 export { bundleGameServer, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, gameBootstrapCommand, GAME_SERVER_IMAGE } from './game-bundle';
+export { addRouteThrottles, APP_ROUTE_THROTTLES, PLATFORM_ROUTE_THROTTLES, type RouteThrottle } from './throttles';

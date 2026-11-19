@@ -5,7 +5,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, BACKUP_PLAN_NAME, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, CONTENT_NONCURRENT_DAYS, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
+import { API_BURST_LIMIT, API_RATE_LIMIT, AppStack, BACKUP_PLAN_NAME, PLATFORM_ROUTE_THROTTLES, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, CONTENT_NONCURRENT_DAYS, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
 
 const env: EnvConfig = { rootDomain: 'test.example.com', hostedZoneId: 'Z123', hostedZoneName: 'example.com', googleClientId: 'gid', platformAdmins: ['root@x.dev', 'two@x.dev'] };
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -232,5 +232,30 @@ describe('AppStack secrets', () => {
     const t = withSecrets();
     expect(JSON.stringify(t.toJSON())).not.toContain('STACKS_SECRETS_PREFIX');
     expect(JSON.stringify(t.findResources('AWS::IAM::Policy'))).not.toContain('kms:ViaService');
+  });
+
+  it('caps sign-in, access requests and error reports per route, each on its own route to the same Lambda (#102)', () => {
+    const t = synth();
+    const json = t.toJSON() as { Resources: Record<string, { Type: string; Properties: Record<string, unknown>; DependsOn?: string[] }> };
+    const resources = Object.entries(json.Resources);
+    const routes = resources.filter(([, r]) => r.Type === 'AWS::ApiGatewayV2::Route');
+    const target = (key: string) => routes.find(([, r]) => r.Properties.RouteKey === key)?.[1].Properties.Target;
+    const proxyTarget = target('ANY /api/{proxy+}');
+    expect(proxyTarget).toBeDefined();
+    for (const { routeKey } of PLATFORM_ROUTE_THROTTLES) expect(target(routeKey), routeKey).toEqual(proxyTarget);
+    const [, stage] = resources.find(([, r]) => r.Type === 'AWS::ApiGatewayV2::Stage')!;
+    expect(stage.Properties.DefaultRouteSettings).toEqual({ ThrottlingRateLimit: API_RATE_LIMIT * 2, ThrottlingBurstLimit: API_BURST_LIMIT * 2 });
+    expect(stage.Properties.RouteSettings).toEqual(
+      Object.fromEntries(PLATFORM_ROUTE_THROTTLES.map((r) => [r.routeKey, { ThrottlingRateLimit: r.rate, ThrottlingBurstLimit: r.burst }])),
+    );
+    for (const r of PLATFORM_ROUTE_THROTTLES) {
+      expect(r.rate, r.routeKey).toBeLessThan(API_RATE_LIMIT * 2);
+      expect(r.burst, r.routeKey).toBeLessThan(API_BURST_LIMIT * 2);
+    }
+    // CloudFormation rejects settings for a route that doesn't exist yet.
+    for (const { routeKey } of PLATFORM_ROUTE_THROTTLES) {
+      const [id] = routes.find(([, r]) => r.Properties.RouteKey === routeKey)!;
+      expect(stage.DependsOn ?? [], routeKey).toContain(id);
+    }
   });
 });

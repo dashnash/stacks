@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
+import { API_BURST_LIMIT, API_RATE_LIMIT, APP_ROUTE_THROTTLES, AppStack, buildCsp, bundleGameServer, checkAssembly, BUDGET_NAME, CiStack, loadStacksConfig, stagingRecordNames, stagingRootDomains, GAME_BOOTSTRAP_SCRIPT, GAME_BUNDLE_URL_ENV, GAME_SERVER_IMAGE, type EnvConfig, type EnvName } from '../src/index';
 
 const manifest: AppManifest = {
   slug: 'hello',
@@ -124,6 +124,28 @@ describe('AppStack', () => {
       }),
     });
     template.hasResourceProperties('AWS::ApiGatewayV2::Stage', { DefaultRouteSettings: { ThrottlingRateLimit: 25, ThrottlingBurstLimit: 50 } });
+  });
+
+  it('caps sign-in and error reports per route, each on its own route to the same Lambda (#102)', () => {
+    const { template } = synth('staging');
+    const json = template.toJSON() as { Resources: Record<string, { Type: string; Properties: Record<string, unknown>; DependsOn?: string[] }> };
+    const resources = Object.entries(json.Resources);
+    const routes = resources.filter(([, r]) => r.Type === 'AWS::ApiGatewayV2::Route');
+    const target = (key: string) => routes.find(([, r]) => r.Properties.RouteKey === key)?.[1].Properties.Target;
+    expect(target('ANY /api/{proxy+}')).toBeDefined();
+    for (const { routeKey } of APP_ROUTE_THROTTLES) expect(target(routeKey), routeKey).toEqual(target('ANY /api/{proxy+}'));
+    expect(routes).toHaveLength(APP_ROUTE_THROTTLES.length + 1);
+    const [, stage] = resources.find(([, r]) => r.Type === 'AWS::ApiGatewayV2::Stage')!;
+    expect(stage.Properties.DefaultRouteSettings).toEqual({ ThrottlingRateLimit: API_RATE_LIMIT, ThrottlingBurstLimit: API_BURST_LIMIT });
+    expect(stage.Properties.RouteSettings).toEqual(
+      Object.fromEntries(APP_ROUTE_THROTTLES.map((r) => [r.routeKey, { ThrottlingRateLimit: r.rate, ThrottlingBurstLimit: r.burst }])),
+    );
+    for (const r of APP_ROUTE_THROTTLES) {
+      expect(r.rate, r.routeKey).toBeLessThan(API_RATE_LIMIT);
+      expect(r.burst, r.routeKey).toBeLessThan(API_BURST_LIMIT);
+      const [id] = routes.find(([, x]) => x.Properties.RouteKey === r.routeKey)!;
+      expect(stage.DependsOn ?? [], r.routeKey).toContain(id);
+    }
   });
 
   it('falls back to the CloudFront domain when no hosted zone is configured', () => {

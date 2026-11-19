@@ -17,6 +17,11 @@ describe('createClient', () => {
     expect(init!.body).toBe('{"text":"hi"}');
   });
 
+  it("explains API Gateway's 429 (a throttled route) in plain words", async () => {
+    const api = createClient({ fetch: (async () => jsonResponse(429, { message: 'Too Many Requests' })) as unknown as typeof fetch });
+    await expect(api.post('/auth/google', {})).rejects.toMatchObject({ status: 429, message: 'Too many requests right now. Wait a moment and try again.' });
+  });
+
   it('throws ApiError with the server message and calls onUnauthorized on 401', async () => {
     const onUnauthorized = vi.fn();
     const api = createClient({ onUnauthorized, fetch: (async () => jsonResponse(401, { error: 'Sign in required', code: 'UNAUTHORIZED' })) as unknown as typeof fetch });

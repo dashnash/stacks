@@ -69,7 +69,9 @@ export function createClient(opts: ClientOptions = {}) {
     if (!res.ok) {
       if (res.status === 401) opts.onUnauthorized?.();
       const err = data as { error?: string; code?: string; ref?: unknown };
-      throw new ApiError(res.status, err.error ?? `Request failed (${res.status})`, err.code, data, typeof err.ref === 'string' ? err.ref : undefined);
+      // API Gateway's own 429 (a route's cap, #102) has no `error` field.
+      const fallback = res.status === 429 ? 'Too many requests right now. Wait a moment and try again.' : `Request failed (${res.status})`;
+      throw new ApiError(res.status, err.error ?? fallback, err.code, data, typeof err.ref === 'string' ? err.ref : undefined);
     }
     return data as T;
   };

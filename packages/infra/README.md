@@ -8,6 +8,10 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   (PK/SK, GSI1, TTL `expiresAt`), a Secrets Manager credential for the Platform API.
   Stack names: `stacks-<prod|test>-app-<slug>`. Staging stacks use bootstrap qualifier `stktest`
   and put the `stacks-test-boundary` permissions boundary on every role.
+- Throttles (`throttles.ts`, #102): each HTTP API stage allows `API_RATE_LIMIT` rps / `API_BURST_LIMIT`
+  (the platform twice that), and the public sign-in, access-request and client-error routes get their
+  own lower caps (`APP_ROUTE_THROTTLES`, `PLATFORM_ROUTE_THROTTLES`; `addRouteThrottles` creates each
+  as its own route to the same Lambda). The caps are shared by every caller, not per IP.
 - With the `realtime` module, `AppStack` adds an AppSync Event API (`stacks-<env>-<slug>`, namespace
   `app`, IAM + Lambda auth, an onPublish handler dropping events over 4 KB), its Lambda authorizer
   (`@stacks/api/realtime-authorizer`, results never cached), the `stacks-<env>-app-<slug>-realtime-key`
