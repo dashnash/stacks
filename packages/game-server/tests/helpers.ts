@@ -80,7 +80,7 @@ export const game = defineGame<DotsState>({
   results: (s) => ({ seen: s.seen.length }),
 });
 
-export async function setup(opts: { status?: string; maxPlayers?: number; store?: MemoryStore } = {}) {
+export async function setup(opts: { status?: string; maxPlayers?: number; store?: MemoryStore; game?: typeof game } = {}) {
   const store = opts.store ?? new MemoryStore();
   if (opts.status !== 'missing') await store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: opts.status ?? 'starting', maxPlayers: opts.maxPlayers ?? 8 });
   const signaling = new FakeSignaling();
@@ -89,7 +89,7 @@ export async function setup(opts: { status?: string; maxPlayers?: number; store?
   const logs: string[] = [];
   const server = new RoomServer({
     roomId: ROOM,
-    game,
+    game: opts.game ?? game,
     store,
     signaling,
     peers: (hooks) => {
@@ -115,8 +115,8 @@ export async function setup(opts: { status?: string; maxPlayers?: number; store?
       server.advance();
     }
   };
-  const ticket = (userId: string, name: string, overrides: { roomId?: string; exp?: number; key?: string } = {}) =>
-    signGameTicket(overrides.key ?? KEY, { roomId: overrides.roomId ?? ROOM, userId, name, exp: overrides.exp ?? Math.floor(clock.wall / 1000) + 60 });
+  const ticket = (userId: string, name: string, overrides: { roomId?: string; exp?: number; key?: string; device?: string } = {}) =>
+    signGameTicket(overrides.key ?? KEY, { roomId: overrides.roomId ?? ROOM, userId, name, exp: overrides.exp ?? Math.floor(clock.wall / 1000) + 60, ...(overrides.device ? { device: overrides.device } : {}) });
   /** A client sends an offer; resolves once the server has dealt with it. */
   const offer = async (userId: string, name: string, sid: string, overrides: Parameters<typeof ticket>[2] & { ticket?: string; wrap?: boolean } = {}) => {
     signaling.fromClient(roomChannels.toServer(ROOM), { t: 'offer', sid, ticket: overrides.ticket ?? (await ticket(userId, name, overrides)), sdp: `offer-${sid}` }, overrides.wrap);

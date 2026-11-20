@@ -44,7 +44,7 @@ await store.queryGsi1<T>(gsi1pk, { descending: true });
 
 `strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate.
 Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`, and with the
-`gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<userId>`), `ROOMCODE#<code>` and the GSI1 partition `STACKS#ROOMS`.
+`gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<seatId>`), `ROOMCODE#<code>` and the GSI1 partition `STACKS#ROOMS`.
 
 ## People and access (the platform owns them)
 
@@ -162,17 +162,23 @@ module on, these member routes exist (you write none of them):
 | `POST /rooms { name? }` | Creates a room (`{ room }`, 201) and starts its server (30-60 s to `open`). 429 `TOO_MANY_GAMES` at the manifest's `maxRooms`. |
 | `GET /rooms` | Open and starting rooms with player counts. Also sweeps: rooms whose server is gone or over time are closed. |
 | `GET /rooms/:id`, `GET /rooms/by-code/:code` | One room (ended ones stay readable for 7 days, with `results`). |
-| `POST /rooms/:id/join` | `{ ticket, iceServers, channels, player, room }`: a 60 s join ticket for the caller. 409 `ROOM_FULL` / `ROOM_ENDED` / `ROOM_STARTING`. |
-| `POST /rooms/:id/leave` | Frees the caller's seat. |
+| `POST /rooms/:id/join { device? }` | `{ ticket, iceServers, channels, player, room }`: a 60 s join ticket for the caller's seat on `device`. 409 `ROOM_FULL` / `ROOM_ENDED` / `ROOM_STARTING`; 400 for a bad label. |
+| `POST /rooms/:id/leave { device? }` | Frees that one seat of the caller's. |
 | `POST /rooms/:id/end` | Ends it now (its creator, or an approver; others 403). |
 
 - A room: `{ id, code, name, status: 'starting'|'open'|'ended', createdBy: { id, name }, createdAt,
   maxPlayers, players, endedAt?, endedReason?, results? }`. `code` is 4 characters from an alphabet
   without look-alikes (`K7QX`); share it or a link with the id.
-- `useGameRoom(roomId)` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
+- **Seats are per (user, device)**, so one person can be the desktop screen and the phone controller.
+  `device` is the app's label (`/^[a-z0-9-]{1,16}$/`: `screen`, `gun`, `gun-2`), `default` when absent.
+  Seat id = `seatId(userId, device)`: the user id for `default` (as before devices), else
+  `<userId>~<device>`. `player` is `{ id: seatId, userId, device, name }`; `players` and `maxPlayers`
+  count seats; joining again from the same device is the same seat (a reconnect or takeover). One
+  person holds at most `MAX_SEATS_PER_USER` (4) seats: 409 `TOO_MANY_SEATS` past it.
+- `useGameRoom(roomId, { device? })` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
   `GET /rooms` and `by-code` themselves.
 - Channels `room/*`, `room/*/to-server`, `room/*/to/*` are declared for you (members listen to a
-  room and to their own answers, and publish offers; only servers publish room status). **Apps can't
+  room and to their own answers, one channel per user shared by their devices, and publish offers; only servers publish room status). **Apps can't
   declare channels under `room/`** with the module on: use another prefix.
 - `v.deps.games.start(roomId)` / `.stop(roomId)` for apps that create rooms their own way;
   `gameRooms(v.deps, v.manifest)` is what the routes use (`create`, `list`, `get`, `byCode`, `join`,
@@ -180,7 +186,8 @@ module on, these member routes exist (you write none of them):
 - TURN (for networks that block UDP) comes from one platform key per environment; without it joins
   return STUN only and `GET /health` lists `missingPlatformKeys`. See `docs/SETUP.md`.
 - Tests: `t.games` (`FakeGames`) records `started` / `stopped` and plays the server
-  (`await t.games.open(id)`, `.end(id, reason, results)`, `.crash(id)`); see `@stacks/testing`.
+  (`await t.games.open(id)`, `.end(id, reason, results)`, `.crash(id)`) and lists seats
+  (`await t.games.seats(id)`: `{ id, userId, device, name }[]`); see `@stacks/testing`.
 
 Other: `recordAudit(deps, user, { action, label, details })` (events carry `actorId`), `listAudit`, `endUserSessions(deps, userId)`.
 

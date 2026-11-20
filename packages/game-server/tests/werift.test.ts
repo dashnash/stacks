@@ -85,4 +85,58 @@ describe('a real WebRTC peer against the room server', () => {
     expect(reliable.at(-1)).toEqual({ over: { reason: 'finished', results: { winner: 'u_ann' } } });
     await client.close();
   }, 30_000);
+
+  it('connects two devices of one user as two seats, each picking its own answer off the shared channel', async () => {
+    const store = new MemoryStore();
+    await store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: 'starting', maxPlayers: 8 });
+    const signaling = new FakeSignaling();
+    const server = new RoomServer({
+      roomId: ROOM,
+      game,
+      store,
+      signaling,
+      peers: weriftPeers({ portRange: [40020, 40039], stunUrls: [] }),
+      key: async () => KEY,
+      maxPlayers: 8,
+      idleMs: 600_000,
+      maxMs: 7_200_000,
+      lingerMs: 50,
+    });
+    expect(await server.start()).toBe(true);
+    const toServer = roomChannels.toServer(ROOM);
+    const answers = () => signaling.on(roomChannels.toPlayer(ROOM, 'u_ann')) as ToPlayerSignal[];
+
+    /** One browser: offers with its own sid and device, and takes only the answer for its sid. */
+    const device = async (sid: string, name: string) => {
+      const client = new RTCPeerConnection({ iceServers: [], iceUseDefaultStunServer: false });
+      const state = client.createDataChannel('state', { ordered: false, maxRetransmits: 0 });
+      const events = client.createDataChannel('events');
+      const snapshots: { s: { seen: string[] } }[] = [];
+      const reliable: Record<string, unknown>[] = [];
+      state.onMessage.subscribe((m) => snapshots.push(JSON.parse(String(m))));
+      events.onMessage.subscribe((m) => reliable.push(JSON.parse(String(m))));
+      await client.setLocalDescription(await client.createOffer());
+      const ticket = await signGameTicket(KEY, { roomId: ROOM, userId: 'u_ann', device: name, name: 'Ann', exp: Math.floor(Date.now() / 1000) + 60 });
+      signaling.fromClient(toServer, { t: 'offer', sid, ticket, sdp: client.localDescription!.sdp });
+      return { client, state, snapshots, reliable, sid };
+    };
+    const screen = await device('screen-sid', 'screen');
+    const gun = await device('gun-sid', 'gun');
+    await until(() => answers().filter((a) => a.t === 'answer').length === 2);
+    for (const d of [screen, gun]) {
+      const mine = answers().find((a) => a.t === 'answer' && a.sid === d.sid) as { sdp: string };
+      await d.client.setRemoteDescription({ type: 'answer', sdp: mine.sdp });
+    }
+    await until(() => [screen, gun].every((d) => d.reliable.some((m) => 'welcome' in m)));
+    expect(screen.reliable[0]).toMatchObject({ welcome: { you: { id: 'u_ann~screen', device: 'screen' } } });
+    expect(gun.reliable[0]).toMatchObject({ welcome: { you: { id: 'u_ann~gun', device: 'gun' } } });
+
+    // Both stay live: input from the gun reaches the game, and the screen sees it in its snapshots.
+    gun.state.send(JSON.stringify({ i: 'bang' }));
+    await until(() => screen.snapshots.some((s) => s.s.seen.includes('input Ann "bang"')));
+    expect(server.host!.connected).toBe(2);
+    server.stop();
+    await server.done;
+    await Promise.all([screen.client.close(), gun.client.close()]);
+  }, 30_000);
 });

@@ -1,5 +1,5 @@
 import { GameHost, type GameDefinition, type GamePlayer, type PlayerConnection, type PlayerInfo, type ServerEvent, type StateMessage } from '@stacks/game-server';
-import { fixtureUserId } from '@stacks/api';
+import { DEFAULT_DEVICE, fixtureUserId, seatId } from '@stacks/api';
 
 export interface PlayGameOptions {
   roomId?: string;
@@ -13,7 +13,10 @@ export interface PlayGameOptions {
 
 /** A fake player in a {@link playGame} room: what the server sent them, and ways to act. */
 export interface TestPlayer<V = unknown> {
+  /** The seat id: the user id, or `<userId>~<device>` for a join with a device. */
   readonly id: string;
+  readonly userId: string;
+  readonly device: string;
   readonly name: string;
   /** Every snapshot received, oldest first (`state` is the latest). */
   readonly states: V[];
@@ -41,7 +44,7 @@ export interface TestPlayer<V = unknown> {
   leave(): void;
   /** Lose the connection (the slot is kept for 20 s). */
   drop(): void;
-  /** Connect again as the same person. */
+  /** Connect again as the same person and device (the same seat). */
   rejoin(): void;
   /** Send raw text on a channel (to test what a hand-made client could send). */
   raw(channel: 'state' | 'events', text: string): void;
@@ -52,6 +55,7 @@ export interface TestPlayer<V = unknown> {
  *
  *   const g = playGame(game);
  *   const ann = g.join('ann@test.dev');
+ *   const annsPhone = g.join('ann@test.dev', { device: 'gun' });   // a second seat for Ann
  *   ann.input({ x: 0.5, y: 0.5 });
  *   g.advance(1000);                 // one second of ticks
  *   expect(ann.state).toMatchObject({ … });
@@ -73,8 +77,15 @@ export function playGame<S, E, V>(game: GameDefinition<S, E, V>, opts: PlayGameO
   });
   const stepMs = 1000 / host.tickHz;
 
-  function join(who: string | GamePlayer): TestPlayer<V> {
-    const person: GamePlayer = typeof who === 'string' ? { id: fixtureUserId(who), name: who.split('@')[0]! } : who;
+  /**
+   * Connect a seat: `who` is an email (or `{ id, name }` with a user id), `device` a label as the
+   * app would pass to `useGameRoom` (default `default`: the seat id is then the user id).
+   */
+  function join(who: string | { id: string; name: string; device?: string }, opts: { device?: string } = {}): TestPlayer<V> {
+    const userId = typeof who === 'string' ? fixtureUserId(who) : who.id;
+    const name = typeof who === 'string' ? who.split('@')[0]! : who.name;
+    const device = opts.device ?? (typeof who === 'string' ? undefined : who.device) ?? DEFAULT_DEVICE;
+    const person: GamePlayer = { id: seatId(userId, device), userId, device, name };
     const seen = {
       states: [] as V[],
       tick: 0,
@@ -117,6 +128,8 @@ export function playGame<S, E, V>(game: GameDefinition<S, E, V>, opts: PlayGameO
     connect();
     return {
       id: person.id,
+      userId: person.userId,
+      device: person.device,
       name: person.name,
       get states() {
         return seen.states;

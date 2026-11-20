@@ -68,7 +68,11 @@ export type {
 } from './realtime';
 export {
   declareRoomChannels,
+  DEFAULT_DEVICE,
+  DEVICE_LABEL,
+  deviceLabel,
   ENDED_ROOM_TTL_DAYS,
+  MAX_SEATS_PER_USER,
   gameRooms,
   gamesOff,
   newRoomCode,
@@ -80,10 +84,11 @@ export {
   ROOM_CODE_LENGTH,
   roomChannels,
   roomKeys,
+  seatId,
   signGameTicket,
   STUN_ONLY,
   TICKET_TTL_SECONDS,
   TURN_KEY_NAMES,
   verifyGameTicket,
 } from './games';
-export type { GamePlayerInfo, Games, GameTicket, IceCandidateInit, IceServer, JoinResponse, Room, RoomServerRecord, RoomStatus, ToPlayerSignal, ToServerSignal } from './games';
+export type { GamePlayerInfo, GameSeatInfo, Games, GameTicket, IceCandidateInit, IceServer, JoinResponse, Room, RoomServerRecord, RoomStatus, ToPlayerSignal, ToServerSignal } from './games';

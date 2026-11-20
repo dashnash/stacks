@@ -7,9 +7,13 @@ import {
   MemoryStore,
   newRoomCode,
   playerChannelId,
+  MAX_SEATS_PER_USER,
+  readGameTicket,
   ROOM_CODE_ALPHABET,
   roomKeys,
+  seatId,
   signGameTicket,
+  signHmacToken,
   STUN_ONLY,
   verifyGameTicket,
   verifyRealtimeToken,
@@ -143,12 +147,12 @@ describe('joining', () => {
     const res = await t.call('POST', `/rooms/${room.id}/join`, { as: { email: bob, name: 'Bob' } });
     expect(res.status).toBe(200);
     expect(res.body.channels).toEqual({ room: `room/${room.id}`, toServer: `room/${room.id}/to-server`, toMe: `room/${room.id}/to/u-bob-test-dev` });
-    expect(res.body.player).toEqual({ id: 'u_bob_test_dev', name: 'Bob' });
+    expect(res.body.player).toEqual({ id: 'u_bob_test_dev', userId: 'u_bob_test_dev', device: 'default', name: 'Bob' });
     expect(res.body.room).toMatchObject({ id: room.id, status: 'open', players: 1 });
 
     const issued = Date.parse(res.body.expiresAt) - 60_000;
     const ticket = await verifyGameTicket(t.games.gameKey, res.body.ticket, room.id, issued + 59_000);
-    expect(ticket).toMatchObject({ roomId: room.id, userId: 'u_bob_test_dev', name: 'Bob' });
+    expect(ticket).toMatchObject({ roomId: room.id, userId: 'u_bob_test_dev', device: 'default', name: 'Bob' });
     expect(await verifyGameTicket(t.games.gameKey, res.body.ticket, room.id, issued + 60_000)).toBeNull();
     // Not for another room, not with another key, not after tampering.
     expect(await verifyGameTicket(t.games.gameKey, res.body.ticket, 'other-room', issued)).toBeNull();
@@ -194,6 +198,93 @@ describe('joining', () => {
     expect(res.status).toBe(200);
     expect(res.body.iceServers).toEqual(STUN_ONLY);
     expect(logs.lines).toContainEqual(expect.objectContaining({ level: 'warn', message: 'TURN credentials unavailable; joining with STUN only' }));
+  });
+});
+
+describe('seats per device', () => {
+  const join = (t: Harness, roomId: string, as: string, device?: string) =>
+    t.call('POST', `/rooms/${roomId}/join`, { as, body: device === undefined ? {} : { device } });
+  const seats = async (t: Harness, roomId: string) => (await t.games.seats(roomId)).map((p) => [`PLAYER#${p.id}`, p.userId, p.device]);
+
+  it('gives one person a seat per device, each with its own ticket, and one answers channel', async () => {
+    const t = harness();
+    const room = await openRoom(t);
+    const screen = await join(t, room.id, bob, 'screen');
+    const gun = await join(t, room.id, bob, 'gun');
+    expect([screen.status, gun.status]).toEqual([200, 200]);
+    expect(screen.body.player).toEqual({ id: 'u_bob_test_dev~screen', userId: 'u_bob_test_dev', device: 'screen', name: 'bob' });
+    expect(gun.body.player).toMatchObject({ id: 'u_bob_test_dev~gun', device: 'gun' });
+    expect(gun.body.room.players).toBe(2);
+    // Answers for both come on the user's channel (the server's `sid` tells the connections apart).
+    expect(gun.body.channels.toMe).toBe(screen.body.channels.toMe);
+    const issued = Date.parse(gun.body.expiresAt) - 60_000;
+    expect(await verifyGameTicket(t.games.gameKey, gun.body.ticket, room.id, issued)).toMatchObject({ userId: 'u_bob_test_dev', device: 'gun' });
+    expect(await seats(t, room.id)).toEqual([
+      ['PLAYER#u_bob_test_dev~gun', 'u_bob_test_dev', 'gun'],
+      ['PLAYER#u_bob_test_dev~screen', 'u_bob_test_dev', 'screen'],
+    ]);
+    expect((await t.call('GET', `/rooms/${room.id}`, { as: ann })).body.room.players).toBe(2);
+  });
+
+  it('keeps the seat for a second join from the same device (a reconnect, or a takeover)', async () => {
+    const t = harness();
+    const room = await openRoom(t);
+    await join(t, room.id, bob, 'gun');
+    const again = await join(t, room.id, bob, 'gun');
+    expect(again.status).toBe(200);
+    expect(again.body.room.players).toBe(1);
+    // No device and `default` are the same seat, keyed by the user id as before.
+    await join(t, room.id, bob);
+    expect((await join(t, room.id, bob, 'default')).body.player.id).toBe('u_bob_test_dev');
+    expect((await seats(t, room.id)).map(([sk]) => sk)).toEqual(['PLAYER#u_bob_test_dev', 'PLAYER#u_bob_test_dev~gun']);
+  });
+
+  it('counts seats against maxPlayers, and leaving frees only that seat', async () => {
+    const t = harness({ ...manifest, gameServer: { maxPlayers: 2 } });
+    const room = await openRoom(t);
+    await join(t, room.id, bob, 'screen');
+    await join(t, room.id, bob, 'gun');
+    const cy = await join(t, room.id, 'cy@test.dev');
+    expect([cy.status, cy.body.code]).toEqual([409, 'ROOM_FULL']);
+    const third = await join(t, room.id, bob, 'gun-2');
+    expect([third.status, third.body.code]).toEqual([409, 'ROOM_FULL']);
+
+    expect((await t.call('POST', `/rooms/${room.id}/leave`, { as: bob, body: { device: 'gun' } })).status).toBe(200);
+    expect((await seats(t, room.id)).map(([sk]) => sk)).toEqual(['PLAYER#u_bob_test_dev~screen']);
+    expect((await join(t, room.id, 'cy@test.dev')).status).toBe(200);
+  });
+
+  it('caps one person at MAX_SEATS_PER_USER seats, so nobody fills a room with labels', async () => {
+    const t = harness();
+    const room = await openRoom(t);
+    for (const device of ['a', 'b', 'c', 'd']) expect((await join(t, room.id, bob, device)).status).toBe(200);
+    const fifth = await join(t, room.id, bob, 'e');
+    expect([fifth.status, fifth.body.code]).toEqual([409, 'TOO_MANY_SEATS']);
+    expect(MAX_SEATS_PER_USER).toBe(4);
+    // Seats already held still rejoin, and others are unaffected.
+    expect((await join(t, room.id, bob, 'a')).status).toBe(200);
+    expect((await join(t, room.id, ann, 'a')).status).toBe(200);
+  });
+
+  it('refuses a device that is not a label', async () => {
+    const t = harness();
+    const room = await openRoom(t);
+    for (const device of ['', 'Gun', 'gun 2', 'gun~2', 'a'.repeat(17), 7, true, ['gun']]) {
+      const res = await t.call('POST', `/rooms/${room.id}/join`, { as: bob, body: { device } });
+      expect([device, res.status, res.body.code]).toEqual([device, 400, 'BAD_REQUEST']);
+    }
+    expect((await t.call('POST', `/rooms/${room.id}/leave`, { as: bob, body: { device: 'NOPE' } })).status).toBe(400);
+    expect(await seats(t, room.id)).toEqual([]);
+  });
+
+  it('makes seat ids and reads old tickets (no device) as the default seat', async () => {
+    expect(seatId('u_1')).toBe('u_1');
+    expect(seatId('u_1', 'default')).toBe('u_1');
+    expect(seatId('u_1', 'gun')).toBe('u_1~gun');
+    const old = await signHmacToken('sgt1', 'k', { roomId: 'r', userId: 'u_1', name: 'A', exp: 100 });
+    expect(await readGameTicket('k', old)).toEqual({ roomId: 'r', userId: 'u_1', device: 'default', name: 'A', exp: 100 });
+    const bad = await signHmacToken('sgt1', 'k', { roomId: 'r', userId: 'u_1', device: 'No Way', name: 'A', exp: 100 });
+    expect(await readGameTicket('k', bad)).toBeNull();
   });
 });
 

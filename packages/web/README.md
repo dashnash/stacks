@@ -66,11 +66,13 @@ function App() {
   ```tsx
   const buffer = useMemo(() => createStateBuffer<State>(), []);        // optional smoothing
   const room = useGameRoom<State, Input, Event>(roomId, {
+    device: 'gun',                                        // optional: one seat per (you, device), e.g. screen + phone
     onState: (state, meta) => buffer.push(state, meta),   // raw server state, ~tickHz times a second
     onEvent: (e) => shake(e),                             // reliable game events
   });
   // room.status: 'starting' (server coming up, up to a minute) | 'connecting' | 'live' | 'ended' | 'offline'
-  // room.players, room.you, room.rttMs, room.over ({ reason, results }), room.error ('full' | 'not_found' | 'signed_out' | 'left')
+  // room.players (seats: { id, name, userId, device }), room.you (with its device), room.rttMs,
+  // room.over ({ reason, results }), room.error ('full' | 'seats' | 'bad_device' | 'not_found' | 'signed_out' | 'left')
   room.sendInput({ x, y });        // unreliable: dropped unless live; send the latest, ≤ 60 a second count
   room.sendEvent('bump');          // reliable; false unless live
   await room.leave();              // give up your seat (unmounting only disconnects: the seat is kept 20 s)
