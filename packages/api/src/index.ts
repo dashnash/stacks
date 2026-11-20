@@ -72,6 +72,7 @@ export {
   DEVICE_LABEL,
   deviceLabel,
   ENDED_ROOM_TTL_DAYS,
+  MAX_SEATS_PER_USER,
   gameRooms,
   gamesOff,
   newRoomCode,

@@ -303,12 +303,27 @@ describe('RoomServer: one person, several devices', () => {
       await capped.offer(ANN, 'Ann', device, { device });
       capped.peers.at(-1)!.open();
     }
+    // The API wrote a record for the refused seat; the server drops it so it doesn't count.
+    await capped.store.put({ ...roomKeys.player(ROOM, `${ANN}~gun-2`), id: `${ANN}~gun-2`, userId: ANN, device: 'gun-2' });
+    await capped.store.put({ ...roomKeys.player(ROOM, `${ANN}~gun`), id: `${ANN}~gun`, userId: ANN, device: 'gun' });
     await capped.offer(ANN, 'Ann', 'gun-2', { device: 'gun-2' });
     expect(capped.answers(ANN).at(-1)).toEqual({ t: 'refused', sid: 'gun-2', reason: 'seats' });
+    await settle();
+    expect(await capped.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~gun-2`)).toBeUndefined();
+    expect(await capped.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~gun`)).toBeDefined();
     // A seat Ann already holds is still hers to reconnect, and Bob is unaffected.
     await capped.offer(ANN, 'Ann', 'gun-again', { device: 'gun' });
     expect(capped.answers(ANN).at(-1)).toMatchObject({ t: 'answer', sid: 'gun-again' });
     await capped.offer(BOB, 'Bob', 'b1');
     expect(capped.answers(BOB)).toMatchObject([{ t: 'answer' }]);
+  });
+
+  it('also limits offers per person across devices, so many labels do not multiply the limit', async () => {
+    const t = await setup();
+    await t.server.start();
+    for (let i = 0; i < 14; i++) await t.offer(ANN, 'Ann', `d${i}`, { device: `d${i % 4}` });
+    const refused = t.answers(ANN).filter((a) => a.t === 'refused');
+    expect(refused).toHaveLength(2);
+    expect(refused.every((a) => a.t === 'refused' && a.reason === 'busy')).toBe(true);
   });
 });

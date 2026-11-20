@@ -72,7 +72,7 @@ function App() {
   });
   // room.status: 'starting' (server coming up, up to a minute) | 'connecting' | 'live' | 'ended' | 'offline'
   // room.players (seats: { id, name, userId, device }), room.you (with its device), room.rttMs,
-  // room.over ({ reason, results }), room.error ('full' | 'seats' | 'not_found' | 'signed_out' | 'left')
+  // room.over ({ reason, results }), room.error ('full' | 'seats' | 'bad_device' | 'not_found' | 'signed_out' | 'left')
   room.sendInput({ x, y });        // unreliable: dropped unless live; send the latest, ≤ 60 a second count
   room.sendEvent('bump');          // reliable; false unless live
   await room.leave();              // give up your seat (unmounting only disconnects: the seat is kept 20 s)

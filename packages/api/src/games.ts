@@ -30,6 +30,11 @@ export const TURN_KEY_NAMES = ['CLOUDFLARE_TURN_KEY_ID', 'CLOUDFLARE_TURN_API_TO
 
 /** The device of a join that names none: its seat id is the user id, as before devices existed. */
 export const DEFAULT_DEVICE = 'default';
+/**
+ * Seats one person may hold in a room, whatever the game allows (so nobody fills a room by joining
+ * under many labels). A game's `maxSeatsPerUser` can only lower it.
+ */
+export const MAX_SEATS_PER_USER = 4;
 /** A device label (chosen by the app: `screen`, `gun`, `gun-2`). */
 export const DEVICE_LABEL = /^[a-z0-9-]{1,16}$/;
 
@@ -436,6 +441,10 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const key = roomKeys.player(id, seat.id);
       const already = await store.get(key.PK, key.SK);
       if (!already && room.players >= room.maxPlayers) throw new HttpError(409, 'This game is full', 'ROOM_FULL');
+      if (!already && device !== DEFAULT_DEVICE) {
+        const mine = (await store.query<Item & { userId?: string; id?: string }>(key.PK, 'PLAYER#')).filter((p) => (p.userId ?? p.id) === player.id);
+        if (mine.length >= MAX_SEATS_PER_USER) throw new HttpError(409, `You are already in this game on ${MAX_SEATS_PER_USER} devices`, 'TOO_MANY_SEATS');
+      }
       const now = deps.now();
       if (!already) await store.put({ ...key, ...seat, joinedAt: now.toISOString() });
       const exp = Math.floor(now.getTime() / 1000) + TICKET_TTL_SECONDS;

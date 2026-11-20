@@ -173,7 +173,8 @@ module on, these member routes exist (you write none of them):
   `device` is the app's label (`/^[a-z0-9-]{1,16}$/`: `screen`, `gun`, `gun-2`), `default` when absent.
   Seat id = `seatId(userId, device)`: the user id for `default` (as before devices), else
   `<userId>~<device>`. `player` is `{ id: seatId, userId, device, name }`; `players` and `maxPlayers`
-  count seats; joining again from the same device is the same seat (a reconnect or takeover).
+  count seats; joining again from the same device is the same seat (a reconnect or takeover). One
+  person holds at most `MAX_SEATS_PER_USER` (4) seats: 409 `TOO_MANY_SEATS` past it.
 - `useGameRoom(roomId, { device? })` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
   `GET /rooms` and `by-code` themselves.
 - Channels `room/*`, `room/*/to-server`, `room/*/to/*` are declared for you (members listen to a

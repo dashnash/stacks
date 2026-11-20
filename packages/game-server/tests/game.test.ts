@@ -44,7 +44,7 @@ describe('defineGame', () => {
     expect(() => defineGame({ tickHz: 0, init: () => ({}), snapshot: () => null })).toThrow(/tickHz must be from 1 to 60/);
     expect(() => defineGame({ tickHz: 61, init: () => ({}), snapshot: () => null })).toThrow(/tickHz/);
     expect(() => defineGame({ maxPlayers: 17, init: () => ({}), snapshot: () => null })).toThrow(/maxPlayers/);
-    expect(() => defineGame({ maxSeatsPerUser: 0, init: () => ({}), snapshot: () => null })).toThrow(/maxSeatsPerUser must be from 1 to 16/);
+    expect(() => defineGame({ maxSeatsPerUser: 0, init: () => ({}), snapshot: () => null })).toThrow(/maxSeatsPerUser must be from 1 to 4/);
     expect(() => defineGame({ init: () => ({}) } as never)).toThrow(/needs init\(room\) and snapshot/);
   });
 });

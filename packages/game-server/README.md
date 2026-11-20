@@ -35,7 +35,9 @@ export default defineGame<State, Event>({
   `useGameRoom(roomId, { device })` (`default` when none). `id` is the seat id: the user id for
   `default`, else `<userId>~<device>`. Key state by `p.id`; one person on a desktop screen and a
   phone is two seats (two `onJoin`s) with the same `userId`. `maxSeatsPerUser: 2` in `defineGame`
-  caps how many one person may hold (default: no cap below `maxPlayers`; over it they get `seats`).
+  caps how many one person may hold (1-4; default 4, the API's ceiling; over it they get `seats`).
+  A room keeps the runtime it started with: one started before a deploy that adds devices treats
+  all of a person's devices as one seat until it ends.
 - `room`: `id`, `players` (seats), `elapsedMs`, `broadcast(event)`, `send(seatId, event)` (both reliable),
   `end(results?)` (ends the game now; results go on the room record).
 - `input` and `event` come from a browser: validate them. A callback that throws is logged and

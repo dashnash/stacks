@@ -41,7 +41,8 @@ export interface GameRoomSnapshot {
   over: { reason: string; results?: unknown } | null;
   /**
    * Why the room can't be joined, when `offline`: `full`, `seats` (you hold as many seats as the
-   * game allows one person), `not_found`, `signed_out`, `left`.
+   * game allows one person), `bad_device` (the `device` option is not a label), `not_found`,
+   * `signed_out`, `left`.
    */
   error: string | null;
 }
@@ -168,7 +169,6 @@ export class GameRoomClient {
   private readonly now: () => number;
 
   constructor(private readonly opts: GameRoomClientOptions) {
-    if (opts.device !== undefined && !GAME_DEVICE_LABEL.test(opts.device)) throw new Error(`Game room: device "${opts.device}" must be 1-16 lower-case letters, digits or "-"`);
     this.now = opts.now ?? (() => performance.now());
   }
 
@@ -183,6 +183,10 @@ export class GameRoomClient {
   }
 
   start(): void {
+    if (this.opts.device !== undefined && !GAME_DEVICE_LABEL.test(this.opts.device)) {
+      console.error(`Game room: device "${this.opts.device}" must be 1-16 lower-case letters, digits or "-"`);
+      return this.offline('bad_device');
+    }
     this.unlistenRoom = this.opts.signaling.listen(
       `room/${this.opts.roomId}`,
       (data) => {
@@ -290,6 +294,7 @@ export class GameRoomClient {
       const code = err instanceof ApiError ? err.code : undefined;
       if (code === 'ROOM_ENDED') return void this.check();
       if (code === 'ROOM_FULL') return this.offline('full');
+      if (code === 'TOO_MANY_SEATS') return this.offline('seats');
       if (code === 'ROOM_STARTING') {
         this.set({ status: 'starting' });
         this.timers.poll = setTimeout(() => void this.check(), STARTING_POLL_MS);

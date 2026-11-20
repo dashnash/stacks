@@ -40,7 +40,7 @@ export interface GameDefinition<S = unknown, E = unknown, V = unknown> {
   tickHz?: number;
   /** Seats per room; the manifest's `gameServer.maxPlayers` is the ceiling. */
   maxPlayers?: number;
-  /** Seats one person may hold (one per device: a screen and a phone is 2). Default: no limit below `maxPlayers`. */
+  /** Seats one person may hold (one per device: a screen and a phone is 2), 1-4. Default 4 (the API's ceiling). */
   maxSeatsPerUser?: number;
   /** Inputs accepted per player per second; more are dropped. Default 60. */
   inputsPerSecond?: number;
@@ -80,7 +80,7 @@ export function defineGame<S, E = unknown, V = unknown>(game: GameDefinition<S, 
   };
   range('tickHz', game.tickHz, 1, 60);
   range('maxPlayers', game.maxPlayers, 1, 16);
-  range('maxSeatsPerUser', game.maxSeatsPerUser, 1, 16);
+  range('maxSeatsPerUser', game.maxSeatsPerUser, 1, 4);
   range('inputsPerSecond', game.inputsPerSecond, 1, 240);
   range('eventsPerSecond', game.eventsPerSecond, 1, 120);
   if (typeof game.init !== 'function' || typeof game.snapshot !== 'function') throw new Error('defineGame: a game needs init(room) and snapshot(state, forPlayer)');

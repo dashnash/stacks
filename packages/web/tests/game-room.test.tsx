@@ -408,7 +408,12 @@ describe('GameRoomClient', () => {
     await plain.toOffer();
     expect(plain.api.post).toHaveBeenCalledWith(`/rooms/${ROOM}/join`);
     expect(plain.client.current.you).toEqual({ id: 'u_ann', name: 'Ann', device: 'default' });
-    expect(() => setup({ device: 'Gun 2' })).toThrow(/device "Gun 2" must be/);
+    // A label that isn't one puts the room offline (it never throws inside a React effect).
+    const bad = setup({ device: 'Gun 2' });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    bad.client.start();
+    expect(bad.client.current).toMatchObject({ status: 'offline', error: 'bad_device' });
+    expect(bad.api.post).not.toHaveBeenCalled();
   });
 
   it('two devices of one user share the answers channel, and each takes only the answer for its own sid', async () => {

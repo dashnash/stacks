@@ -77,6 +77,8 @@ export interface RoomServerOptions<S, E, V> {
 export const PEER_OPEN_TIMEOUT_MS = 30_000;
 /** Offers one seat may send per 10 s (reconnect storms, or someone poking at the server). */
 const OFFERS_PER_WINDOW = 6;
+/** Offers one person may send per 10 s across all their devices. */
+const USER_OFFERS_PER_WINDOW = 12;
 const OFFER_WINDOW_MS = 10_000;
 const MAX_CANDIDATES_PER_PEER = 40;
 
@@ -187,12 +189,18 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     if (ticket.exp * 1000 <= this.now()) return refuse('ticket');
     if (host.ended) return refuse('ended');
     const full = host.wouldRefuse(player);
-    if (full) return refuse(full);
+    if (full) {
+      this.forgetSeat(player);
+      return refuse(full);
+    }
 
     const now = this.now();
     const recent = (this.offers.get(player.id) ?? []).filter((at) => now - at < OFFER_WINDOW_MS);
-    if (recent.length >= OFFERS_PER_WINDOW) return refuse('busy');
+    const userKey = `user:${player.userId}`;
+    const recentForUser = (this.offers.get(userKey) ?? []).filter((at) => now - at < OFFER_WINDOW_MS);
+    if (recent.length >= OFFERS_PER_WINDOW || recentForUser.length >= USER_OFFERS_PER_WINDOW) return refuse('busy');
     this.offers.set(player.id, [...recent, now]);
+    this.offers.set(userKey, [...recentForUser, now]);
 
     // One attempt per seat: a new offer replaces whatever it had going (not its live connection,
     // which the host swaps when the new one opens). The person's other devices are left alone.
@@ -206,6 +214,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
         clearTimeout(attempt.timer);
         const result = host.connect(player, link);
         if ('refused' in result) {
+          if (result.refused !== 'ended') this.forgetSeat(player);
           link.event(JSON.stringify({ over: { reason: result.refused } } satisfies ServerEvent));
           setTimeout(() => this.closeAttempt(attempt), this.opts.lingerMs ?? 500);
           return;
@@ -246,6 +255,16 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       ...(typeof c.sdpMLineIndex === 'number' ? { sdpMLineIndex: c.sdpMLineIndex } : {}),
       ...(typeof c.usernameFragment === 'string' ? { usernameFragment: c.usernameFragment } : {}),
     });
+  }
+
+  /**
+   * A seat the API handed out but the game turned away (`full`, or `seats` past `maxSeatsPerUser`):
+   * drop its record so it doesn't keep counting against the room. Never one that is in the game.
+   */
+  private forgetSeat(player: GamePlayer): void {
+    if (this.host?.players.some((p) => p.id === player.id)) return;
+    const key = roomKeys.player(this.opts.roomId, player.id);
+    void this.opts.store.delete(key.PK, key.SK).catch((err) => this.log('player record not removed', err));
   }
 
   private closeAttempt(attempt: Attempt): void {

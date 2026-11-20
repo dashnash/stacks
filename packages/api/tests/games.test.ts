@@ -7,6 +7,7 @@ import {
   MemoryStore,
   newRoomCode,
   playerChannelId,
+  MAX_SEATS_PER_USER,
   readGameTicket,
   ROOM_CODE_ALPHABET,
   roomKeys,
@@ -251,6 +252,18 @@ describe('seats per device', () => {
     expect((await t.call('POST', `/rooms/${room.id}/leave`, { as: bob, body: { device: 'gun' } })).status).toBe(200);
     expect((await seats(t, room.id)).map(([sk]) => sk)).toEqual(['PLAYER#u_bob_test_dev~screen']);
     expect((await join(t, room.id, 'cy@test.dev')).status).toBe(200);
+  });
+
+  it('caps one person at MAX_SEATS_PER_USER seats, so nobody fills a room with labels', async () => {
+    const t = harness();
+    const room = await openRoom(t);
+    for (const device of ['a', 'b', 'c', 'd']) expect((await join(t, room.id, bob, device)).status).toBe(200);
+    const fifth = await join(t, room.id, bob, 'e');
+    expect([fifth.status, fifth.body.code]).toEqual([409, 'TOO_MANY_SEATS']);
+    expect(MAX_SEATS_PER_USER).toBe(4);
+    // Seats already held still rejoin, and others are unaffected.
+    expect((await join(t, room.id, bob, 'a')).status).toBe(200);
+    expect((await join(t, room.id, ann, 'a')).status).toBe(200);
   });
 
   it('refuses a device that is not a label', async () => {

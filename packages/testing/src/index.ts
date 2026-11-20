@@ -4,6 +4,7 @@ import {
   createStacksApp,
   fixtureUserId,
   gamesOff,
+  DEFAULT_DEVICE,
   roomKeys,
   STUN_ONLY,
   envelope,
@@ -112,7 +113,7 @@ export class FakeGames implements Games {
   async seats(roomId: string): Promise<{ id: string; userId: string; device: string; name: string }[]> {
     const items = await this.store.query<{ PK: string; SK: string; id: string; userId?: string; device?: string; name: string }>(roomKeys.meta(roomId).PK, 'PLAYER#');
     // Records from before devices existed carry only `id` (the user id).
-    return items.map((p) => ({ id: p.id, userId: p.userId ?? p.id, device: p.device ?? 'default', name: p.name }));
+    return items.map((p) => ({ id: p.id, userId: p.userId ?? p.id, device: p.device ?? DEFAULT_DEVICE, name: p.name }));
   }
   /** The server dies without a word (its task is gone). */
   crash(roomId: string): void {

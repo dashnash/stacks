@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { setLogSink, type AppDeps, type AppRoutes, type LogLine } from '@stacks/api';
+import { DEVICE_LABEL, setLogSink, type AppDeps, type AppRoutes, type LogLine } from '@stacks/api';
 import { defineGame, type GameRoom } from '@stacks/game-server';
-import { GameRoomClient, hubSignaling, RealtimeHub, type GameRoomSnapshot, type PeerLike } from '@stacks/web';
+import { GAME_DEVICE_LABEL, GameRoomClient, hubSignaling, RealtimeHub, type GameRoomSnapshot, type PeerLike } from '@stacks/web';
 import { createDemo, type Demo } from '../src/index';
 
 const manifest: AppManifest = {
@@ -86,6 +86,12 @@ beforeEach(() => localStorage.clear());
 afterEach(() => {
   for (const c of clients.splice(0)) c.stop();
   for (const d of demos.splice(0)) d.close();
+});
+
+describe('device labels', () => {
+  it('are the same rule in @stacks/web and @stacks/api', () => {
+    expect(GAME_DEVICE_LABEL.source).toBe(DEVICE_LABEL.source);
+  });
 });
 
 describe('demo game rooms', () => {
