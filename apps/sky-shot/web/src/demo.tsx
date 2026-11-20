@@ -1,0 +1,112 @@
+import { StrictMode, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { createRoot } from 'react-dom/client';
+import { createDemo, DemoApp } from '@stacks/demo';
+import { fakeGameKit, fakeMotion, installFakeNative } from '@stacks/native';
+import { useApi, useHashRoute, useStacks } from '@stacks/web';
+import type { Vec3 } from '../../game/protocol';
+import { App, demoOptions } from './demo/setup';
+import { Gun } from './Gun';
+import './styles.css';
+
+/**
+ * The demo is one page: the screen on the left and a pretend iPhone on the right, as the same
+ * persona (two seats: `screen` and `gun`). The phone's CoreMotion is `fakeMotion`: arrow keys or
+ * drag on the pad aim it, Space or FIRE shoots, and "Flick" injects an acceleration spike. It sways
+ * on its own when left alone, so screenshots move.
+ */
+const motion = fakeMotion({ wobble: true });
+installFakeNative({ ...motion.handlers, ...fakeGameKit() });
+const pose = { roll: 0, pitch: 0, yaw: 0 };
+const aim = (change: Partial<typeof pose>) => {
+  Object.assign(pose, change);
+  pose.yaw = Math.max(-0.6, Math.min(0.6, pose.yaw));
+  pose.pitch = Math.max(-0.5, Math.min(0.5, pose.pitch));
+  motion.set({ ...pose });
+};
+
+function DemoPhone({ roomId }: { roomId: string }) {
+  const flickUntil = useRef(0);
+  const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const step = 0.025;
+      if (e.key === 'ArrowLeft') aim({ yaw: pose.yaw + step });
+      else if (e.key === 'ArrowRight') aim({ yaw: pose.yaw - step });
+      else if (e.key === 'ArrowUp') aim({ pitch: pose.pitch + step });
+      else if (e.key === 'ArrowDown') aim({ pitch: pose.pitch - step });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const extraAccel = (): Vec3 | null => (performance.now() < flickUntil.current ? [0, 2.6, 0.4] : null);
+  const down = (e: PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, yaw: pose.yaw, pitch: pose.pitch };
+  };
+  const move = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (d) aim({ yaw: d.yaw - (e.clientX - d.x) / 400, pitch: d.pitch - (e.clientY - d.y) / 400 });
+  };
+  return (
+    <aside className="demo-phone" aria-label="Pretend phone">
+      <div className="phone-frame">
+        <Gun roomId={roomId} extraAccel={extraAccel} keyboard autoEnable />
+      </div>
+      <div className="pad" onPointerDown={down} onPointerMove={move} onPointerUp={() => (drag.current = null)} role="presentation">
+        Drag here (or use the arrow keys) to aim
+      </div>
+      <button type="button" onClick={() => (flickUntil.current = performance.now() + 40)}>
+        Flick
+      </button>
+      <p className="muted small">Space fires (tap mode). Flick fires in flick mode (Tuning › Trigger).</p>
+    </aside>
+  );
+}
+
+/** `#/autoplay` (and `#/autoplay/tuning`): start a room, pair the pretend phone and play, for screenshots. */
+function Autoplay({ tuning }: { tuning: boolean }) {
+  const api = useApi();
+  const { status } = useStacks();
+  useEffect(() => {
+    if (status !== 'signedIn') return;
+    let cancelled = false;
+    void api.post<{ room: { id: string } }>('/rooms', { name: 'Demo' }).then(({ room }) => {
+      if (!cancelled) window.location.hash = `#/play/${room.id}/${tuning ? 'range' : 'rounds'}/auto${tuning ? '/tuning' : ''}`;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, status, tuning]);
+  return null;
+}
+
+function DemoPage() {
+  const { segments } = useHashRoute();
+  const [wide, setWide] = useState(() => window.matchMedia?.('(min-width: 760px)').matches ?? true);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(min-width: 760px)');
+    const on = () => setWide(mq.matches);
+    mq?.addEventListener('change', on);
+    return () => mq?.removeEventListener('change', on);
+  }, []);
+  const playing = segments[0] === 'play' && segments[1];
+  return (
+    <div className={`demo-split${playing && wide ? ' with-phone' : ''}`}>
+      {segments[0] === 'autoplay' && <Autoplay tuning={segments[1] === 'tuning'} />}
+      <div className="demo-screen">
+        <App />
+      </div>
+      {playing && wide && <DemoPhone key={segments[1]} roomId={segments[1]!} />}
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <DemoApp demo={createDemo(demoOptions())}>
+      <DemoPage />
+    </DemoApp>
+  </StrictMode>,
+);

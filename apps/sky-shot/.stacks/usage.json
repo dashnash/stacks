@@ -1,0 +1,42 @@
+{
+  "entries": [
+    {
+      "step": "interview",
+      "at": "2026-11-20T18:43:17.778Z",
+      "filesChanged": 40,
+      "note": "Spec #132 settled the interview; built in session"
+    },
+    {
+      "step": "scaffold",
+      "at": "2026-11-20T18:43:18.424Z",
+      "minutes": 0,
+      "filesChanged": 41,
+      "note": "Spec #132 settled the interview; built in session"
+    },
+    {
+      "step": "build",
+      "at": "2026-11-20T18:43:19.071Z",
+      "minutes": 0,
+      "filesChanged": 41,
+      "note": "Spec #132 settled the interview; built in session"
+    },
+    {
+      "step": "verify",
+      "at": "2026-11-20T18:47:33.759Z",
+      "minutes": 4.2,
+      "filesChanged": 8
+    },
+    {
+      "step": "stage",
+      "at": "2026-11-20T18:55:42.408Z",
+      "minutes": 8.1,
+      "filesChanged": 0
+    },
+    {
+      "step": "ship",
+      "at": "2026-11-20T18:55:43.049Z",
+      "minutes": 0,
+      "filesChanged": 1
+    }
+  ]
+}
