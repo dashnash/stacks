@@ -8,6 +8,7 @@ import {
   readGameTicket,
   roomChannels,
   roomKeys,
+  seatId,
   type IceCandidateInit,
   type Item,
   type RoomServerRecord,
@@ -74,7 +75,7 @@ export interface RoomServerOptions<S, E, V> {
 
 /** A connection attempt that isn't open within this long is dropped. */
 export const PEER_OPEN_TIMEOUT_MS = 30_000;
-/** Offers one user may send per 10 s (reconnect storms, or someone poking at the server). */
+/** Offers one seat may send per 10 s (reconnect storms, or someone poking at the server). */
 const OFFERS_PER_WINDOW = 6;
 const OFFER_WINDOW_MS = 10_000;
 const MAX_CANDIDATES_PER_PEER = 40;
@@ -179,19 +180,22 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       this.log('offer with a bad ticket ignored');
       return;
     }
-    const player: GamePlayer = { id: ticket.userId, name: ticket.name };
-    const refuse = (reason: string) => this.toPlayer(player.id, { t: 'refused', sid: msg.sid, reason });
+    // One seat per (user, device). Answers go to the user's channel: the client's `sid` tells
+    // their devices' connections apart.
+    const player: GamePlayer = { id: seatId(ticket.userId, ticket.device), userId: ticket.userId, device: ticket.device, name: ticket.name };
+    const refuse = (reason: string) => this.toPlayer(player.userId, { t: 'refused', sid: msg.sid, reason });
     if (ticket.exp * 1000 <= this.now()) return refuse('ticket');
     if (host.ended) return refuse('ended');
-    if (!host.players.some((p) => p.id === player.id) && host.players.length >= host.maxPlayers) return refuse('full');
+    const full = host.wouldRefuse(player);
+    if (full) return refuse(full);
 
     const now = this.now();
     const recent = (this.offers.get(player.id) ?? []).filter((at) => now - at < OFFER_WINDOW_MS);
     if (recent.length >= OFFERS_PER_WINDOW) return refuse('busy');
     this.offers.set(player.id, [...recent, now]);
 
-    // One attempt per player: a new offer replaces whatever they had going (not their live slot,
-    // which the host swaps when the new connection opens).
+    // One attempt per seat: a new offer replaces whatever it had going (not its live connection,
+    // which the host swaps when the new one opens). The person's other devices are left alone.
     for (const a of [...this.attempts.values()]) if (a.player.id === player.id && !a.connection) this.closeAttempt(a);
     if (this.attempts.has(msg.sid)) return;
 
@@ -215,7 +219,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
         attempt.connection = null;
         this.closeAttempt(attempt);
       },
-      onCandidate: (c) => void this.toPlayer(player.id, { t: 'ice', sid: msg.sid, c }),
+      onCandidate: (c) => void this.toPlayer(player.userId, { t: 'ice', sid: msg.sid, c }),
     });
     this.attempts.set(msg.sid, attempt);
     attempt.timer = setTimeout(() => {
@@ -223,7 +227,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     }, PEER_OPEN_TIMEOUT_MS);
     try {
       const sdp = await attempt.peer.answer(msg.sdp);
-      if (!attempt.closed) await this.toPlayer(player.id, { t: 'answer', sid: msg.sid, sdp });
+      if (!attempt.closed) await this.toPlayer(player.userId, { t: 'answer', sid: msg.sid, sdp });
     } catch (err) {
       this.log('offer not answered', err);
       this.closeAttempt(attempt);

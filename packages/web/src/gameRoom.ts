@@ -10,10 +10,19 @@ import type { ChannelStatus, RealtimeHub } from './realtime';
 
 export type GameRoomStatus = 'starting' | 'connecting' | 'live' | 'ended' | 'offline';
 
+/** A seat in the room. One person on two devices (a screen and a phone) holds two seats. */
 export interface GamePlayerInfo {
+  /** The seat id: the user id for the `default` device, else `<userId>~<device>`. */
   id: string;
   name: string;
+  /** Who holds the seat (servers built before devices existed leave it out). */
+  userId?: string;
+  /** The device label the seat joined with (`default` when none was given). */
+  device?: string;
 }
+
+/** A device label for `useGameRoom(roomId, { device })`: 1-16 lower-case letters, digits or `-`. */
+export const GAME_DEVICE_LABEL = /^[a-z0-9-]{1,16}$/;
 
 /** What comes with each state: the server's tick and clock (ms since the room started). */
 export interface StateMeta {
@@ -24,13 +33,16 @@ export interface StateMeta {
 export interface GameRoomSnapshot {
   status: GameRoomStatus;
   players: GamePlayerInfo[];
-  /** You, once connected. */
+  /** Your seat (with its `device`), once joined. */
   you: GamePlayerInfo | null;
   /** Round trip to the server in milliseconds (smoothed), or null before the first measurement. */
   rttMs: number | null;
   /** Why the game ended, with its results, once it has. */
   over: { reason: string; results?: unknown } | null;
-  /** Why the room can't be joined (`full`, `not_found`, `signed_out`, `left`), when `offline`. */
+  /**
+   * Why the room can't be joined, when `offline`: `full`, `seats` (you hold as many seats as the
+   * game allows one person), `not_found`, `signed_out`, `left`.
+   */
   error: string | null;
 }
 
@@ -68,6 +80,11 @@ export interface PeerLike {
 
 export interface GameRoomClientOptions {
   roomId: string;
+  /**
+   * Which of your devices this is (`screen`, `gun`): one seat per (you, device), so one person can
+   * be in a room twice. Default `default` (your one seat, keyed by your user id).
+   */
+  device?: string;
   api: Pick<Client, 'get' | 'post'>;
   signaling: GameSignaling;
   createPeer: (config: { iceServers: { urls: string[]; username?: string; credential?: string }[] }) => PeerLike;
@@ -151,7 +168,14 @@ export class GameRoomClient {
   private readonly now: () => number;
 
   constructor(private readonly opts: GameRoomClientOptions) {
+    if (opts.device !== undefined && !GAME_DEVICE_LABEL.test(opts.device)) throw new Error(`Game room: device "${opts.device}" must be 1-16 lower-case letters, digits or "-"`);
     this.now = opts.now ?? (() => performance.now());
+  }
+
+  /** Join or leave: no body for the default seat (as before devices), else `{ device }`. */
+  private seatPost<T>(action: 'join' | 'leave'): Promise<T> {
+    const path = `/rooms/${this.opts.roomId}/${action}`;
+    return this.opts.device === undefined ? this.opts.api.post<T>(path) : this.opts.api.post<T>(path, { device: this.opts.device });
   }
 
   get current(): GameRoomSnapshot {
@@ -196,7 +220,7 @@ export class GameRoomClient {
     }
     this.stop();
     this.set({ status: 'offline', error: 'left', players: [] });
-    await this.opts.api.post(`/rooms/${this.opts.roomId}/leave`).catch(() => undefined);
+    await this.seatPost('leave').catch(() => undefined);
   }
 
   /** Close everything (on unmount). The server keeps your place for 20 s. */
@@ -259,7 +283,7 @@ export class GameRoomClient {
 
     let join: JoinResponse;
     try {
-      join = await this.opts.api.post<JoinResponse>(`/rooms/${this.opts.roomId}/join`);
+      join = await this.seatPost<JoinResponse>('join');
     } catch (err) {
       if (stale()) return;
       this.clearTimer('attempt');
@@ -276,7 +300,7 @@ export class GameRoomClient {
       return this.retry();
     }
     if (stale()) return;
-    this.set({ you: join.player });
+    this.set({ you: this.withDevice(join.player) });
 
     // The answer comes back on our own channel: be listening before the offer goes out.
     if (!this.channels) {
@@ -338,7 +362,7 @@ export class GameRoomClient {
       if (msg.t === 'answer' && typeof msg.sdp === 'string') await peer.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
       else if (msg.t === 'ice' && msg.c) await peer.addIceCandidate(msg.c);
       else if (msg.t === 'refused') {
-        if (msg.reason === 'full') this.offline('full');
+        if (msg.reason === 'full' || msg.reason === 'seats') this.offline(msg.reason);
         else if (msg.reason === 'ended') {
           this.teardownPeer();
           void this.check();
@@ -384,7 +408,7 @@ export class GameRoomClient {
     if (msg.welcome) {
       this.clearTimer('attempt');
       this.retries = 0;
-      this.set({ status: 'live', you: msg.welcome.you, players: msg.welcome.players });
+      this.set({ status: 'live', you: this.withDevice(msg.welcome.you), players: msg.welcome.players });
       this.ping();
     } else if (msg.players) this.set({ players: msg.players });
     else if (typeof msg.pong === 'number') {
@@ -393,7 +417,7 @@ export class GameRoomClient {
       this.set({ rttMs: Math.round(before === null ? rtt : before * 0.7 + rtt * 0.3) });
     } else if (msg.over) {
       // "ended" for a peer that connected just as the game finished; "full" when the last seat went.
-      if (msg.over.reason === 'full' && this.snapshot.status !== 'live') this.offline('full');
+      if ((msg.over.reason === 'full' || msg.over.reason === 'seats') && this.snapshot.status !== 'live') this.offline(msg.over.reason);
       else this.ended(msg.over);
     } else if ('event' in msg) {
       try {
@@ -402,6 +426,11 @@ export class GameRoomClient {
         console.error('Game room: onEvent threw', err);
       }
     }
+  }
+
+  /** `you` always says which device it is, even from an API or server that predates devices. */
+  private withDevice(you: GamePlayerInfo): GamePlayerInfo {
+    return { ...you, device: you.device ?? this.opts.device ?? 'default' };
   }
 
   private ping(): void {

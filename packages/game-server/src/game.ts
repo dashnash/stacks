@@ -19,13 +19,13 @@ export type GamePlayer = PlayerInfo;
 /** The room, as the game sees it: who is here, and the ways to reach them reliably. */
 export interface GameRoom<E = unknown> {
   readonly id: string;
-  /** Everyone in the room (including someone whose connection dropped less than 20 s ago). */
+  /** Every seat in the room (including one whose connection dropped less than 20 s ago). */
   readonly players: readonly GamePlayer[];
   /** Milliseconds since the room started. */
   readonly elapsedMs: number;
   /** Send `event` to everyone on the reliable channel (joins, bumps, "round over"). */
   broadcast(event: E): void;
-  /** Send `event` to one player on the reliable channel. */
+  /** Send `event` to one seat (`player.id`) on the reliable channel. */
   send(playerId: string, event: E): void;
   /** End the game now. `results` (any JSON) are written to the room record. */
   end(results?: unknown): void;
@@ -38,8 +38,10 @@ export interface GameRoom<E = unknown> {
 export interface GameDefinition<S = unknown, E = unknown, V = unknown> {
   /** Simulation and snapshot rate, 1-60. Default 20. */
   tickHz?: number;
-  /** Players per room; the manifest's `gameServer.maxPlayers` is the ceiling. */
+  /** Seats per room; the manifest's `gameServer.maxPlayers` is the ceiling. */
   maxPlayers?: number;
+  /** Seats one person may hold (one per device: a screen and a phone is 2). Default: no limit below `maxPlayers`. */
+  maxSeatsPerUser?: number;
   /** Inputs accepted per player per second; more are dropped. Default 60. */
   inputsPerSecond?: number;
   /** Events accepted per player per second. Default 20. */
@@ -78,6 +80,7 @@ export function defineGame<S, E = unknown, V = unknown>(game: GameDefinition<S, 
   };
   range('tickHz', game.tickHz, 1, 60);
   range('maxPlayers', game.maxPlayers, 1, 16);
+  range('maxSeatsPerUser', game.maxSeatsPerUser, 1, 16);
   range('inputsPerSecond', game.inputsPerSecond, 1, 240);
   range('eventsPerSecond', game.eventsPerSecond, 1, 120);
   if (typeof game.init !== 'function' || typeof game.snapshot !== 'function') throw new Error('defineGame: a game needs init(room) and snapshot(state, forPlayer)');
@@ -117,7 +120,7 @@ export interface GameHostOptions {
   rejoinGraceMs?: number;
   /** The room ended: write results, tell watchers, shut down. Called once. */
   onEnd?(end: { reason: string; results?: unknown }): void;
-  /** A player's slot was freed (they left, or dropped and did not return). */
+  /** A seat was freed (its player left, or dropped and did not return). */
   onPlayerGone?(player: GamePlayer): void;
   log?: (message: string, detail?: unknown) => void;
 }
@@ -196,6 +199,15 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     this.state = game.init(this.room);
   }
 
+  /** Why a seat that isn't in the room yet can't join it now (`full`, or `seats`: its person holds as many as the game allows). */
+  wouldRefuse(player: Pick<GamePlayer, 'id' | 'userId'>): 'full' | 'seats' | null {
+    if (this.slots.has(player.id)) return null;
+    if (this.slots.size >= this.maxPlayers) return 'full';
+    const cap = this.game.maxSeatsPerUser;
+    if (cap !== undefined && [...this.slots.values()].filter((s) => s.player.userId === player.userId).length >= cap) return 'seats';
+    return null;
+  }
+
   get players(): GamePlayer[] {
     return [...this.slots.values()].map((s) => s.player);
   }
@@ -215,10 +227,11 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
   }
 
   /**
-   * A player's connection is up. Someone already in the room (dropped, or connecting again from
-   * another tab) gets their slot back with no `onJoin`; the old connection is closed.
+   * A connection for a seat is up. A seat already in the room (dropped, or the same person and
+   * device connecting again from another tab) is taken back with no `onJoin`; the old connection is
+   * closed. Another device of the same person is a seat of its own.
    */
-  connect(player: GamePlayer, link: PlayerLink): PlayerConnection | { refused: 'full' | 'ended' } {
+  connect(player: GamePlayer, link: PlayerLink): PlayerConnection | { refused: 'full' | 'seats' | 'ended' } {
     if (this.over) return { refused: 'ended' };
     const now = this.opts.now();
     let slot = this.slots.get(player.id);
@@ -230,9 +243,10 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
       slot.player.name = player.name;
       if (old && old !== link) this.safely('close', () => old.close());
     } else {
-      if (this.slots.size >= this.maxPlayers) return { refused: 'full' };
+      const refused = this.wouldRefuse(player);
+      if (refused) return { refused };
       slot = {
-        player: { id: player.id, name: player.name },
+        player: { id: player.id, userId: player.userId, device: player.device, name: player.name },
         link,
         droppedAt: null,
         inputs: new Bucket(this.game.inputsPerSecond ?? DEFAULT_INPUTS_PER_SECOND, now),

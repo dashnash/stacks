@@ -7,7 +7,7 @@
  */
 import { gameServerSettings, type AppManifest, type GameServerSettings } from '@stacks/manifest';
 import type { AppRoutes } from './app';
-import { conflict, forbidden, HttpError, notFound, optionalString } from './http';
+import { badRequest, conflict, forbidden, HttpError, notFound, optionalString } from './http';
 import type { AppDeps, Viewer } from './model';
 import { log } from './log';
 import { isUser } from './people';
@@ -28,6 +28,27 @@ export const STUN_ONLY: IceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478']
 /** The platform's TURN key (SSM names under `/stacks/<env>/secrets/platform/`). */
 export const TURN_KEY_NAMES = ['CLOUDFLARE_TURN_KEY_ID', 'CLOUDFLARE_TURN_API_TOKEN'] as const;
 
+/** The device of a join that names none: its seat id is the user id, as before devices existed. */
+export const DEFAULT_DEVICE = 'default';
+/** A device label (chosen by the app: `screen`, `gun`, `gun-2`). */
+export const DEVICE_LABEL = /^[a-z0-9-]{1,16}$/;
+
+/**
+ * The seat a (user, device) holds in a room: the user id for {@link DEFAULT_DEVICE}, else
+ * `<userId>~<device>`. One person can hold several seats (a desktop screen and a phone).
+ */
+export function seatId(userId: string, device: string = DEFAULT_DEVICE): string {
+  return device === DEFAULT_DEVICE ? userId : `${userId}~${device}`;
+}
+
+/** A device label from a request body: absent is {@link DEFAULT_DEVICE}, anything not a label is a 400. */
+export function deviceLabel(body: Record<string, unknown> | undefined): string {
+  const value = body?.device;
+  if (value === undefined || value === null) return DEFAULT_DEVICE;
+  if (typeof value !== 'string' || !DEVICE_LABEL.test(value)) throw badRequest('"device" must be 1-16 lower-case letters, digits or "-"');
+  return value;
+}
+
 const ROOMS_INDEX = 'STACKS#ROOMS';
 const roomPk = (id: string) => `ROOM#${id}`;
 const codePk = (code: string) => `ROOMCODE#${code}`;
@@ -37,7 +58,8 @@ export const roomKeys = {
   meta: (id: string) => ({ PK: roomPk(id), SK: 'META' }),
   /** Written only by the room's game server: `open`, then `ended` with results. */
   server: (id: string) => ({ PK: roomPk(id), SK: 'SERVER' }),
-  player: (id: string, userId: string) => ({ PK: roomPk(id), SK: `PLAYER#${userId}` }),
+  /** One seat (`seatId`: the user id, or `<userId>~<device>`). */
+  player: (id: string, seat: string) => ({ PK: roomPk(id), SK: `PLAYER#${seat}` }),
   /** Where a `Games` implementation keeps what it needs to stop the room's server. */
   task: (id: string) => ({ PK: roomPk(id), SK: 'TASK' }),
   code: (code: string) => ({ PK: codePk(code), SK: 'META' }),
@@ -55,7 +77,7 @@ export interface Room {
   createdBy: { id: string; name: string };
   createdAt: string;
   maxPlayers: number;
-  /** People who joined and haven't left. */
+  /** Seats taken (people who joined and haven't left; one person on two devices holds two). */
   players: number;
   endedAt?: string;
   /** Why it ended: `idle`, `time`, `ended` (by its creator or an approver), `stopped`, `error`. */
@@ -96,19 +118,27 @@ export interface IceServer {
 
 /** What `POST /rooms/:id/join` returns. */
 export interface JoinResponse {
-  /** Goes in the WebRTC offer; the game server checks it and binds the peer to this user. */
+  /** Goes in the WebRTC offer; the game server checks it and binds the peer to this seat. */
   ticket: string;
   expiresAt: string;
   iceServers: IceServer[];
-  /** The realtime channels for this room and player. */
+  /** The realtime channels for this room and player (`toMe` is per user: your devices share it). */
   channels: { room: string; toServer: string; toMe: string };
-  player: GamePlayerInfo;
+  /** Your seat: `id` is the seat id. */
+  player: GameSeatInfo;
   room: Room;
 }
 
+/** Someone joining a room: a user id and the name the game shows. */
 export interface GamePlayerInfo {
   id: string;
   name: string;
+}
+
+/** A seat in a room: `id` is the seat id ({@link seatId}), the user id for the `default` device. */
+export interface GameSeatInfo extends GamePlayerInfo {
+  userId: string;
+  device: string;
 }
 
 /**
@@ -190,10 +220,12 @@ export interface IceCandidateInit {
 
 // --- Join tickets ----------------------------------------------------------------------------------
 
-/** What a join ticket says: this user may connect to this room as this name, until `exp`. */
+/** What a join ticket says: this user may connect to this room from this device as this name, until `exp`. */
 export interface GameTicket {
   roomId: string;
   userId: string;
+  /** Tickets from before devices existed have none: read as {@link DEFAULT_DEVICE}. */
+  device: string;
   name: string;
   /** Expiry, seconds since the epoch. */
   exp: number;
@@ -202,15 +234,17 @@ export interface GameTicket {
 const TICKET_PREFIX = 'sgt1';
 
 /** `sgt1.<claims>.<HMAC-SHA256>`, base64url: the realtime tokens' shape, signed with the app's game key. */
-export function signGameTicket(key: string, ticket: GameTicket): Promise<string> {
-  return signHmacToken(TICKET_PREFIX, key, ticket);
+export function signGameTicket(key: string, ticket: Omit<GameTicket, 'device'> & { device?: string }): Promise<string> {
+  return signHmacToken(TICKET_PREFIX, key, { ...ticket, device: ticket.device ?? DEFAULT_DEVICE });
 }
 
 /** The claims of a ticket this key signed, whatever its room or expiry, or null (forged or malformed). */
 export async function readGameTicket(key: string, token: unknown): Promise<GameTicket | null> {
   const t = (await openHmacToken(TICKET_PREFIX, key, token)) as Partial<GameTicket> | null;
   if (!t || typeof t.roomId !== 'string' || typeof t.userId !== 'string' || typeof t.name !== 'string' || typeof t.exp !== 'number') return null;
-  return { roomId: t.roomId, userId: t.userId, name: t.name, exp: t.exp };
+  const device = t.device ?? DEFAULT_DEVICE;
+  if (typeof device !== 'string' || !DEVICE_LABEL.test(device)) return null;
+  return { roomId: t.roomId, userId: t.userId, device, name: t.name, exp: t.exp };
 }
 
 /** The claims of a genuine, unexpired ticket for `roomId`, or null. */
@@ -387,19 +421,25 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       return hit ? this.get(hit.roomId) : undefined;
     },
 
-    /** A ticket and ICE servers for `player` to connect to an open room. 409 when it is full, ended or not open yet. */
-    async join(id: string, player: GamePlayerInfo): Promise<JoinResponse> {
+    /**
+     * A ticket and ICE servers for `player` to connect to an open room from `device` (default
+     * `default`): one seat per (user, device). 409 when it is full, ended or not open yet.
+     */
+    async join(id: string, player: GamePlayerInfo, opts: { device?: string } = {}): Promise<JoinResponse> {
+      const device = opts.device ?? DEFAULT_DEVICE;
+      if (!DEVICE_LABEL.test(device)) throw badRequest('"device" must be 1-16 lower-case letters, digits or "-"');
+      const seat: GameSeatInfo = { id: seatId(player.id, device), userId: player.id, device, name: player.name };
       const room = await this.get(id);
       if (!room) throw notFound('No such room');
       if (room.status === 'ended') throw new HttpError(409, 'This game is over', 'ROOM_ENDED');
       if (room.status !== 'open') throw new HttpError(409, 'The game server is still starting', 'ROOM_STARTING');
-      const key = roomKeys.player(id, player.id);
+      const key = roomKeys.player(id, seat.id);
       const already = await store.get(key.PK, key.SK);
       if (!already && room.players >= room.maxPlayers) throw new HttpError(409, 'This game is full', 'ROOM_FULL');
       const now = deps.now();
-      if (!already) await store.put({ ...key, id: player.id, name: player.name, joinedAt: now.toISOString() });
+      if (!already) await store.put({ ...key, ...seat, joinedAt: now.toISOString() });
       const exp = Math.floor(now.getTime() / 1000) + TICKET_TTL_SECONDS;
-      const ticket = await signGameTicket(await deps.games.key(), { roomId: id, userId: player.id, name: player.name, exp });
+      const ticket = await signGameTicket(await deps.games.key(), { roomId: id, userId: player.id, device, name: player.name, exp });
       // TURN credentials outlive the ticket: they must last as long as the connection may.
       const iceServers = await deps.games.iceServers(Math.ceil(settings.maxHours * 3600) + 600).catch((err) => {
         log.warn('TURN credentials unavailable; joining with STUN only', err);
@@ -410,13 +450,14 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
         expiresAt: new Date(exp * 1000).toISOString(),
         iceServers,
         channels: { room: roomChannels.room(id), toServer: roomChannels.toServer(id), toMe: roomChannels.toPlayer(id, player.id) },
-        player,
+        player: seat,
         room: already ? room : { ...room, players: room.players + 1 },
       };
     },
 
-    async leave(id: string, userId: string): Promise<void> {
-      const key = roomKeys.player(id, userId);
+    /** Give up one seat: this user's on `device` (default `default`); their other seats stay. */
+    async leave(id: string, userId: string, device: string = DEFAULT_DEVICE): Promise<void> {
+      const key = roomKeys.player(id, seatId(userId, device));
       await store.delete(key.PK, key.SK);
     },
 
@@ -463,9 +504,10 @@ export function registerGameRoutes<D extends AppDeps>(api: AppRoutes<D>): void {
     if (!room) throw notFound('No such room');
     return { body: { room } };
   });
-  api.member('POST', '/rooms/:id/join', async (req, v) => ({ body: await rooms(v).join(req.params.id!, player(v)) }));
+  // `{ device? }`: one seat per (user, device), so one person can be the screen and the controller.
+  api.member('POST', '/rooms/:id/join', async (req, v) => ({ body: await rooms(v).join(req.params.id!, player(v), { device: deviceLabel(req.body) }) }));
   api.member('POST', '/rooms/:id/leave', async (req, v) => {
-    await rooms(v).leave(req.params.id!, v.user.id);
+    await rooms(v).leave(req.params.id!, v.user.id, deviceLabel(req.body));
     return { body: { ok: true } };
   });
   api.member(

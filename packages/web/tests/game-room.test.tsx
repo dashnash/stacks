@@ -112,8 +112,8 @@ class FakePeer implements PeerLike {
   }
 }
 
-function setup(opts: { room?: () => any; join?: () => any } = {}) {
-  const signaling = new FakeSignaling();
+function setup(opts: { room?: () => any; join?: () => any; device?: string; signaling?: FakeSignaling } = {}) {
+  const signaling = opts.signaling ?? new FakeSignaling();
   const peers: FakePeer[] = [];
   const changes: GameRoomSnapshot[] = [];
   const states: { state: unknown; meta: unknown }[] = [];
@@ -135,6 +135,7 @@ function setup(opts: { room?: () => any; join?: () => any } = {}) {
   let clock = 1000;
   const client = new GameRoomClient({
     roomId: ROOM,
+    ...(opts.device ? { device: opts.device } : {}),
     api: api as never,
     signaling,
     createPeer: (config) => {
@@ -392,6 +393,50 @@ describe('GameRoomClient', () => {
     out.client.start();
     await out.flush();
     expect(out.client.current).toMatchObject({ status: 'offline', error: 'signed_out' });
+  });
+
+  it('joins and leaves as one device of yours when given one, and says which in `you`', async () => {
+    const t = setup({ device: 'gun', join: () => ({ ticket: 't', iceServers: [], channels: CHANNELS, player: { id: 'u_ann~gun', userId: 'u_ann', device: 'gun', name: 'Ann' } }) });
+    await t.toOffer();
+    expect(t.api.post).toHaveBeenCalledWith(`/rooms/${ROOM}/join`, { device: 'gun' });
+    expect(t.client.current.you).toEqual({ id: 'u_ann~gun', userId: 'u_ann', device: 'gun', name: 'Ann' });
+    await t.client.leave();
+    expect(t.api.post).toHaveBeenLastCalledWith(`/rooms/${ROOM}/leave`, { device: 'gun' });
+
+    // Without a device nothing changes on the wire, and `you` says `default` even from an older API.
+    const plain = setup();
+    await plain.toOffer();
+    expect(plain.api.post).toHaveBeenCalledWith(`/rooms/${ROOM}/join`);
+    expect(plain.client.current.you).toEqual({ id: 'u_ann', name: 'Ann', device: 'default' });
+    expect(() => setup({ device: 'Gun 2' })).toThrow(/device "Gun 2" must be/);
+  });
+
+  it('two devices of one user share the answers channel, and each takes only the answer for its own sid', async () => {
+    const signaling = new FakeSignaling();
+    const screen = setup({ signaling, device: 'screen' });
+    const gun = setup({ signaling, device: 'gun' });
+    const screenPeer = await screen.toOffer();
+    const gunPeer = await gun.toOffer();
+    const [screenOffer, gunOffer] = signaling.of('offer');
+    expect(screenOffer!.data.sid).not.toBe(gunOffer!.data.sid);
+    // Both listen on the same channel; the gun's answer arrives first and the screen ignores it.
+    signaling.deliver(CHANNELS.toMe, { t: 'answer', sid: gunOffer!.data.sid, sdp: 'v=0 gun' });
+    signaling.deliver(CHANNELS.toMe, { t: 'refused', sid: gunOffer!.data.sid, reason: 'busy' });
+    await screen.flush();
+    expect(screenPeer.remote).toBeNull();
+    expect(gunPeer.remote).toEqual({ type: 'answer', sdp: 'v=0 gun' });
+    expect(screen.client.current.status).toBe('connecting');
+    signaling.deliver(CHANNELS.toMe, { t: 'answer', sid: screenOffer!.data.sid, sdp: 'v=0 screen' });
+    await screen.flush();
+    expect(screenPeer.remote).toEqual({ type: 'answer', sdp: 'v=0 screen' });
+  });
+
+  it('is "offline" with `seats` when the game allows no more of your devices', async () => {
+    const t = setup({ device: 'gun-3' });
+    await t.toOffer();
+    t.signaling.deliver(CHANNELS.toMe, { t: 'refused', sid: t.signaling.of('offer')[0]!.data.sid, reason: 'seats' });
+    await t.flush();
+    expect(t.client.current).toMatchObject({ status: 'offline', error: 'seats' });
   });
 
   it('leave() tells the server and the API, and stays out', async () => {

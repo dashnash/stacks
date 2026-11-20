@@ -61,13 +61,14 @@ async function tab(email: string, withGame = true) {
   return demo;
 }
 
-/** What `useGameRoom` does, without React. */
-function play(demo: Demo, roomId: string) {
+/** What `useGameRoom` does, without React (`device` as `useGameRoom(roomId, { device })`; `hub` to share one, as a page does). */
+function play(demo: Demo, roomId: string, opts: { device?: string; hub?: RealtimeHub } = {}) {
   const seen = { states: [] as { me: string; dots: { id: string; name: string; x: number }[] }[], events: [] as unknown[], snapshot: null as GameRoomSnapshot | null, statuses: [] as string[] };
   const client = new GameRoomClient({
     roomId,
+    ...(opts.device ? { device: opts.device } : {}),
     api: demo.client,
-    signaling: hubSignaling(new RealtimeHub(demo.client), demo.current()!.email),
+    signaling: hubSignaling(opts.hub ?? new RealtimeHub(demo.client), demo.current()!.email),
     createPeer: (config) => demo.client.openPeer(config) as PeerLike,
     onState: (s) => seen.states.push(s as (typeof seen.states)[number]),
     onEvent: (e) => seen.events.push(e),
@@ -141,6 +142,38 @@ describe('demo game rooms', () => {
     await atPat.client.leave();
     await vi.waitFor(() => expect(atOlive.seen.snapshot!.players.map((p) => p.name)).toEqual(['Olive']));
     await vi.waitFor(() => expect(atOlive.dots()).toEqual({ Olive: 0.25 }));
+  }, 20_000);
+
+  it('one persona holds two seats in one page (a screen and a controller), and both stay live', async () => {
+    const olive = await tab('olive@demo');
+    const { room } = await olive.client.post<{ room: { id: string } }>('/rooms', {});
+    // One page, one realtime hub, two hooks: `useGameRoom(id, { device: 'screen' })` and `{ device: 'gun' }`.
+    const hub = new RealtimeHub(olive.client);
+    const screen = play(olive, room.id, { device: 'screen', hub });
+    const gun = play(olive, room.id, { device: 'gun', hub });
+    await vi.waitFor(() => expect([screen.seen.snapshot?.status, gun.seen.snapshot?.status]).toEqual(['live', 'live']), { timeout: 5000 });
+    expect(screen.seen.snapshot!.you).toMatchObject({ name: 'Olive', device: 'screen' });
+    expect(gun.seen.snapshot!.you).toMatchObject({ name: 'Olive', device: 'gun' });
+    expect(gun.seen.snapshot!.you!.id).not.toBe(screen.seen.snapshot!.you!.id);
+    await vi.waitFor(() => expect(screen.seen.snapshot!.players.map((p) => p.device).sort()).toEqual(['gun', 'screen']));
+
+    // The gun's input reaches the game; the screen sees it, and neither connection knocked the other off.
+    gun.client.sendInput({ x: 0.5 });
+    await vi.waitFor(() => expect(screen.seen.states.at(-1)!.dots.find((d) => d.id === gun.seen.snapshot!.you!.id)?.x).toBe(0.5));
+    await new Promise((r) => setTimeout(r, 200));
+    expect([screen.seen.snapshot!.status, gun.seen.snapshot!.status]).toEqual(['live', 'live']);
+    const list = await olive.client.get<{ rooms: { id: string; players: number }[] }>('/rooms');
+    expect(list.rooms).toEqual([expect.objectContaining({ id: room.id, players: 2 })]);
+
+    // Both seats count: the room (2 seats here) is full for anyone else.
+    const pat = await tab('pat@demo');
+    const atPat = play(pat, room.id);
+    await vi.waitFor(() => expect(atPat.seen.snapshot).toMatchObject({ status: 'offline', error: 'full' }));
+
+    // The gun leaves; the screen plays on alone.
+    await gun.client.leave();
+    await vi.waitFor(() => expect(screen.seen.snapshot!.players.map((p) => p.device)).toEqual(['screen']));
+    expect(screen.seen.snapshot!.status).toBe('live');
   }, 20_000);
 
   it('ends for everyone when the game ends, with results on the room', async () => {
