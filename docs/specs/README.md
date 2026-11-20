@@ -21,3 +21,13 @@ Seven specs, one PR each, in this order (later ones build on earlier ones and to
 | 7 | [#105 Rollback and inventory](105-rollback-and-manual-state.md) | docs, `/api/health`, `tools/smoke` | yes: review the inventory |
 
 PRs 2, 5, 6 and 7 touch `.github/` or `platform/api/`, so each needs the agent review gate (#111).
+
+## Sky Shot (November 2026)
+
+A desktop-screen + iPhone light-gun game, built on game rooms and the Game kit.
+
+| Order | Spec | Touches | Needs the owner after merge |
+| --- | --- | --- | --- |
+| 1 | [#131 Seats keyed per device](131-device-seats.md) | `packages/api`, `game-server`, `web`, `testing`, `demo` | no |
+| 2 | [#132 Sky Shot](132-sky-shot.md) | `apps/sky-shot/` (app task; `motion` needs code-owner review) | no |
+| 3 | [#133 Volume buttons (draft)](133-volume-buttons.md) | `native/ios`, `native/protocol`, `packages/native` | open questions first |
