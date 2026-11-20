@@ -25,8 +25,14 @@ export interface StateMessage {
   s: unknown;
 }
 
+/** A seat in the room. One person on two devices (a screen and a phone) holds two seats. */
 export interface PlayerInfo {
+  /** The seat id: the user id for the `default` device, else `<userId>~<device>`. Games key by this. */
   id: string;
+  /** Who holds the seat (the same for all of one person's devices). */
+  userId: string;
+  /** The app's label for the device (`default`, `screen`, `gun`). */
+  device: string;
   name: string;
 }
 

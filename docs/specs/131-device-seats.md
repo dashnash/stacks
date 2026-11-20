@@ -35,14 +35,18 @@ one room. The game decides what each seat does.
 - `@stacks/web`: `useGameRoom(roomId, { device })`; `room.you` includes `device`.
 - `@stacks/testing`: `g.join('ann@test.dev', { device: 'gun' })`; `t.games` fakes carry the device.
 - `@stacks/demo`: two seats for one persona in one page.
-- Optional per-game cap: `defineGame({ maxSeatsPerUser })` (default: unlimited up to `maxPlayers`).
+- Optional per-game cap: `defineGame({ maxSeatsPerUser })` (1-4). As built, the API also caps one
+  person at 4 seats (`409 TOO_MANY_SEATS`), so nobody can fill a room by joining under many labels;
+  the game's cap can only lower it. A seat the game turns away (`full`, `seats`) has its record
+  dropped by the server. Offers are limited per seat (6 per 10 s) and per person (12 per 10 s).
 
 ## Compatibility (spec: "Compatibility across a deploy")
 
 Additive: `device` is optional and old clients never send it; old game bundles see `p.id` equal to
 the user id as before. A new game bundle that reads `p.userId`/`p.device` must get both from a new
 runtime, which it does, because the runtime is bundled with the game. The "one release" rule is met
-with nothing to remove later.
+with nothing to remove later. A room started before the deploy keeps the old runtime, which ignores
+`device`: until it ends, one person's devices share one seat there.
 
 ## Tests
 

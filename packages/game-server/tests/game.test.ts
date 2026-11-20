@@ -44,6 +44,7 @@ describe('defineGame', () => {
     expect(() => defineGame({ tickHz: 0, init: () => ({}), snapshot: () => null })).toThrow(/tickHz must be from 1 to 60/);
     expect(() => defineGame({ tickHz: 61, init: () => ({}), snapshot: () => null })).toThrow(/tickHz/);
     expect(() => defineGame({ maxPlayers: 17, init: () => ({}), snapshot: () => null })).toThrow(/maxPlayers/);
+    expect(() => defineGame({ maxSeatsPerUser: 0, init: () => ({}), snapshot: () => null })).toThrow(/maxSeatsPerUser must be from 1 to 4/);
     expect(() => defineGame({ init: () => ({}) } as never)).toThrow(/needs init\(room\) and snapshot/);
   });
 });
@@ -191,6 +192,46 @@ describe('players', () => {
     g.advance(50);
     expect((tab2.state as Snap).inputs).toBe(1);
     expect(g.host.players).toHaveLength(1);
+  });
+  it('gives one person a seat per device: onJoin for each, distinct ids, own snapshots, takeover per seat', () => {
+    const g = playGame(recorder());
+    const screen = g.join('ann@test.dev', { device: 'screen' });
+    const gun = g.join('ann@test.dev', { device: 'gun' });
+    expect([screen.id, gun.id]).toEqual(['u_ann_test_dev~screen', 'u_ann_test_dev~gun']);
+    expect(gun.welcome).toMatchObject({ you: { id: 'u_ann_test_dev~gun', userId: 'u_ann_test_dev', device: 'gun', name: 'ann' }, rejoined: false });
+    expect(screen.roster.map((p) => [p.device, p.userId])).toEqual([
+      ['screen', 'u_ann_test_dev'],
+      ['gun', 'u_ann_test_dev'],
+    ]);
+    gun.input('bang');
+    g.advance(50);
+    expect((screen.state as Snap).log).toEqual(['join ann', 'join ann']);
+    expect([(screen.state as Snap).inputs, (gun.state as Snap).inputs]).toEqual([0, 1]);
+
+    // A second gun takes the gun's seat; the screen is not touched.
+    const gun2 = g.join('ann@test.dev', { device: 'gun' });
+    expect([screen.closed, gun.closed, gun2.welcome?.rejoined]).toEqual([false, true, true]);
+    expect(g.host.players.map((p) => p.id)).toEqual(['u_ann_test_dev~screen', 'u_ann_test_dev~gun']);
+    // Leaving frees that seat only.
+    gun2.leave();
+    expect(g.gone.map((p) => p.id)).toEqual(['u_ann_test_dev~gun']);
+    expect(g.host.players.map((p) => p.id)).toEqual(['u_ann_test_dev~screen']);
+  });
+
+  it('counts seats against maxPlayers and caps seats per person with maxSeatsPerUser', () => {
+    const g = playGame(recorder({ maxPlayers: 2 }));
+    g.join('ann@test.dev', { device: 'screen' });
+    g.join('ann@test.dev', { device: 'gun' });
+    expect(() => g.join('bob@test.dev')).toThrow(/refused: full/);
+
+    const capped = playGame(recorder({ maxSeatsPerUser: 2 }));
+    capped.join('ann@test.dev', { device: 'screen' });
+    const gun = capped.join('ann@test.dev', { device: 'gun' });
+    expect(() => capped.join('ann@test.dev', { device: 'gun-2' })).toThrow(/refused: seats/);
+    gun.drop();
+    gun.rejoin();
+    expect(gun.welcome).toMatchObject({ rejoined: true });
+    expect(() => capped.join('bob@test.dev', { device: 'screen' })).not.toThrow();
   });
 });
 

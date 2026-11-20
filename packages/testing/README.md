@@ -30,7 +30,7 @@ claims with `verifyRealtimeToken(t.realtime.key, token, t.deps.now().getTime())`
 
 Game rooms (manifest module `gameServer`): `t.games` is a `FakeGames`: no servers, just
 `t.games.started` / `.stopped` (room ids) and the server's part to play: `await t.games.open(roomId)`,
-`await t.games.end(roomId, 'idle', results)`, `t.games.crash(roomId)`, `t.games.turn = [...]` (a TURN
+`await t.games.end(roomId, 'idle', results)`, `t.games.crash(roomId)`, `await t.games.seats(roomId)`, `t.games.turn = [...]` (a TURN
 key is set), `t.games.failNextStart = true`. Check a ticket with
 `verifyGameTicket(t.games.gameKey, ticket, roomId, nowMs)`.
 
@@ -39,7 +39,8 @@ Test a game's rules with fake players and a fake clock:
 ```ts
 import { playGame } from '@stacks/testing';
 const g = playGame(game, { maxPlayers: 8, idleMinutes: 10, maxHours: 2 });
-const ann = g.join('ann@test.dev');           // or { id, name }; throws "join refused: full"
+const ann = g.join('ann@test.dev');           // or { id, name }; throws "join refused: full" (or "seats")
+const annsPhone = g.join('ann@test.dev', { device: 'gun' });  // a second seat: id 'u_ann_test_dev~gun'
 ann.input({ x: 1 }); ann.event('bump'); ann.ping(1);
 g.advance(1000);                               // game time, tick by tick; g.stall(ms) freezes the server
 ann.state; ann.states; ann.tick; ann.events; ann.roster; ann.welcome; ann.over; ann.closed; ann.pongs;

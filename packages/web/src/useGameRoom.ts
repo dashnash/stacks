@@ -4,6 +4,12 @@ import { GameRoomClient, hubSignaling, type GamePlayerInfo, type GameRoomSnapsho
 import { realtimeHub } from './realtime';
 
 export interface UseGameRoomOptions<S = unknown, E = unknown> {
+  /**
+   * Which of your devices this is (`screen`, `gun`; 1-16 lower-case letters, digits or `-`). One
+   * seat per (you, device): the desktop screen and the phone controller of one person both play.
+   * Leave it out for the usual one seat per person.
+   */
+  device?: string;
   /** The server's latest state for you, about `tickHz` times a second (raw: draw it, or feed `createStateBuffer`). */
   onState?: (state: S, meta: StateMeta) => void;
   /** An event from the game (reliable): a bump, "round over". */
@@ -13,10 +19,12 @@ export interface UseGameRoomOptions<S = unknown, E = unknown> {
 export interface GameRoomHandle<I = unknown, E = unknown> {
   /**
    * `starting` (the server is coming up, up to a minute), `connecting`, `live`, `ended` (see `over`),
-   * `offline` (signed out, no such room, full, or you left: see `error`).
+   * `offline` (signed out, no such room, full, too many of your devices, or you left: see `error`).
    */
   status: GameRoomStatus;
+  /** Every seat in the room (one person on two devices is two entries, with the same `userId`). */
   players: GamePlayerInfo[];
+  /** Your seat, with its `device`. */
   you: GamePlayerInfo | null;
   /** Send input on the unreliable channel (dropped unless live; at most ~60 a second count). */
   sendInput(input: I): void;
@@ -48,6 +56,7 @@ export function useGameRoom<S = unknown, I = unknown, E = unknown>(roomId: strin
   const eventRef = useRef(opts.onEvent);
   eventRef.current = opts.onEvent;
   const client = useRef<GameRoomClient | null>(null);
+  const device = opts.device;
 
   useEffect(() => {
     if (!api || !signedIn || !roomId) {
@@ -57,6 +66,7 @@ export function useGameRoom<S = unknown, I = unknown, E = unknown>(roomId: strin
     setSnapshot({ ...IDLE, status: 'starting' });
     const room = new GameRoomClient({
       roomId,
+      ...(device !== undefined ? { device } : {}),
       api,
       signaling: hubSignaling(realtimeHub(api), who),
       createPeer: (config) => api.openPeer(config) as PeerLike,
@@ -70,7 +80,7 @@ export function useGameRoom<S = unknown, I = unknown, E = unknown>(roomId: strin
       room.stop();
       if (client.current === room) client.current = null;
     };
-  }, [api, signedIn, who, roomId]);
+  }, [api, signedIn, who, roomId, device]);
 
   const sendInput = useCallback((input: I) => client.current?.sendInput(input), []);
   const sendEvent = useCallback((event: E) => client.current?.sendEvent(event) ?? false, []);

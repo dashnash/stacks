@@ -30,9 +30,15 @@ export default defineGame<State, Event>({
 });
 ```
 
-- `p` is `{ id, name }`: the user's platform id (bound by a signed join ticket, so nobody can play
-  as someone else) and display name.
-- `room`: `id`, `players`, `elapsedMs`, `broadcast(event)`, `send(playerId, event)` (both reliable),
+- `p` is a **seat**: `{ id, userId, device, name }`. `userId` is the platform id (bound by a signed
+  join ticket, so nobody can play as someone else), `device` the app's label from
+  `useGameRoom(roomId, { device })` (`default` when none). `id` is the seat id: the user id for
+  `default`, else `<userId>~<device>`. Key state by `p.id`; one person on a desktop screen and a
+  phone is two seats (two `onJoin`s) with the same `userId`. `maxSeatsPerUser: 2` in `defineGame`
+  caps how many one person may hold (1-4; default 4, the API's ceiling; over it they get `seats`).
+  A room keeps the runtime it started with: one started before a deploy that adds devices treats
+  all of a person's devices as one seat until it ends.
+- `room`: `id`, `players` (seats), `elapsedMs`, `broadcast(event)`, `send(seatId, event)` (both reliable),
   `end(results?)` (ends the game now; results go on the room record).
 - `input` and `event` come from a browser: validate them. A callback that throws is logged and
   skipped; the room keeps running (50 failed ticks in a row end it with `error`).
@@ -46,8 +52,8 @@ export default defineGame<State, Event>({
 | | |
 |---|---|
 | Tick loop | Fixed timestep (`dt` is always `1 / tickHz`). After a stall it runs at most 5 catch-up ticks and skips the rest. |
-| Rate limits | Per player: 60 inputs/s and 20 events/s by default (`inputsPerSecond`, `eventsPerSecond`); the excess is dropped. Messages over 4 KB are ignored. |
-| Reconnects | A dropped player keeps their slot for 20 s: rejoining restores it with no `onLeave`/`onJoin`. A second connection by the same person takes the slot over. |
+| Rate limits | Per seat: 60 inputs/s and 20 events/s by default (`inputsPerSecond`, `eventsPerSecond`); the excess is dropped. Messages over 4 KB are ignored. |
+| Reconnects | A dropped seat is kept for 20 s: rejoining restores it with no `onLeave`/`onJoin`. A second connection for the same seat (same person, same device) takes it over; the person's other devices are untouched. |
 | Limits | The room ends after `idleMinutes` with no input from anyone (default 10) or `maxHours` in total (default 2); everyone gets "game over" first. |
 | Shutdown | On end it writes `ended` and the results to the room record, tells the lobby, closes connections and exits. The API stopping the task (room ended by its creator) does the same. |
 | Tickets | Every WebRTC offer carries a 60 s HMAC join ticket from `POST /api/rooms/:id/join`; forged ones get no answer, expired ones a "get a new one". |

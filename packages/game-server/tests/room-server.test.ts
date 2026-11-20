@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore, roomChannels, roomKeys } from '@stacks/api';
-import { ROOM, settle, setup } from './helpers';
+import { defineGame } from '../src/index';
+import { game, ROOM, settle, setup } from './helpers';
 
 const ANN = 'u_ann';
 const BOB = 'u_bob';
@@ -32,8 +33,8 @@ describe('RoomServer', () => {
     // Nobody is in the game until the data channels open.
     expect(t.server.host!.players).toEqual([]);
     t.peers[0]!.open();
-    expect(t.server.host!.players).toEqual([{ id: ANN, name: 'Ann' }]);
-    expect(t.peers[0]!.events[0]).toMatchObject({ welcome: { you: { id: ANN, name: 'Ann' }, rejoined: false } });
+    expect(t.server.host!.players).toEqual([{ id: ANN, userId: ANN, device: 'default', name: 'Ann' }]);
+    expect(t.peers[0]!.events[0]).toMatchObject({ welcome: { you: { id: ANN, userId: ANN, device: 'default', name: 'Ann' }, rejoined: false } });
 
     t.peers[0]!.hooks.onState(JSON.stringify({ i: { x: 1 } }));
     t.advance(50);
@@ -223,5 +224,106 @@ describe('RoomServer', () => {
     await t.server.done;
     expect([...store.items.values()].map((i) => i.SK).sort()).toEqual(['META', 'SERVER']);
     expect(await store.get(roomKeys.meta(ROOM).PK, 'META')).toMatchObject({ status: 'starting' });
+  });
+});
+
+describe('RoomServer: one person, several devices', () => {
+  it('gives each device of one user its own seat, answering both on that user\'s channel by sid', async () => {
+    const t = await setup();
+    await t.server.start();
+    await t.offer(ANN, 'Ann', 'screen-1', { device: 'screen' });
+    await t.offer(ANN, 'Ann', 'gun-1', { device: 'gun' });
+    // Both offers got answers (one did not cancel the other), on Ann's one channel.
+    expect(t.answers(ANN)).toEqual([
+      { t: 'answer', sid: 'screen-1', sdp: 'answer-to:offer-screen-1' },
+      { t: 'answer', sid: 'gun-1', sdp: 'answer-to:offer-gun-1' },
+    ]);
+    expect(t.peers.map((p) => p.closed)).toEqual([false, false]);
+    t.peers[0]!.open();
+    t.peers[1]!.open();
+    expect(t.server.host!.players).toEqual([
+      { id: `${ANN}~screen`, userId: ANN, device: 'screen', name: 'Ann' },
+      { id: `${ANN}~gun`, userId: ANN, device: 'gun', name: 'Ann' },
+    ]);
+    expect(t.peers[1]!.events[0]).toMatchObject({ welcome: { you: { id: `${ANN}~gun`, device: 'gun' } } });
+    t.peers[1]!.hooks.onState(JSON.stringify({ i: 'bang' }));
+    t.advance(50);
+    expect(JSON.parse(t.peers[0]!.state.at(-1)!).s.seen).toEqual(['join Ann', 'join Ann', 'input Ann "bang"']);
+  });
+
+  it('takes a seat over per device: a second gun connection replaces the first, the screen stays', async () => {
+    const t = await setup();
+    await t.server.start();
+    await t.offer(ANN, 'Ann', 'screen-1', { device: 'screen' });
+    t.peers[0]!.open();
+    await t.offer(ANN, 'Ann', 'gun-1', { device: 'gun' });
+    t.peers[1]!.open();
+    await t.offer(ANN, 'Ann', 'gun-2', { device: 'gun' });
+    t.peers[2]!.open();
+    expect(t.peers.map((p) => p.closed)).toEqual([false, true, false]);
+    expect(t.server.host!.players.map((p) => p.id)).toEqual([`${ANN}~screen`, `${ANN}~gun`]);
+    expect(t.peers[2]!.events[0]).toMatchObject({ welcome: { rejoined: true } });
+  });
+
+  it('restores the right seat on a reconnect within 20 s, and frees only that seat\'s record after', async () => {
+    const t = await setup();
+    await t.server.start();
+    for (const device of ['screen', 'gun']) await t.store.put({ ...roomKeys.player(ROOM, `${ANN}~${device}`), id: `${ANN}~${device}` });
+    await t.offer(ANN, 'Ann', 'screen-1', { device: 'screen' });
+    await t.offer(ANN, 'Ann', 'gun-1', { device: 'gun' });
+    t.peers[0]!.open();
+    t.peers[1]!.open();
+    t.peers[1]!.drop();
+    t.advance(10_000);
+    await t.offer(ANN, 'Ann', 'gun-2', { device: 'gun' });
+    t.peers[2]!.open();
+    expect(t.peers[2]!.events[0]).toMatchObject({ welcome: { you: { id: `${ANN}~gun` }, rejoined: true } });
+
+    t.peers[2]!.drop();
+    t.advance(21_000);
+    await settle();
+    expect(t.server.host!.players.map((p) => p.id)).toEqual([`${ANN}~screen`]);
+    expect(await t.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~gun`)).toBeUndefined();
+    expect(await t.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~screen`)).toBeDefined();
+  });
+
+  it('counts seats against maxPlayers and honours the game\'s maxSeatsPerUser', async () => {
+    const full = await setup({ maxPlayers: 2 });
+    await full.server.start();
+    await full.offer(ANN, 'Ann', 'a1', { device: 'screen' });
+    await full.offer(ANN, 'Ann', 'a2', { device: 'gun' });
+    full.peers[0]!.open();
+    full.peers[1]!.open();
+    await full.offer(BOB, 'Bob', 'b1');
+    expect(full.answers(BOB)).toEqual([{ t: 'refused', sid: 'b1', reason: 'full' }]);
+
+    const capped = await setup({ game: defineGame({ ...game, maxSeatsPerUser: 2 }) });
+    await capped.server.start();
+    for (const device of ['screen', 'gun']) {
+      await capped.offer(ANN, 'Ann', device, { device });
+      capped.peers.at(-1)!.open();
+    }
+    // The API wrote a record for the refused seat; the server drops it so it doesn't count.
+    await capped.store.put({ ...roomKeys.player(ROOM, `${ANN}~gun-2`), id: `${ANN}~gun-2`, userId: ANN, device: 'gun-2' });
+    await capped.store.put({ ...roomKeys.player(ROOM, `${ANN}~gun`), id: `${ANN}~gun`, userId: ANN, device: 'gun' });
+    await capped.offer(ANN, 'Ann', 'gun-2', { device: 'gun-2' });
+    expect(capped.answers(ANN).at(-1)).toEqual({ t: 'refused', sid: 'gun-2', reason: 'seats' });
+    await settle();
+    expect(await capped.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~gun-2`)).toBeUndefined();
+    expect(await capped.store.get(`ROOM#${ROOM}`, `PLAYER#${ANN}~gun`)).toBeDefined();
+    // A seat Ann already holds is still hers to reconnect, and Bob is unaffected.
+    await capped.offer(ANN, 'Ann', 'gun-again', { device: 'gun' });
+    expect(capped.answers(ANN).at(-1)).toMatchObject({ t: 'answer', sid: 'gun-again' });
+    await capped.offer(BOB, 'Bob', 'b1');
+    expect(capped.answers(BOB)).toMatchObject([{ t: 'answer' }]);
+  });
+
+  it('also limits offers per person across devices, so many labels do not multiply the limit', async () => {
+    const t = await setup();
+    await t.server.start();
+    for (let i = 0; i < 14; i++) await t.offer(ANN, 'Ann', `d${i}`, { device: `d${i % 4}` });
+    const refused = t.answers(ANN).filter((a) => a.t === 'refused');
+    expect(refused).toHaveLength(2);
+    expect(refused.every((a) => a.t === 'refused' && a.reason === 'busy')).toBe(true);
   });
 });
