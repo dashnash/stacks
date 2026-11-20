@@ -1,0 +1,20 @@
+{
+  "slug": "sky-shot",
+  "name": "Sky Shot",
+  "tagline": "Your phone is the light gun, your screen is the sky.",
+  "description": "A retro light-gun arcade game for two devices: targets fly across a desktop screen and you aim and fire with your iPhone. Pair by QR code, then shoot in Rounds or tune the aim on the Range. A test bench too: aim mapping and trigger are tunable live, and every shot is logged.",
+  "category": "Games",
+  "visibility": "public",
+  "roles": [
+    { "id": "OWNER", "label": "Owner", "canManageAccess": true, "canManageApprovers": true },
+    { "id": "SHOOTER", "label": "Shooter" }
+  ],
+  "topRole": "OWNER",
+  "defaultRole": "SHOOTER",
+  "publicRoutes": ["/"],
+  "modules": ["realtime", "gameServer"],
+  "native": ["motion", "haptics", "screen"],
+  "gameServer": { "maxRooms": 4, "maxPlayers": 3, "idleMinutes": 10, "maxHours": 1 },
+  "accountMenu": "standard",
+  "owners": ["dashiell.nash@gmail.com"]
+}

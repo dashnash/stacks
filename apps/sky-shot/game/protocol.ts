@@ -1,0 +1,202 @@
+/**
+ * What travels between the screen, the guns and the game server. Shared by `game/server.ts` and the
+ * web UI. Seats are told apart by their device label: `screen`, `gun` / `gun-2`, `mouse`.
+ */
+import type { Tuning } from './tuning';
+
+export type Vec3 = [number, number, number];
+/** Attitude as a quaternion `[x, y, z, w]` (no gimbal flips near vertical). */
+export type Quat = [number, number, number, number];
+
+/** Device labels (`useGameRoom(roomId, { device })`). */
+export const DEVICE = { screen: 'screen', gun: 'gun', gun2: 'gun-2', mouse: 'mouse' } as const;
+export type SeatKind = 'screen' | 'gun' | 'mouse' | 'watcher';
+export const seatKind = (device: string | undefined): SeatKind =>
+  device === DEVICE.screen ? 'screen' : device === DEVICE.gun || device === DEVICE.gun2 ? 'gun' : device === DEVICE.mouse ? 'mouse' : 'watcher';
+
+/** One motion sample from the phone. `t` is the phone's motion clock, seconds. */
+export interface WireSample {
+  t: number;
+  q: Quat;
+  /** rotationRate, rad/s, device axes. */
+  r: Vec3;
+  /** userAcceleration, g. */
+  a: Vec3;
+}
+
+/** The most samples one input carries (keeps it far under the 4 KB limit). */
+export const MAX_SAMPLES_PER_INPUT = 8;
+
+/**
+ * Input from a gun (unreliable, about 60 a second). The phone always sends its latest 8 samples, so
+ * a lost packet loses nothing; the server keeps only samples newer than it has seen. A mouse seat
+ * sends `p`, the pointer as a crosshair (0-1 on both axes), instead of samples.
+ */
+export interface GunInput {
+  seq: number;
+  /** Sender's clock, seconds (the motion clock for a phone, `performance.now() / 1000` for a mouse). */
+  t: number;
+  /** The sender's round trip to the server, ms (for the clock estimate). */
+  rtt?: number;
+  samples?: WireSample[];
+  p?: [number, number];
+}
+
+export type GameMode = 'rounds' | 'range';
+export type RangeKind = 'static' | 'sweep' | 'popup';
+export type Phase = 'ready' | 'playing' | 'roundEnd' | 'over';
+
+/** Events a gun sends. `t` on the sender's clock. */
+export type GunEvent = { shot: { t: number } } | { calibrate: { t: number } };
+/** Events the screen sends. */
+export type ScreenEvent =
+  | { tune: Partial<Tuning> }
+  | { mode: GameMode }
+  | { range: { kind?: RangeKind; speed?: number } }
+  | { start: true }
+  | { pause: boolean }
+  /** Which server time the screen is drawing (`shown`), and its round trip: for lag compensation. */
+  | { ack: { shown: number; rtt: number } }
+  /** The screen's shape (width / height): hit distances are measured in screen space. */
+  | { view: { aspect: number } }
+  /** Done playing: end the room so the session can be saved. */
+  | { finish: true };
+
+export interface Latency {
+  /** Gun → server round trip, ms. */
+  gun: number;
+  /** Screen → server round trip, ms. */
+  screen: number;
+  /** Estimated motion sample → crosshair drawn, ms. */
+  pix: number;
+}
+
+export interface ConfigStats {
+  shots: number;
+  hits: number;
+  /** Mean miss distance (screen heights) over misses. */
+  meanMiss: number;
+  /** Range: mean ms from a target appearing to being hit. */
+  meanTtt: number;
+}
+
+/** Events the server sends to everyone. */
+export type ServerEvent =
+  | { hit: { seat: string; target: number; x: number; y: number; pts: number; lat: Latency; rw: number; cfg: string } }
+  | { miss: { seat: string; x: number; y: number; d: number; lat: Latency; rw: number; cfg: string } }
+  /** A shot with none left in this release. */
+  | { empty: { seat: string } }
+  | { roundStart: { round: number; quota: number } }
+  | { roundEnd: { round: number; hits: number; quota: number; passed: boolean; bonus: number } }
+  | { gameOver: GameSummary }
+  | { tuning: { tuning: Tuning; id: string } }
+  | { stats: Record<string, ConfigStats> };
+
+export type TargetKind = 'bird' | 'clay' | 'balloon';
+export const TARGET_KINDS: TargetKind[] = ['bird', 'clay', 'balloon'];
+
+/** A target in a snapshot: position normalised to the screen (0-1), radius in screen heights. */
+export interface TargetView {
+  id: number;
+  k: number;
+  x: number;
+  y: number;
+  r: number;
+  /** 0 flying, 1 hit (falling), 2 fleeing. */
+  s: number;
+  /** Heading, radians (for drawing wings). */
+  h: number;
+}
+
+/** A gun's crosshair: mapped (`x`, `y`) and raw (no smoothing or prediction). */
+export interface GunView {
+  id: string;
+  /** Colour index. */
+  c: number;
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  /** Connected (not in the 20 s rejoin grace). */
+  on: boolean;
+  /** `mouse` or `gun`. */
+  m: boolean;
+}
+
+/** What every seat gets each tick (kept well under 1 KB). */
+export interface Snapshot {
+  ph: Phase;
+  m: GameMode;
+  pz: boolean;
+  tg: TargetView[];
+  g: GunView[];
+  sc: number;
+  rd: number;
+  /** Shots left in this release (rounds). */
+  sl: number;
+  /** Hits this round, and the quota. */
+  h: number;
+  q: number;
+  /** Targets still to come this round. */
+  left: number;
+  cfg: string;
+  /** Screen only: latency now, and the first gun's motion (for the panel's graphs). */
+  lat?: Latency & { lag: number };
+  mo?: { yaw: number; pitch: number; roll: number; r: Vec3; a: number };
+}
+
+export interface GameSummary {
+  mode: GameMode;
+  score: number;
+  /** Rounds reached. */
+  rounds: number;
+  accuracy: number;
+  shots: number;
+  hits: number;
+  shooterId: string | null;
+  shooterName: string | null;
+  /** Ms since the room started. */
+  endedAt: number;
+}
+
+/** A motion sample in a shot's window: `[t, qx, qy, qz, qw, rx, ry, rz, ax, ay, az]`, t in ms relative to the shot. */
+export type WindowSample = [number, number, number, number, number, number, number, number, number, number, number];
+
+export interface ShotRecord {
+  /** Ms since the room started (server clock). */
+  t: number;
+  shooterId: string;
+  mode: GameMode;
+  configId: string;
+  trigger: 'tap' | 'flick' | 'mouse';
+  hit: boolean;
+  /** Screen heights from the crosshair to the nearest hitbox edge; 0 for a hit. */
+  missDist: number;
+  rewindMs: number;
+  latency: { gunRtt: number; screenRtt: number; shotToPixel: number };
+  /** −300 ms … +100 ms around the shot, 25 Hz. */
+  window: WindowSample[];
+}
+
+/** What the room records when it ends (and the app API copies). */
+export interface Results {
+  v: 1;
+  /** Wall clock when the room started, ms since the epoch. */
+  startedAt: number;
+  games: GameSummary[];
+  shots: ShotRecord[];
+  /** Shots past the cap: the oldest are dropped, and counted here. */
+  droppedShots: number;
+  /** Each config the shots refer to, once. */
+  configs: Record<string, Tuning>;
+}
+
+/** Results are capped at this many shots and this many bytes of JSON (the room record is a 400 KB DynamoDB item). */
+export const MAX_SHOTS = 500;
+export const MAX_RESULTS_BYTES = 250_000;
+
+/** Round to 4 significant digits (telemetry). */
+export function sig4(n: number): number {
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Number(n.toPrecision(4));
+}
