@@ -25,7 +25,7 @@ one. Targets are our own (flat vector birds, clay discs, balloons).
 | Hit truth | Server, **with lag compensation** (rewind targets to what the screen showed). |
 | Players | 1 gun in v1; state, protocol and UI designed for 2 (per-seat crosshair colour, per-seat score). |
 | Modes | **Rounds** (the game) and **Range** (slow or static targets for tuning). |
-| Look | Flat vector arcade: bold shapes and colours, no pixel art. |
+| Look | Flat vector arcade: bold shapes and colours, no pixel art. Now the **Dusk** theme; more looks in [#144](144-sky-shot-themes.md). |
 | Audience | Signed-in members only. Controller in DashyHQ (100 Hz) **and** Mobile Safari (DeviceMotion, ~60 Hz). Desktop mouse fallback. In-browser demo with a fake phone. |
 | Persistence | **Leaderboard** and a **shot telemetry log**. No saved tuning presets. |
 | Telemetry path | A capped buffer in the room's `results`; the app API copies it to the app table (30-day TTL). |

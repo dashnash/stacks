@@ -239,7 +239,7 @@ main {
   display: block;
   touch-action: none;
   cursor: crosshair;
-  background: linear-gradient(#21134d, #7b2d8b 60%, #ff8a5b);
+  background: var(--sky-bg, linear-gradient(#21134d, #7b2d8b 60%, #ff8a5b));
 }
 .hud {
   position: absolute;
@@ -250,11 +250,13 @@ main {
   gap: 1.2rem;
   align-items: center;
   font-weight: 800;
+  color: var(--hud-fg, var(--ink));
+  font-family: var(--hud-font, inherit);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
 .hud .score {
   font-size: 1.8rem;
-  color: var(--sun);
+  color: var(--hud-accent, var(--sun));
 }
 .shells {
   display: inline-flex;
@@ -264,7 +266,7 @@ main {
   width: 0.55rem;
   height: 1.2rem;
   border-radius: 0.3rem 0.3rem 0.1rem 0.1rem;
-  background: var(--pink);
+  background: var(--hud-shell, var(--pink));
   display: inline-block;
 }
 .shell.spent {
@@ -275,8 +277,8 @@ main {
   left: 50%;
   top: 22%;
   transform: translateX(-50%);
-  background: rgba(23, 13, 51, 0.8);
-  border: 2px solid var(--sun);
+  background: var(--banner-bg, rgba(23, 13, 51, 0.8));
+  border: 2px solid var(--hud-accent, var(--sun));
   padding: 0.6rem 1.4rem;
   border-radius: 999px;
   font-weight: 900;
@@ -451,7 +453,8 @@ tr.current td {
   flex-direction: column;
   padding: 3.2rem 0.8rem 1.6rem;
   gap: 0.8rem;
-  background: var(--night);
+  background: var(--gun-bg, var(--night));
+  color: var(--gun-fg, var(--ink));
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -486,9 +489,10 @@ tr.current td {
   font-size: 2.4rem;
   font-weight: 900;
   letter-spacing: 0.1em;
-  background: radial-gradient(circle at 50% 40%, #ff6f88, var(--pink) 60%, #b8233f);
+  background: var(--trigger-bg, radial-gradient(circle at 50% 40%, #ff6f88, var(--pink) 60%, #b8233f));
   border: none;
-  color: #fff;
+  color: var(--trigger-fg, #fff);
+  font-family: var(--trigger-font, inherit);
 }
 .trigger:active {
   filter: brightness(1.25);
@@ -498,6 +502,44 @@ tr.current td {
 }
 .gun-miss .trigger {
   filter: brightness(0.8);
+}
+
+/* Look picker (title screen) */
+.look {
+  grid-column: 1 / -1;
+}
+.look-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.7rem;
+}
+.look-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.4rem 0.4rem 0.55rem;
+  border-radius: var(--radius);
+  text-align: center;
+}
+.look-card[aria-checked='true'] {
+  border-color: var(--sun);
+  box-shadow: 0 0 0 2px var(--sun);
+}
+.look-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 9px;
+  display: block;
+  background: var(--night);
+}
+.look-palettes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.look-palettes [aria-checked='true'] {
+  background: var(--pink);
+  border-color: var(--pink);
 }
 
 /* Demo: screen + pretend phone */

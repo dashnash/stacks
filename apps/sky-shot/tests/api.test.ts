@@ -193,3 +193,35 @@ describe('your aim settings', () => {
     expect((await t.call('GET', '/tuning')).status).toBe(401);
   });
 });
+
+describe('your look', () => {
+  it('saves a theme per person (by user id), reads it back, and refuses unknown ones', async () => {
+    const t = harness();
+    expect((await t.call('GET', '/prefs', { as: ANN })).body).toEqual({ theme: null });
+    const put = await t.call('PUT', '/prefs', { as: ANN, body: { theme: { id: 'dusk', palette: 'dusk', extra: 1 } } });
+    expect(put.status).toBe(200);
+    expect((await t.call('GET', '/prefs', { as: ANN })).body).toEqual({ theme: { id: 'dusk', palette: 'dusk' } });
+    expect(await t.store.get(`PREFS#${ann}`, 'CURRENT')).toMatchObject({ userId: ann });
+    expect((await t.call('GET', '/prefs', { as: BOB })).body).toEqual({ theme: null });
+    for (const theme of [undefined, 'dusk', { id: 'nope', palette: 'dusk' }, { id: 'dusk', palette: 'nope' }, { id: 'toString', palette: 'dusk' }])
+      expect((await t.call('PUT', '/prefs', { as: ANN, body: { theme } })).status).toBe(400);
+    expect((await t.call('GET', '/prefs')).status).toBe(401);
+  });
+
+  it('reads a theme that no longer exists as no choice', async () => {
+    const t = harness();
+    await t.store.put({ PK: `PREFS#${ann}`, SK: 'CURRENT', userId: ann, theme: { id: 'gone', palette: 'x' }, at: '2026-11-20T00:00:00Z' });
+    expect((await t.call('GET', '/prefs', { as: ANN })).body).toEqual({ theme: null });
+  });
+
+  it('filters telemetry by look; shots from before themes have none', async () => {
+    const t = harness();
+    const shots = [shot(ann, 1000), shot(ann, 2000, { theme: 'dusk/dusk' }), shot(ann, 3000, { theme: 'koi/rice' })];
+    await t.call('POST', `/sessions/${await playedRoom(t, results([], shots))}/save`, { as: ANN });
+    const by = async (theme: string) => (await t.call('GET', '/telemetry', { as: ANN, query: { theme } })).body.shots.map((s: ShotRecord) => s.t);
+    expect(await by('dusk/dusk')).toEqual([2000]);
+    expect(await by('koi/rice')).toEqual([3000]);
+    expect((await t.call('GET', '/telemetry', { as: ANN })).body.shots).toHaveLength(3);
+    expect((await t.call('GET', '/telemetry', { as: ANN, query: { theme: 'Dusk' } })).status).toBe(400);
+  });
+});

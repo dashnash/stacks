@@ -2,6 +2,7 @@
  * What travels between the screen, the guns and the game server. Shared by `game/server.ts` and the
  * web UI. Seats are told apart by their device label: `screen`, `gun` / `gun-2`, `mouse`.
  */
+import type { ThemeChoice } from './themes';
 import type { Tuning } from './tuning';
 
 export type Vec3 = [number, number, number];
@@ -66,7 +67,9 @@ export type ScreenEvent =
   /** The screen's shape (width / height): hit distances are measured in screen space. */
   | { view: { aspect: number } }
   /** Done playing: end the room so the session can be saved. */
-  | { finish: true };
+  | { finish: true }
+  /** The look the screen draws (the phones follow it; shots record it). */
+  | { theme: ThemeChoice };
 
 export interface Latency {
   /** Gun → server round trip, ms. */
@@ -99,7 +102,9 @@ export type ServerEvent =
   | { stats: Record<string, ConfigStats> }
   /** A 5-point calibration finished: the fit, already applied. `poor`: the points didn't line up well. */
   | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean } }
-  | { calibrationFailed: { reason: string } };
+  | { calibrationFailed: { reason: string } }
+  /** The screen's look, on joining and whenever it changes. */
+  | { theme: ThemeChoice };
 
 /** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
 export interface CalibrationView {
@@ -173,6 +178,8 @@ export interface GameSummary {
   shooterName: string | null;
   /** Ms since the room started. */
   endedAt: number;
+  /** The look when the game ended (`themeTag`); absent in games saved before themes. */
+  theme?: string;
 }
 
 /** A motion sample in a shot's window: `[t, qx, qy, qz, qw, rx, ry, rz, ax, ay, az]`, t in ms relative to the shot. */
@@ -192,6 +199,8 @@ export interface ShotRecord {
   latency: { gunRtt: number; screenRtt: number; shotToPixel: number };
   /** −300 ms … +100 ms around the shot, 25 Hz. */
   window: WindowSample[];
+  /** The look the screen drew (`themeTag`); absent in shots saved before themes. */
+  theme?: string;
 }
 
 /** What the room records when it ends (and the app API copies). */

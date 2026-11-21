@@ -1,10 +1,11 @@
 /**
- * Shot telemetry: your shots (the owner: everyone's), filterable by config, paged, and downloadable
- * as CSV or JSON for offline analysis (built in the browser from the API's pages).
+ * Shot telemetry: your shots (the owner: everyone's), filterable by config and look, paged, and
+ * downloadable as CSV or JSON for offline analysis (built in the browser from the API's pages).
  */
 import { useState } from 'react';
 import { ErrorNote, Spinner, formatDateTime, useApi, useAsync } from '@stacks/web';
 import type { TelemetryShot } from '../../api/telemetry';
+import { THEME_TAGS } from '../../game/themes';
 import type { Tuning } from '../../game/tuning';
 
 interface Page {
@@ -14,11 +15,11 @@ interface Page {
   everyone: boolean;
 }
 
-const CSV_COLUMNS = ['at', 'shooterId', 'roomId', 'mode', 'configId', 'trigger', 'hit', 'missDist', 'rewindMs', 'gunRtt', 'screenRtt', 'shotToPixel', 'windowSamples'] as const;
+const CSV_COLUMNS = ['at', 'shooterId', 'roomId', 'mode', 'configId', 'trigger', 'hit', 'missDist', 'rewindMs', 'gunRtt', 'screenRtt', 'shotToPixel', 'windowSamples', 'theme'] as const;
 
 export function toCsv(shots: TelemetryShot[]): string {
   const rows = shots.map((s) =>
-    [s.at, s.shooterId, s.roomId, s.mode, s.configId, s.trigger, s.hit, s.missDist, s.rewindMs, s.latency.gunRtt, s.latency.screenRtt, s.latency.shotToPixel, s.window.length].map((v) => {
+    [s.at, s.shooterId, s.roomId, s.mode, s.configId, s.trigger, s.hit, s.missDist, s.rewindMs, s.latency.gunRtt, s.latency.screenRtt, s.latency.shotToPixel, s.window.length, s.theme ?? ''].map((v) => {
       const text = String(v);
       return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     }),
@@ -38,16 +39,18 @@ function download(name: string, type: string, text: string) {
 export function Telemetry() {
   const api = useApi();
   const [configId, setConfigId] = useState('');
+  const [theme, setTheme] = useState('');
   const [pages, setPages] = useState<Page[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const query = (from?: string) => {
     const q = new URLSearchParams();
     if (configId) q.set('configId', configId);
+    if (theme) q.set('theme', theme);
     if (from) q.set('from', from);
     return `/telemetry${q.size ? `?${q}` : ''}`;
   };
-  const first = useAsync(() => api.get<Page>(query()), [configId]);
+  const first = useAsync(() => api.get<Page>(query()), [configId, theme]);
   const all = first.data ? [first.data, ...pages] : [];
   const shots = all.flatMap((p) => p.shots);
   const configs = Object.assign({}, ...all.map((p) => p.configs)) as Record<string, Tuning>;
@@ -72,7 +75,7 @@ export function Telemetry() {
     const cfg: Record<string, Tuning> = {};
     let from: string | undefined;
     for (let i = 0; i < 50; i++) {
-      const page = await api.get<Page>(`${query(from)}${from || configId ? '&' : '?'}limit=1000`);
+      const page = await api.get<Page>(`${query(from)}${from || configId || theme ? '&' : '?'}limit=1000`);
       out.push(...page.shots);
       Object.assign(cfg, page.configs);
       if (!page.next) break;
@@ -114,6 +117,13 @@ export function Telemetry() {
           ))}
           {configId && !configs[configId] && <option>{configId}</option>}
         </select>
+        <label htmlFor="theme-filter">Look</label>
+        <select id="theme-filter" value={theme} onChange={(e) => (setPages([]), setTheme(e.target.value))}>
+          <option value="">All</option>
+          {[...new Set([...THEME_TAGS, ...shots.map((s) => s.theme).filter((t): t is string => !!t), ...(theme ? [theme] : [])])].map((t) => (
+            <option key={t}>{t}</option>
+          ))}
+        </select>
         <button type="button" disabled={busy || !shots.length} onClick={() => void save('csv')}>
           Download CSV
         </button>
@@ -144,6 +154,7 @@ export function Telemetry() {
                   <th>Miss by</th>
                   <th>Rewind</th>
                   <th>Shot → pixel</th>
+                  <th>Look</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,6 +171,7 @@ export function Telemetry() {
                     <td>{s.hit ? '-' : s.missDist.toFixed(3)}</td>
                     <td>{s.rewindMs} ms</td>
                     <td>{s.latency.shotToPixel} ms</td>
+                    <td>{s.theme ?? '-'}</td>
                   </tr>
                 ))}
               </tbody>

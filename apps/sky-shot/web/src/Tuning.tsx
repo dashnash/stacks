@@ -6,6 +6,7 @@
 import { useId } from 'react';
 import type { ConfigStats, GameMode, RangeKind, Snapshot } from '../../game/protocol';
 import { KNOBS, type Knob, type Tuning } from '../../game/tuning';
+import { LookSelect } from './Look';
 
 /** The last 5 s of motion from snapshots, for the graphs. */
 export interface MotionPoint {
@@ -93,6 +94,9 @@ export interface TuningPanelProps {
   onTune: (change: Partial<Tuning>) => void;
   onRange: (change: { kind?: RangeKind; speed?: number }) => void;
   onOverlay: (on: boolean) => void;
+  /** Draw each target's hitbox. */
+  hitboxes: boolean;
+  onHitboxes: (on: boolean) => void;
   onClose: () => void;
   /** Save the current tuning as your own default. */
   onSave?: () => void;
@@ -153,6 +157,14 @@ export function TuningPanel(p: TuningPanelProps) {
         ))}
         <label className="knob flag">
           <input type="checkbox" checked={p.overlay} onChange={(e) => p.onOverlay(e.target.checked)} /> Show the raw crosshair too
+        </label>
+      </section>
+
+      <section className="knobs">
+        <h3>Look</h3>
+        <LookSelect />
+        <label className="knob flag">
+          <input type="checkbox" checked={p.hitboxes} onChange={(e) => p.onHitboxes(e.target.checked)} /> Show hitboxes
         </label>
       </section>
 
