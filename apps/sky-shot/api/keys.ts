@@ -20,7 +20,17 @@ export const keys = {
     GSI1SK: `${at}#${userId}#${roomId}#${String(n).padStart(3, '0')}`,
   }),
   config: (id: string) => ({ PK: `CONFIG#${id}`, SK: 'META' }),
+  /** A person's own default tuning (what a new room starts with on their screen). */
+  tuning: (userId: string) => ({ PK: `TUNING#${userId}`, SK: 'CURRENT' }),
 };
+
+export interface TuningItem extends Item {
+  userId: string;
+  tuning: Tuning;
+  /** Where it came from: a calibration, or set by hand from the tuning panel. */
+  source: 'calibration' | 'manual';
+  at: string;
+}
 
 export interface SessionItem extends Item {
   roomId: string;

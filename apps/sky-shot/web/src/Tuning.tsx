@@ -94,6 +94,10 @@ export interface TuningPanelProps {
   onRange: (change: { kind?: RangeKind; speed?: number }) => void;
   onOverlay: (on: boolean) => void;
   onClose: () => void;
+  /** Save the current tuning as your own default. */
+  onSave?: () => void;
+  /** Start a 5-point calibration. */
+  onCalibrate?: () => void;
 }
 
 export function TuningPanel(p: TuningPanelProps) {
@@ -104,6 +108,16 @@ export function TuningPanel(p: TuningPanelProps) {
       <div className="tuning-head">
         <h2>Tuning</h2>
         <span className="muted small">config {p.configId}</span>
+        {p.onCalibrate && (
+          <button type="button" className="link" onClick={p.onCalibrate}>
+            Calibrate (5 dots)
+          </button>
+        )}
+        {p.onSave && (
+          <button type="button" className="link" onClick={p.onSave}>
+            Save as my default
+          </button>
+        )}
         <button type="button" className="link" onClick={p.onClose}>
           Close (T)
         </button>

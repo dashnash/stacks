@@ -136,6 +136,39 @@ describe('Sky Shot: playing', () => {
   }, 15_000);
 });
 
+describe('Sky Shot: 5-point calibration', () => {
+  it('walks five dots with the phone, applies the fit and saves it; the next room starts with it', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    const phone = await screen.findByTestId('phone');
+    await waitFor(() => expect(within(phone).getByText(/^Live/)).toBeInTheDocument(), T);
+    await userEvent.click(await screen.findByRole('button', { name: 'Calibrate (5 dots)' }, T));
+    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Dot 1 of 5');
+    const dots: [number, number][] = [
+      [0.5, 0.5],
+      [0.15, 0.2],
+      [0.85, 0.2],
+      [0.85, 0.8],
+      [0.15, 0.8],
+    ];
+    for (const [k, [x, y]] of dots.entries()) {
+      // Point at the dot (gain 1.5 widths/rad), hold a moment, tap.
+      act(() => motion.set({ roll: 0, pitch: -(y - 0.5) / (1.5 * 1.6), yaw: -(x - 0.5) / 1.5 }));
+      await new Promise((r) => setTimeout(r, 350));
+      await userEvent.pointer({ keys: '[MouseLeft>]', target: await within(phone).findByRole('button', { name: `On the dot (${k + 1} of 5)` }, T) });
+      await userEvent.pointer({ keys: '[/MouseLeft]' });
+    }
+    expect(await screen.findByText(/^Calibrated: .* Saved as your default\.$/, {}, T)).toBeInTheDocument();
+    // The saved default carries to a new room.
+    act(() => void (window.location.hash = '#/'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Range' }, T));
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
+    const panel = screen.getByRole('complementary', { name: 'Tuning' });
+    await waitFor(() => expect(within(panel).getByRole('slider', { name: /^Turn gain/ })).not.toHaveValue('1.6'), T);
+  }, 30_000);
+});
+
 describe('Sky Shot: telemetry', () => {
   it('shows a shooter only their own shots, and the owner everyone\'s', async () => {
     window.location.hash = '#/telemetry';

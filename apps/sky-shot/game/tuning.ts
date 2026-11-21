@@ -21,6 +21,8 @@ export interface Tuning {
   sensitivity: number;
   /** Relative: speed exponent (1 = linear; above 1, fast turns travel further). */
   accelCurve: number;
+  /** Vertical gain as a multiple of the horizontal (people rarely raise the wrist as far as they turn it). */
+  ratioY: number;
   /** Hybrid: how fast (per second) the reference drifts to the current pose while the gun is still. */
   recentreRate: number;
   /** Hybrid: extra relative gain for small motions. */
@@ -57,6 +59,7 @@ export const DEFAULT_TUNING: Tuning = {
   offsetY: 0,
   sensitivity: 1.2,
   accelCurve: 1.3,
+  ratioY: 1,
   recentreRate: 0.05,
   fineGain: 0.3,
   deadzone: 0.02,
@@ -106,11 +109,12 @@ export const KNOBS: { [K in keyof Tuning]: Knob } = {
   offsetY: { kind: 'number', label: 'Offset Y', min: -0.5, max: 0.5, step: 0.01 },
   sensitivity: { kind: 'number', label: 'Sensitivity', min: 0.1, max: 5, step: 0.05, unit: 'widths/rad', modes: ['relative'] },
   accelCurve: { kind: 'number', label: 'Accel curve', min: 1, max: 2.5, step: 0.05, modes: ['relative'] },
+  ratioY: { kind: 'number', label: 'Vertical gain', min: 0.5, max: 2, step: 0.05, unit: '× horizontal' },
   recentreRate: { kind: 'number', label: 'Recentre rate', min: 0, max: 1, step: 0.01, unit: '/s', modes: ['hybrid'] },
   fineGain: { kind: 'number', label: 'Fine-aim gain', min: 0, max: 1.5, step: 0.05, modes: ['hybrid'] },
   deadzone: { kind: 'number', label: 'Deadzone', min: 0, max: 0.3, step: 0.005, unit: 'rad/s' },
   minCutoff: { kind: 'number', label: 'Smoothing cutoff', min: 0.1, max: 10, step: 0.1, unit: 'Hz' },
-  beta: { kind: 'number', label: 'Smoothing speed (β)', min: 0, max: 3, step: 0.05 },
+  beta: { kind: 'number', label: 'Smoothing speed (β)', min: 0, max: 10, step: 0.1 },
   prediction: { kind: 'number', label: 'Prediction', min: 0, max: 150, step: 5, unit: 'ms' },
   invertX: { kind: 'flag', label: 'Invert X' },
   invertY: { kind: 'flag', label: 'Invert Y' },

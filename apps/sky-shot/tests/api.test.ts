@@ -174,3 +174,22 @@ describe('telemetry', () => {
     expect((await t.call('GET', '/telemetry', { as: ANN })).body.shots).toEqual([]);
   });
 });
+
+describe('your aim settings', () => {
+  it('saves a default per person (clamped, by user id), reads it back, and resets it', async () => {
+    const t = harness();
+    expect((await t.call('GET', '/tuning', { as: ANN })).body).toEqual({ tuning: null });
+    const put = await t.call('PUT', '/tuning', { as: ANN, body: { tuning: { mode: 'relative', sensitivity: 0.7, accelCurve: 99, bogus: 1 }, source: 'calibration' } });
+    expect(put.status).toBe(200);
+    const mine = (await t.call('GET', '/tuning', { as: ANN })).body;
+    expect(mine).toMatchObject({ source: 'calibration', tuning: { mode: 'relative', sensitivity: 0.7, accelCurve: 2.5 } });
+    expect(mine.tuning).not.toHaveProperty('bogus');
+    expect(await t.store.get(`TUNING#${ann}`, 'CURRENT')).toBeTruthy();
+    // Bob's is his own.
+    expect((await t.call('GET', '/tuning', { as: BOB })).body).toEqual({ tuning: null });
+    expect((await t.call('PUT', '/tuning', { as: ANN, body: {} })).status).toBe(400);
+    await t.call('DELETE', '/tuning', { as: ANN });
+    expect((await t.call('GET', '/tuning', { as: ANN })).body).toEqual({ tuning: null });
+    expect((await t.call('GET', '/tuning')).status).toBe(401);
+  });
+});

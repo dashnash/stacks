@@ -60,17 +60,20 @@ export function slerp(a: Quat, b: Quat, t: number): Quat {
 }
 
 /**
- * Where the gun points relative to a reference pose: `h` right of it and `v` above it, radians.
- * Portrait: the top edge (+y) is the barrel; landscape: the right edge (+x).
+ * Where the gun points relative to a reference pose: `h` radians right of it and `v` above it.
+ * Portrait: the top edge (+y) is the barrel; landscape: the right edge (+x). Both are measured in the
+ * room (heading about the vertical, elevation above the horizon), so the grip doesn't matter: a
+ * phone held upright like a pistol turns right as right, not as down.
  */
 export function aimAngles(ref: Quat, q: Quat, orientation: Tuning['orientation']): { h: number; v: number } {
-  const rel = qmul(qconj(ref), q);
-  if (orientation === 'landscape') {
-    const d = rotate(rel, [1, 0, 0]);
-    return { h: Math.atan2(-d[1], d[0]), v: Math.asin(Math.max(-1, Math.min(1, d[2]))) };
-  }
-  const d = rotate(rel, [0, 1, 0]);
-  return { h: Math.atan2(d[0], d[1]), v: Math.asin(Math.max(-1, Math.min(1, d[2]))) };
+  const axis: Vec3 = orientation === 'landscape' ? [1, 0, 0] : [0, 1, 0];
+  const d = rotate(q, axis);
+  const d0 = rotate(ref, axis);
+  let h = Math.atan2(d[0], d[1]) - Math.atan2(d0[0], d0[1]);
+  if (h > Math.PI) h -= 2 * Math.PI;
+  else if (h < -Math.PI) h += 2 * Math.PI;
+  const elev = (u: Vec3) => Math.asin(Math.max(-1, Math.min(1, u[2])));
+  return { h, v: elev(d) - elev(d0) };
 }
 
 // --- One-euro filter -----------------------------------------------------------------------------
@@ -78,6 +81,7 @@ export function aimAngles(ref: Quat, q: Quat, orientation: Tuning['orientation']
 /** Casiez et al.'s one-euro filter: smooth at rest, responsive when moving fast. */
 export class OneEuro {
   private x: number | null = null;
+  private raw = 0;
   private dx = 0;
   private t = 0;
   constructor(private readonly dCutoff = 1) {}
@@ -88,14 +92,19 @@ export class OneEuro {
   /** Filtered value at time `t` (seconds); `velocity` is the smoothed derivative after the call. */
   filter(value: number, t: number, minCutoff: number, beta: number): number {
     if (this.x === null || t <= this.t) {
-      if (this.x === null) this.x = value;
+      if (this.x === null) {
+        this.x = value;
+        this.raw = value;
+      }
       this.t = t;
       return this.x;
     }
     const dt = Math.min(0.25, t - this.t);
     this.t = t;
     const alpha = (cutoff: number) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
-    const rawDx = (value - this.x) / dt;
+    // The derivative of the input, not of the output (that would be the filter's own lag over dt).
+    const rawDx = (value - this.raw) / dt;
+    this.raw = value;
     this.dx += alpha(this.dCutoff) * (rawDx - this.dx);
     const cutoff = minCutoff + beta * Math.abs(this.dx);
     this.x += alpha(cutoff) * (value - this.x);
@@ -105,6 +114,30 @@ export class OneEuro {
     return this.dx;
   }
 }
+
+// --- Turning, in the room's frame ----------------------------------------------------------------
+
+/** The barrel: the phone's top edge (portrait) or right edge (landscape). */
+const barrel = (orientation: Tuning['orientation']): Vec3 => (orientation === 'landscape' ? [1, 0, 0] : [0, 1, 0]);
+
+/**
+ * How fast the barrel turns right and up (rad/s), from the rotation rate (device axes) and the
+ * attitude. Measured about the room's vertical and the horizontal axis across the barrel, so it
+ * doesn't matter how the phone is gripped: flat like a remote, upright like a pistol, or tilted.
+ */
+export function turnRates(q: Quat, r: Vec3, orientation: Tuning['orientation']): { right: number; up: number } {
+  const w = rotate(q, r);
+  const b = rotate(q, barrel(orientation));
+  // Across the barrel, horizontal: b × up. Turning about it by + raises the barrel.
+  const across: Vec3 = [b[1], -b[0], 0];
+  const n = Math.hypot(across[0], across[1]);
+  const up = n > 0.2 ? (w[0] * across[0] + w[1] * across[1]) / n : 0;
+  // Turning about the vertical by + swings the barrel left.
+  return { right: -w[2], up };
+}
+
+/** Relative mode: screen widths per radian at turn speed `omega` (rad/s), with the accel curve. */
+export const relativeGain = (omega: number, tuning: Pick<Tuning, 'sensitivity' | 'accelCurve'>) => tuning.sensitivity * Math.pow(Math.max(omega, 1e-3), tuning.accelCurve - 1);
 
 // --- One gun's aim -------------------------------------------------------------------------------
 
@@ -166,18 +199,15 @@ export class Aim {
     const sx = tuning.invertX ? -1 : 1;
     const sy = tuning.invertY ? -1 : 1;
 
-    // Relative deltas from the rotation rate: yaw about z (left is positive), pitch about the axis
-    // across the barrel (top edge up is positive).
-    const yawRate = r[2];
-    const pitchRate = tuning.orientation === 'landscape' ? -r[1] : r[0];
     const moving = omega >= tuning.deadzone;
-    const dh = moving ? -yawRate * dt * sx : 0;
-    const dv = moving ? pitchRate * dt * sy : 0;
+    const turn = moving ? turnRates(q, r, tuning.orientation) : { right: 0, up: 0 };
+    const dh = turn.right * dt * sx;
+    const dv = turn.up * dt * sy * tuning.ratioY;
 
     let x: number;
     let y: number;
     if (tuning.mode === 'relative') {
-      const scale = tuning.sensitivity * Math.pow(Math.max(omega, 1e-3), tuning.accelCurve - 1);
+      const scale = relativeGain(omega, tuning);
       this.rel.x = clamp01(this.rel.x + dh * scale);
       this.rel.y = clamp01(this.rel.y - dv * scale * aspect);
       x = this.rel.x;
@@ -192,7 +222,7 @@ export class Aim {
       }
       const { h, v } = aimAngles(this.ref, q, tuning.orientation);
       x = 0.5 + h * sx * tuning.fovGain + (tuning.mode === 'hybrid' ? this.fine.x : 0);
-      y = 0.5 - v * sy * tuning.fovGain * aspect + (tuning.mode === 'hybrid' ? this.fine.y : 0);
+      y = 0.5 - v * sy * tuning.ratioY * tuning.fovGain * aspect + (tuning.mode === 'hybrid' ? this.fine.y : 0);
     }
     this.raw = { x: clamp01(x + tuning.offsetX), y: clamp01(y + tuning.offsetY) };
     // Deadzone: tremor below the threshold doesn't move the crosshair (relative already ignores it).

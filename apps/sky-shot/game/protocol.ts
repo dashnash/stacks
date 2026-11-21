@@ -47,6 +47,7 @@ export type RangeKind = 'static' | 'sweep' | 'popup';
 export type Phase = 'ready' | 'playing' | 'roundEnd' | 'over';
 
 /** Events a gun sends. `t` on the sender's clock. */
+/** `calibrate` during a 5-point calibration marks the current dot; otherwise it makes the current pose the centre. */
 export type GunEvent = { shot: { t: number } } | { calibrate: { t: number } };
 /** Events the screen sends. */
 export type ScreenEvent =
@@ -55,8 +56,13 @@ export type ScreenEvent =
   | { range: { kind?: RangeKind; speed?: number } }
   | { start: true }
   | { pause: boolean }
-  /** Which server time the screen is drawing (`shown`), and its round trip: for lag compensation. */
-  | { ack: { shown: number; rtt: number } }
+  /**
+   * Which server time the screen is drawing: `shown` for the targets (interpolated, ~100 ms back) and
+   * `aim` for the crosshairs (the newest state), plus its round trip. For lag compensation.
+   */
+  | { ack: { shown: number; rtt: number; aim?: number } }
+  /** Start a 5-point calibration of the first phone (or cancel one). */
+  | { calibrate: 'points' | 'cancel' }
   /** The screen's shape (width / height): hit distances are measured in screen space. */
   | { view: { aspect: number } }
   /** Done playing: end the room so the session can be saved. */
@@ -90,7 +96,16 @@ export type ServerEvent =
   | { roundEnd: { round: number; hits: number; quota: number; passed: boolean; bonus: number } }
   | { gameOver: GameSummary }
   | { tuning: { tuning: Tuning; id: string } }
-  | { stats: Record<string, ConfigStats> };
+  | { stats: Record<string, ConfigStats> }
+  /** A 5-point calibration finished: the fit, already applied. `poor`: the points didn't line up well. */
+  | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean } }
+  | { calibrationFailed: { reason: string } };
+
+/** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
+export interface CalibrationView {
+  i: number;
+  pts: [number, number][];
+}
 
 export type TargetKind = 'bird' | 'clay' | 'balloon';
 export const TARGET_KINDS: TargetKind[] = ['bird', 'clay', 'balloon'];
@@ -142,6 +157,7 @@ export interface Snapshot {
   cfg: string;
   /** Screen only: latency now, and the first gun's motion (for the panel's graphs). */
   lat?: Latency & { lag: number };
+  cal?: CalibrationView;
   mo?: { yaw: number; pitch: number; roll: number; r: Vec3; a: number };
 }
 
