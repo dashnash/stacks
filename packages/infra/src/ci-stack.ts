@@ -35,13 +35,16 @@ export interface CiStackProps {
 
 export const BUDGET_NAME = 'stacks-monthly';
 
-/** The staging root domains in a config: `rootDomain` and each legacy redirect's. */
-export const stagingRootDomains = (env: { rootDomain: string; legacyRedirects?: Array<{ rootDomain: string }> }) => [
+/**
+ * The staging root domains in a config: `rootDomain` and each legacy redirect's, or, for a legacy
+ * redirect with `hosts`, only `<label>.<old>` for each label (the rest of the old root is not Stacks').
+ */
+export const stagingRootDomains = (env: { rootDomain: string; legacyRedirects?: Array<{ rootDomain: string; hosts?: string[] }> }) => [
   env.rootDomain,
-  ...(env.legacyRedirects ?? []).map((r) => r.rootDomain),
+  ...(env.legacyRedirects ?? []).flatMap((r) => (r.hosts?.length ? r.hosts.map((h) => `${h}.${r.rootDomain}`) : [r.rootDomain])),
 ];
 
-/** The record names a staging deploy may write: each staging root domain (and legacy root), and everything under it. */
+/** The record names a staging deploy may write: each staging root domain (and legacy name), and everything under it (ACM validation records included). */
 export const stagingRecordNames = (rootDomains: string[]) =>
   [...new Set(rootDomains.map((d) => d.toLowerCase().replace(/\.$/, '')))].flatMap((d) => [d, `*.${d}`]);
 
