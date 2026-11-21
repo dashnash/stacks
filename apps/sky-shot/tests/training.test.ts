@@ -113,6 +113,7 @@ describe('training in a room', () => {
    */
   function bot(g: ReturnType<typeof playGame>, screen: TestPlayer<Snapshot>, aspect: number) {
     const p = g.join(ANN, { device: 'gun' }) as TestPlayer<Snapshot>;
+    p.event({ menu: { calSkip: true } });
     let seq = 0;
     let q: Quat = fromEuler(Math.PI / 2, 0, 0); // pistol grip
     const recent: WireSample[] = [];

@@ -51,19 +51,30 @@ a cut-paper night sky (dusk or indigo).
 
 ## User stories
 
-- As a shooter I press Play, scan the QR with my iPhone, calibrate, and shoot targets in Rounds.
-- As a shooter I don't wait for a game server at Play: the title screen (on a desktop) starts one
-  while I read it (`usePrewarmRoom`, #152), and Play, Range or Train takes it over.
+- As a shooter I wait for my game on the title screen (a desktop): "Getting your game ready…" shows how the
+  server is coming along, and Play turns on once it's open (`usePrewarmRoom`, #152), so the game starts at
+  once. If every server is busy it keeps retrying, and after a minute offers "Play anyway" (the slow way).
+- As a shooter I press Play and scan the QR with my iPhone. From then on the phone is the controller: it
+  calibrates, then picks the game (Rounds, Range, Training), the look and the settings. The desktop starts the
+  game (Start or Enter) and exits to the menu (Esc outside a game); the phone can exit too, after a confirm.
+- As a shooter every phone calibrates when it connects, one phone at a time: step 1, Initialize (five dots,
+  no crosshair: where the phone points), then step 2, Calibrate (five dots with the live crosshair). Re-calibrate
+  (in the phone's menu) repeats step 2. The first phone's fit is the room's tuning and is saved as my
+  default; a second phone keeps its own.
+- As a shooter I swap the look mid-round from the phone (the Look chip) without pausing: the game is the same
+  in every look. The phone's Pause (or Esc on the desktop) opens the menu; switching game there ends the round
+  (its score is saved) and starts the new one.
+- As a shooter with only the mouse, Esc or right-click pauses and the menu slides in on the screen (no
+  Training: it needs a phone).
 - As a shooter I open the Range and tune the aim live (mode, gains, smoothing, trigger) until it
   feels right, watching accuracy per config.
-- As a shooter I calibrate on five dots (centre and corners: point, tap). The fit sets my gain,
-  vertical gain and offsets, and is saved as my default for every new room.
+- As a shooter the calibration fit (five dots: centre and corners) sets my gain, vertical gain and offsets.
 - As a shooter I run Training (about 2 minutes: follow a dot, and point at new dots with the
   crosshair hidden). The room fits sensitivity, accel curve, vertical gain, smoothing, prediction and
   deadzone to how I move, shows before/after, lets me compare blind (A/B), and saves the winner as my
   default for every new room.
 - As a shooter without a phone I use the mouse.
-- As a shooter I pick a look on the title screen (or press L while playing); it sticks to my account.
+- As a shooter I pick a look on the title screen, from the phone, or with L on the desktop; it sticks to my account.
 - As a shooter I see the leaderboard and my own shot telemetry, and download it.
 - As the owner I see everyone's telemetry and remove bad leaderboard rows.
 

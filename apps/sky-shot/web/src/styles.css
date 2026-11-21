@@ -819,3 +819,213 @@ tr.current td {
   font-weight: 800;
   letter-spacing: 0.03em;
 }
+
+/* Title: getting your game ready (#152) */
+.ready-bar {
+  width: min(100%, 26rem);
+  display: grid;
+  gap: 0.5rem;
+}
+.ready-line {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+.ready-track {
+  height: 14px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  overflow: hidden;
+}
+.ready-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pink), var(--sun));
+  transition: width 1s linear;
+}
+.ready-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.ready-steps .done {
+  color: #c6ff3d;
+}
+.ready-steps .now {
+  color: var(--ink);
+  font-weight: 700;
+}
+.ready-chip {
+  margin: 0;
+  padding: 0.35rem 1rem;
+  border-radius: 999px;
+  border: 2px solid #c6ff3d;
+  color: #c6ff3d;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ready-fill {
+    transition: none;
+  }
+}
+
+/* The controller's menu (phone, and the screen's pause panel with a mouse) */
+.menu {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+}
+.menu-h {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu-games {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.menu-games button,
+.menu-looks button,
+.menu-actions button {
+  display: grid;
+  gap: 0.1rem;
+  min-height: 44px;
+  text-align: left;
+}
+.menu-games button[aria-checked='true'],
+.menu-looks button[aria-checked='true'] {
+  border-color: var(--pink);
+  background: rgba(255, 79, 109, 0.18);
+}
+.menu-games small,
+.menu-actions small {
+  font-weight: 500;
+  color: var(--muted);
+}
+.menu-looks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.menu-looks .look-thumb {
+  width: 100%;
+  height: 2.6rem;
+  border-radius: 8px;
+}
+.menu-looks span {
+  font-size: 0.8rem;
+}
+.menu-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+.menu-resume {
+  width: 100%;
+}
+.menu-exit {
+  background: transparent;
+}
+.menu-confirm {
+  border: 2px solid var(--pink);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+}
+.menu-confirm p {
+  margin: 0 0 0.5rem;
+}
+.menu.settings .knob {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+.gun-menu {
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+.gun-ready,
+.gun-msg,
+.gun-hint {
+  margin: 0;
+  text-align: center;
+}
+.gun-msg {
+  color: var(--sun);
+}
+.cal-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.cal-dots i {
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.cal-dots i.done {
+  background: #c6ff3d;
+}
+.cal-dots i.now {
+  background: var(--ink);
+}
+.pause-btn,
+.calibrate-btn {
+  margin-left: auto;
+  min-width: 44px;
+  min-height: 44px;
+}
+.look-chip {
+  align-self: flex-start;
+  border-radius: 999px;
+  min-height: 44px;
+}
+
+/* The screen: lobby, step labels, pause panel */
+.overlay .players {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  gap: 1rem;
+  font-weight: 700;
+}
+.overlay.lobby {
+  max-width: min(92vw, 520px);
+}
+.cal-step {
+  margin: 0;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  background: var(--pink);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.menu-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(100%, 420px);
+  overflow-y: auto;
+  padding: 1.4rem;
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  background: var(--night);
+  border-left: 2px solid var(--line);
+}
+.menu-panel h2 {
+  margin: 0;
+}
+.row.spread {
+  justify-content: space-between;
+  align-items: center;
+}
