@@ -22,6 +22,7 @@ import {
   type Latency,
   type CalStage,
   type Phase,
+  type Prompt,
   type Quat,
   type RangeKind,
   type Results,
@@ -146,6 +147,8 @@ export interface State {
   calQueue: { gun: string; stage: CalStage }[];
   /** A calibration paused the game in progress: it goes on once the last one is done. */
   calPaused: boolean;
+  /** The choice the screen has put to the controller. */
+  prompt: Prompt | null;
   guns: Map<string, Gun>;
   targets: Target[];
   history: TargetHistory;
@@ -510,6 +513,21 @@ function calibrationPoint(state: State, gun: Gun, raw: unknown): void {
   }
 }
 
+const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+/** A prompt from the screen, or null if it isn't one (bounded: it goes to every phone). */
+export function readPrompt(raw: unknown): Prompt | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (!text(p.id, 40) || !text(p.title, 80) || (p.text !== undefined && !text(p.text, 200)) || !Array.isArray(p.options) || !p.options.length || p.options.length > 4) return null;
+  const options: Prompt['options'] = [];
+  for (const o of p.options as unknown[]) {
+    const r = o && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+    if (!text(r.id, 20) || !text(r.label, 40)) return null;
+    options.push({ id: r.id, label: r.label, ...(r.primary === true ? { primary: true } : {}) });
+  }
+  return { id: p.id, title: p.title, ...(typeof p.text === 'string' ? { text: p.text } : {}), options };
+}
+
 /** A phone's menu. Its own calibration from any phone; the rest from the first phone only. */
 function onMenu(state: State, gun: Gun, menu: unknown): void {
   if (!menu || typeof menu !== 'object') return;
@@ -518,7 +536,15 @@ function onMenu(state: State, gun: Gun, menu: unknown): void {
   else if ('calRedo' in m) {
     if (state.cal?.gun === gun.seat.id) state.cal.poses = [];
   } else if ('calSkip' in m) dropCalibration(state, gun.seat.id);
-  else if (primaryGun(state) === gun && ['mode', 'theme', 'tune', 'pause', 'range', 'finish'].some((k) => k in m)) onScreenEvent(state, m);
+  else if (primaryGun(state) !== gun) return;
+  else if ('choose' in m && m.choose && typeof m.choose === 'object') {
+    const { prompt, option } = m.choose as { prompt?: unknown; option?: unknown };
+    const p = state.prompt;
+    if (!p || p.id !== prompt || !p.options.some((o) => o.id === option)) return;
+    state.prompt = null;
+    state.room.broadcast({ prompt: null });
+    state.room.broadcast({ chosen: { prompt: p.id, option: option as string } });
+  } else if (['mode', 'theme', 'tune', 'pause', 'range', 'finish', 'start'].some((k) => k in m)) onScreenEvent(state, m);
 }
 
 function addGun(state: State, seat: GamePlayer, mouse: boolean): void {
@@ -638,6 +664,9 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
   } else if ('theme' in event && isThemeChoice(event.theme)) {
     state.theme = { id: event.theme.id, palette: event.theme.palette };
     state.room.broadcast({ theme: state.theme });
+  } else if ('prompt' in event) {
+    state.prompt = event.prompt === null ? null : readPrompt(event.prompt);
+    state.room.broadcast({ prompt: state.prompt });
   }
 }
 
@@ -851,6 +880,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         cal: null,
         calQueue: [],
         calPaused: false,
+        prompt: null,
         guns: new Map(),
         targets: [],
         history: new TargetHistory(),
@@ -889,6 +919,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
       state.room.send(player.id, { tuning: { tuning: state.tuning, id: state.cfg } });
       state.room.send(player.id, { stats: publicStats(state) });
       state.room.send(player.id, { theme: state.theme });
+      if (state.prompt) state.room.send(player.id, { prompt: state.prompt });
     },
 
     onLeave(state, player) {

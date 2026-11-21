@@ -14,6 +14,7 @@ import { isThemeChoice, type ThemeChoice } from '../../game/themes';
 import { lookStyle, nextTheme, themeOf } from './themes';
 import { encodeQr, qrPath } from './qr';
 import { AB_MS, AbBanner, AbChoice, TrainingDone, TrainingHud, TrainingIntro, TrainingResult, type Pick } from './Training';
+import type { Prompt } from '../../game/protocol';
 import { GRAPH_MS, TuningPanel, type MotionPoint } from './Tuning';
 import type { FitReport } from '../../game/fit';
 
@@ -55,7 +56,7 @@ export function QrCode({ text, label }: { text: string; label: string }) {
   );
 }
 
-function Results({ over, best, onAgain, onDone, saving }: { over: GameSummary; best: { rank: number | null } | null; onAgain: () => void; onDone: () => void; saving: boolean }) {
+function Results({ over, best, onAgain, onDone, saving, remote }: { over: GameSummary; best: { rank: number | null } | null; onAgain: () => void; onDone: () => void; saving: boolean; remote: boolean }) {
   return (
     <div className="overlay results" role="dialog" aria-label="Results">
       <h2>{over.mode === 'rounds' ? 'Game over' : 'Range session'}</h2>
@@ -76,12 +77,15 @@ function Results({ over, best, onAgain, onDone, saving }: { over: GameSummary; b
           </>
         ) : null}
       </dl>
+      {remote && <p className="muted on-phone">Start the next game on your phone.</p>}
       <div className="row">
-        <button type="button" className="primary" onClick={onAgain}>
-          Play again
-        </button>
+        {!remote && (
+          <button type="button" className="primary" onClick={onAgain}>
+            Play again
+          </button>
+        )}
         <button type="button" onClick={onDone} disabled={saving}>
-          {saving ? 'Saving…' : 'Done (save)'}
+          {saving ? 'Saving…' : '← Exit to menu'}
         </button>
       </div>
     </div>
@@ -107,6 +111,10 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const sentLook = useRef<ThemeChoice | null>(null);
   const lookSynced = useRef(false);
   const [exiting, setExiting] = useState(false);
+  /** Esc in a game: "Exit to menu?" (the screen only exits; the controller runs the game). */
+  const [confirmExit, setConfirmExit] = useState(false);
+  /** The controller answered a prompt (wired below, once the training handlers exist). */
+  const onChosen = useRef<(prompt: string, option: string) => void>(() => undefined);
   const [hitboxes, setHitboxes] = useState(false);
   const motion = useRef<MotionPoint[]>([]);
   const canvas = useRef<HTMLCanvasElement | null>(null);
@@ -215,6 +223,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
         setTrainError(null);
         setFlow({ k: 'result' });
       } else if ('trainFailed' in e) setTrainError(e.trainFailed.reason);
+      else if ('chosen' in e) onChosen.current(e.chosen.prompt, e.chosen.option);
       effects.current = effects.current.filter((x) => now - x.at < EFFECT_MS);
     },
     [show, saveDefault, buffer, setLook],
@@ -365,29 +374,36 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       sendEvent({ finish: true });
     } else window.location.hash = '#/';
   }, [status, sendEvent]);
-  const keys = useRef({ exit, inGame, paused, lobby, start: () => undefined as void });
+  const keys = useRef({ exit, inGame, lobby, phone, confirm: () => undefined as void, start: () => undefined as void });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       if ((e.key === 't' || e.key === 'T') && abStep.current === null) setPanel((p) => !p);
       if (e.key === 'l' || e.key === 'L') setLook(nextTheme(lookNow.current));
       const k = keys.current;
-      // Esc: pause (or resume) in a game, otherwise exit to the menu. Enter starts from the lobby.
+      // Esc: exit to the menu (in a game, asked first; a second Esc confirms). With only a mouse, Enter starts from the lobby.
       if (e.key === 'Escape') {
-        if (k.inGame) sendEvent({ pause: !k.paused });
+        if (k.inGame) k.confirm();
         else k.exit();
       }
-      if (e.key === 'Enter' && k.lobby && !(e.target instanceof HTMLButtonElement)) k.start();
+      if (e.key === 'Enter' && k.lobby && !k.phone && !(e.target instanceof HTMLButtonElement)) k.start();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setLook, sendEvent]);
+  }, [setLook]);
 
   const start = useCallback(() => {
     setOver(null);
     sendEvent({ start: true });
   }, [sendEvent]);
-  keys.current = { exit, inGame, paused, lobby, start };
+  keys.current = { exit, inGame, lobby, phone, start, confirm: () => (confirmExit ? exit() : setConfirmExit(true)) };
+  useEffect(() => {
+    if (!inGame) setConfirmExit(false);
+  }, [inGame]);
+  // A game started (from the controller): the last results go.
+  useEffect(() => {
+    if (snap?.ph === 'playing') setOver(null);
+  }, [snap?.ph]);
   // Demo autoplay: start once a gun has joined.
   const autoStarted = useRef(false);
   useEffect(() => {
@@ -499,6 +515,64 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     else if ((p === 'A' ? flow.order[0] : flow.order[1]) === 'fitted') applyFit(`You picked the fit (${fitWas})`);
     else keepMine(`You picked yours (the fit was ${fitWas})`);
   };
+  // With a phone paired, the training choices are put to it; its answer comes back as `chosen`.
+  const prompt: Prompt | null = !phone
+    ? null
+    : flow.k === 'result' && report
+      ? {
+          id: 'fit',
+          title: 'Your fitted aim',
+          text: 'The screen shows yours next to the fit.',
+          options: [
+            { id: 'compare', label: 'Compare blind (A/B)', primary: true },
+            { id: 'use', label: 'Use the fit' },
+            { id: 'keep', label: 'Keep mine' },
+            { id: 'again', label: 'Train again' },
+          ],
+        }
+      : flow.k === 'pick'
+        ? {
+            id: 'ab',
+            title: 'Which felt better?',
+            text: 'Go by feel.',
+            options: [
+              { id: 'A', label: 'A', primary: true },
+              { id: 'B', label: 'B', primary: true },
+              { id: 'same', label: "Can't tell" },
+            ],
+          }
+        : flow.k === 'done'
+          ? {
+              id: 'done',
+              title: flow.message.slice(0, 80),
+              options: [
+                { id: 'play', label: 'Play Rounds', primary: true },
+                { id: 'again', label: 'Train again' },
+                { id: 'exit', label: 'Exit to menu' },
+              ],
+            }
+          : null;
+  const promptKey = prompt ? JSON.stringify(prompt) : '';
+  useEffect(() => {
+    if (!live) return;
+    sendEvent({ prompt: promptKey ? (JSON.parse(promptKey) as Prompt) : null });
+  }, [live, promptKey, sendEvent]);
+  onChosen.current = (id, option) => {
+    if (id === 'fit') {
+      if (option === 'compare') startAb();
+      else if (option === 'use') applyFit();
+      else if (option === 'keep') keepMine();
+      else if (option === 'again') trainAgain();
+    } else if (id === 'ab' && (option === 'A' || option === 'B' || option === 'same')) pick(option);
+    else if (id === 'done') {
+      if (option === 'play') {
+        setFlow({ k: 'none' });
+        sendEvent({ mode: 'rounds' });
+      } else if (option === 'again') trainAgain();
+      else if (option === 'exit') exit();
+    }
+  };
+
   const changeRange = (change: { kind?: RangeKind; speed?: number }) => {
     setRange((r) => ({ ...r, ...change }));
     sendEvent({ range: change });
@@ -594,9 +668,9 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           </div>
         </div>
       ) : flow.k === 'result' && report ? (
-        <TrainingResult report={report} onCompare={startAb} onUse={() => applyFit()} onKeep={() => keepMine()} onAgain={trainAgain} />
+        <TrainingResult report={report} onCompare={startAb} onUse={() => applyFit()} onKeep={() => keepMine()} onAgain={trainAgain} remote={phone} />
       ) : flow.k === 'pick' ? (
-        <AbChoice onPick={pick} score={abScore.current} />
+        <AbChoice onPick={pick} score={abScore.current} remote={phone} />
       ) : flow.k === 'done' ? (
         <TrainingDone
           message={flow.message}
@@ -607,10 +681,11 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             sendEvent({ mode: 'rounds' });
           }}
           onAgain={trainAgain}
-          onDone={() => sendEvent({ finish: true })}
+          onDone={exit}
+          remote={phone}
         />
       ) : flow.k === 'ab' ? null : over ? (
-        <Results over={over} best={saved} saving={saving} onAgain={start} onDone={() => sendEvent({ finish: true })} />
+        <Results over={over} best={saved} saving={saving} onAgain={start} onDone={exit} remote={phone} />
       ) : live && !guns ? (
         <div className="overlay pair">
           <h2>Pair your controller</h2>
@@ -640,29 +715,35 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             {pointCal.st === 'init' ? 'No crosshair yet: this finds where your phone points.' : 'The crosshair is live now: this fine-tunes it to your hand.'}
             {pointCal.wait ? ` ${pointCal.wait} more phone${pointCal.wait > 1 ? 's' : ''} after this.` : ''}
           </p>
-          <button type="button" className="link" onClick={() => sendEvent({ calibrate: 'cancel' })}>
-            Skip
-          </button>
+          <p className="muted small">Redo or skip on the phone.</p>
+        </div>
+      ) : confirmExit && inGame ? (
+        <div className="overlay exit-confirm" role="alertdialog" aria-label="Exit to menu?">
+          <h2>Exit to menu?</h2>
+          <p className="muted">This ends the game. Scores so far are saved.</p>
+          <div className="row">
+            <button type="button" className="primary" onClick={exit}>
+              Exit (Esc)
+            </button>
+            <button type="button" onClick={() => setConfirmExit(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       ) : paused && !panel && flow.k === 'none' ? (
         phone ? (
           <div className="overlay paused" role="status">
             <h2>Paused</h2>
             <p className="muted">The menu is on your phone.</p>
-            <div className="row">
-              <button type="button" className="primary" onClick={() => sendEvent({ pause: false })}>
-                Resume
-              </button>
-              <button type="button" onClick={exit}>
-                ← Exit to menu
-              </button>
-            </div>
+            <button type="button" onClick={exit}>
+              ← Exit to menu
+            </button>
           </div>
         ) : (
           <aside className="menu-panel" aria-label="Pause menu">
             <div className="row spread">
               <h2>Menu</h2>
-              <span className="muted small">Esc or right-click</span>
+              <span className="muted small">Right-click</span>
             </div>
             <GameMenu
               mode={snap!.m}
@@ -678,7 +759,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           </aside>
         )
       ) : live && training && snap?.tr?.k === 'ready' ? (
-        <TrainingIntro onStart={start} error={trainError} />
+        <TrainingIntro onStart={start} error={trainError} remote={phone} />
       ) : live && lobby ? (
         <div className="overlay lobby" role="dialog" aria-label="Ready">
           <ul className="players">
@@ -692,13 +773,16 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             {gameName(snap!.m)} · {lookTheme.name}
           </h2>
           {phone ? (
-            <p className="muted">Pick the game and look on your phone.</p>
+            <p className="muted on-phone">Pick the game and start it on your phone.</p>
           ) : (
-            <GameMenu mode={snap!.m} look={look} canTrain={false} onMode={(m) => sendEvent({ mode: m })} onLook={setLook} onSettings={() => setPanel(true)} />
+            // Only a mouse: the screen is the controller.
+            <>
+              <GameMenu mode={snap!.m} look={look} canTrain={false} onMode={(m) => sendEvent({ mode: m })} onLook={setLook} onSettings={() => setPanel(true)} />
+              <button type="button" className="primary big" onClick={start}>
+                Start {snap?.m === 'range' ? 'the Range' : 'Round 1'} (Enter)
+              </button>
+            </>
           )}
-          <button type="button" className="primary big" onClick={start}>
-            Start {snap?.m === 'range' ? 'the Range' : 'Round 1'} (Enter)
-          </button>
           <div className="row">
             <button type="button" className="link" onClick={exit}>
               ← Exit to menu (Esc)

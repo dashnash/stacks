@@ -55,17 +55,19 @@ a cut-paper night sky (dusk or indigo).
   server is coming along, and Play turns on once it's open (`usePrewarmRoom`, #152), so the game starts at
   once. If every server is busy it keeps retrying, and after a minute offers "Play anyway" (the slow way).
 - As a shooter I press Play and scan the QR with my iPhone. From then on the phone is the controller: it
-  calibrates, then picks the game (Rounds, Range, Training), the look and the settings. The desktop starts the
-  game (Start or Enter) and exits to the menu (Esc outside a game); the phone can exit too, after a confirm.
+  calibrates, then picks the game (Rounds, Range, Training), the look and the settings, and starts it. Every
+  choice is on the controller (Play again, Start training, the training result and the blind pick: the screen
+  puts them to the phone as prompts). The desktop only exits: Esc (in a game it asks first; a second Esc
+  exits). The phone can exit too, after a confirm. L and the tuning panel (T) stay on the desktop.
 - As a shooter every phone calibrates when it connects, one phone at a time: step 1, Initialize (five dots,
   no crosshair: where the phone points), then step 2, Calibrate (five dots with the live crosshair). Re-calibrate
   (in the phone's menu) repeats step 2. The first phone's fit is the room's tuning and is saved as my
   default; a second phone keeps its own.
 - As a shooter I swap the look mid-round from the phone (the Look chip) without pausing: the game is the same
-  in every look. The phone's Pause (or Esc on the desktop) opens the menu; switching game there ends the round
+  in every look. The phone's Pause opens the menu; switching game there ends the round
   (its score is saved) and starts the new one.
-- As a shooter with only the mouse, Esc or right-click pauses and the menu slides in on the screen (no
-  Training: it needs a phone).
+- As a shooter with only the mouse, the screen is the controller: the lobby has the menu and Start (or
+  Enter), and right-click pauses into the menu panel (no Training: it needs a phone).
 - As a shooter I open the Range and tune the aim live (mode, gains, smoothing, trigger) until it
   feels right, watching accuracy per config.
 - As a shooter the calibration fit (five dots: centre and corners) sets my gain, vertical gain and offsets.

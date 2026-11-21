@@ -62,6 +62,10 @@ export type MenuEvent =
   | { range: { kind?: RangeKind; speed?: number } }
   /** Exit to the menu: end the room (saved) and the screen goes back to the title. */
   | { finish: true }
+  /** Start the game picked (the controller starts games; the screen only exits). */
+  | { start: true }
+  /** Answer the screen's prompt (`{ prompt }`): one of its options. */
+  | { choose: { prompt: string; option: string } }
   /** Step 2 again (live crosshair, 5 dots). */
   | { recalibrate: true }
   /** Start the current step over, from dot 1. */
@@ -72,6 +76,17 @@ export type MenuEvent =
 /** Events a gun sends. `t` on the sender's clock. */
 /** `calibrate` during a 5-point calibration marks the current dot; otherwise it makes the current pose the centre. */
 export type GunEvent = { shot: { t: number } } | { calibrate: { t: number } } | { menu: MenuEvent };
+
+/**
+ * A choice the screen puts to the controller (the training result, the blind pick, what next): the
+ * phone shows the options and answers with `{ menu: { choose } }`, which reaches the screen as `{ chosen }`.
+ */
+export interface Prompt {
+  id: string;
+  title: string;
+  text?: string;
+  options: { id: string; label: string; primary?: boolean }[];
+}
 
 /**
  * Calibration on every controller connect, one phone at a time: `init` (5 dots, no crosshair: where
@@ -97,7 +112,9 @@ export type ScreenEvent =
   /** Done playing: end the room so the session can be saved. */
   | { finish: true }
   /** The look the screen draws (the phones follow it; shots record it). */
-  | { theme: ThemeChoice };
+  | { theme: ThemeChoice }
+  /** Put a choice to the controller (null: none any more). */
+  | { prompt: Prompt | null };
 
 export interface Latency {
   /** Gun → server round trip, ms. */
@@ -137,7 +154,11 @@ export type ServerEvent =
   /** A training run couldn't be fitted (no gun, or too little motion). */
   | { trainFailed: { reason: string } }
   /** The screen's look, on joining and whenever it changes. */
-  | { theme: ThemeChoice };
+  | { theme: ThemeChoice }
+  /** The choice the screen is asking the controller for, on joining and whenever it changes. */
+  | { prompt: Prompt | null }
+  /** The controller's answer to a prompt. */
+  | { chosen: { prompt: string; option: string } };
 
 /** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
 export interface CalibrationView {

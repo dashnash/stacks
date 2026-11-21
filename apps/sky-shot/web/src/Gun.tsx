@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi, useGameRoom } from '@stacks/web';
 import { native, type MotionSample } from '@stacks/native';
 import { fromEuler } from '../../game/aim';
-import { DEVICE, MAX_SAMPLES_PER_INPUT, sig4, type CalibrationView, type GunInput, type MenuEvent, type ServerEvent, type Snapshot, type Vec3, type WireSample } from '../../game/protocol';
+import { DEVICE, MAX_SAMPLES_PER_INPUT, sig4, type CalibrationView, type GunInput, type MenuEvent, type Prompt, type ServerEvent, type Snapshot, type Vec3, type WireSample } from '../../game/protocol';
 import { DEFAULT_THEME, isThemeChoice, type ThemeChoice } from '../../game/themes';
 import { DEFAULT_TUNING, type Tuning } from '../../game/tuning';
 import { gameName, GameMenu, PhoneSettings } from './Menu';
@@ -52,6 +52,8 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const [look, setLook] = useState<ThemeChoice>(DEFAULT_THEME);
   const [hud, setHud] = useState<{ sl: number; rd: number; mode: Snapshot['m']; ph: string; pz: boolean; cal: CalibrationView | null; ctl: string | null; seats: Snapshot['g'] } | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** A choice the screen is asking the controller for. */
+  const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [settings, setSettings] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const api = useApi();
@@ -67,6 +69,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const onEvent = useCallback((e: ServerEvent) => {
     const mine = (seat: string) => seat === you.current;
     if ('tuning' in e) setTuning(e.tuning.tuning);
+    else if ('prompt' in e) setPrompt(e.prompt);
     else if ('calibrated' in e && (!e.calibrated.seat || mine(e.calibrated.seat))) {
       buzz(() => native.haptics.notification('success'));
       setNote(e.calibrated.poor ? "Done, but the dots didn't line up well: try Re-calibrate." : e.calibrated.stage === 'init' ? 'Got it. Now with the crosshair.' : 'Calibrated.');
@@ -297,6 +300,21 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
 
   const driver = !!me && hud?.ctl === me;
   const inGame = !!hud && (hud.ph === 'playing' || hud.ph === 'roundEnd');
+  if (driver && prompt)
+    return (
+      <div className="gun gun-menu" {...dressed}>
+        <div className="gun-top">{chip}</div>
+        <div className="menu prompt" role="dialog" aria-label={prompt.title}>
+          <h2>{prompt.title}</h2>
+          {prompt.text && <p className="muted">{prompt.text}</p>}
+          {prompt.options.map((o) => (
+            <button key={o.id} type="button" className={o.primary ? 'primary big' : ''} onClick={() => menu({ choose: { prompt: prompt.id, option: o.id } })} disabled={!live}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   if (driver && settings)
     return (
       <div className="gun gun-menu" {...dressed}>
@@ -313,9 +331,14 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
           {inGame && <span className="chip">Paused</span>}
         </div>
         {!inGame && (
-          <p className="gun-ready" role="status">
-            {gameName(hud.mode)} · {theme.name}. Start it on the screen (Enter).
-          </p>
+          <>
+            <p className="gun-ready" role="status">
+              {gameName(hud.mode)} · {theme.name}
+            </p>
+            <button type="button" className="primary big" onClick={() => menu({ start: true })} disabled={!live}>
+              {hud.mode === 'training' ? 'Start training' : hud.ph === 'over' ? 'Play again' : hud.mode === 'range' ? 'Start the Range' : 'Start Round 1'}
+            </button>
+          </>
         )}
         {noteLine}
         <GameMenu
@@ -337,7 +360,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
       <div className="gun gun-setup" {...dressed}>
         <div className="gun-top">{chip}</div>
         <h2>Ready</h2>
-        <p>Player 1 picks the game. Start it on the screen.</p>
+        <p>Player 1 picks the game and starts it.</p>
         {noteLine}
         <button type="button" onClick={() => menu({ recalibrate: true })} disabled={!live}>
           Re-calibrate

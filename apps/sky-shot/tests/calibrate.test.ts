@@ -303,3 +303,37 @@ describe('calibration on connect, and the controller menu', () => {
     expect(results.games.map((x) => [x.mode, x.shots])).toEqual([['rounds', 1]]);
   });
 });
+
+describe('the controller starts games and answers the screen', () => {
+  it('only the first phone starts; prompts go to the phones and the answer comes back to the screen', () => {
+    const g = playGame(skyShot({ seed: 1 }), { maxPlayers: 3 });
+    const screen = g.join('ann@test.dev', { device: 'screen' }) as TestPlayer<Snapshot>;
+    const ann = g.join('ann@test.dev', { device: 'gun' }) as TestPlayer<Snapshot>;
+    const bob = g.join('bob@test.dev', { device: 'gun-2' }) as TestPlayer<Snapshot>;
+    ann.event({ menu: { calSkip: true } });
+    bob.event({ menu: { calSkip: true } });
+    g.advance(100);
+    bob.event({ menu: { start: true } });
+    g.advance(100);
+    expect(screen.state!.ph).toBe('ready');
+    ann.event({ menu: { start: true } });
+    g.advance(100);
+    expect(screen.state!.ph).toBe('playing');
+    const prompt = { id: 'fit', title: 'Your fitted aim', options: [{ id: 'use', label: 'Use the fit', primary: true }, { id: 'keep', label: 'Keep mine' }] };
+    screen.event({ prompt: { ...prompt, options: [...prompt.options, { id: 'x'.repeat(30), label: 'too long an id' }] } });
+    g.advance(50);
+    expect(ann.events).toContainEqual({ prompt: null });
+    screen.event({ prompt });
+    g.advance(50);
+    expect(ann.events).toContainEqual({ prompt });
+    // Only the first phone answers, and only with one of the options.
+    bob.event({ menu: { choose: { prompt: 'fit', option: 'use' } } });
+    ann.event({ menu: { choose: { prompt: 'fit', option: 'nope' } } });
+    g.advance(50);
+    expect((screen.events as ServerEvent[]).some((e) => 'chosen' in e)).toBe(false);
+    ann.event({ menu: { choose: { prompt: 'fit', option: 'keep' } } });
+    g.advance(50);
+    expect(screen.events).toContainEqual({ chosen: { prompt: 'fit', option: 'keep' } });
+    expect(screen.events.at(-2)).toEqual({ prompt: null });
+  });
+});
