@@ -47,6 +47,12 @@ export interface LegacyRedirect {
   hostedZoneId: string;
   /** That zone's name (defaults to `rootDomain`). */
   hostedZoneName?: string;
+  /**
+   * Host labels to redirect, e.g. `["mofobookklub"]`: only `<label>.<old>` is held and the rest of
+   * the old root (the bare domain, `*.<old>`) is left free for other uses. Unset: the bare old root
+   * and `*.<old>`.
+   */
+  hosts?: string[];
 }
 
 export interface NativeConfig {
@@ -119,6 +125,12 @@ export function loadStacksConfig(path: string): StacksConfig {
       if (old.rootDomain === env.rootDomain) throw new Error(`${where}.legacyRedirects[${i}] redirects ${old.rootDomain} to itself`);
       if (!old.hostedZoneId) throw new Error(`${where}.legacyRedirects[${i}].hostedZoneId is required`);
       checkZone(`${where}.legacyRedirects[${i}]`, old);
+      if (old.hosts !== undefined) {
+        if (!Array.isArray(old.hosts) || old.hosts.length === 0) throw new Error(`${where}.legacyRedirects[${i}].hosts must be a non-empty list`);
+        for (const h of old.hosts) {
+          if (typeof h !== 'string' || !HOST_LABEL.test(h)) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${JSON.stringify(h)} is not a host label`);
+        }
+      }
     }
   }
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.githubRepo ?? '')) throw new Error(`${path}: githubRepo must be "owner/repo"`);
@@ -131,6 +143,8 @@ export function loadStacksConfig(path: string): StacksConfig {
   return config;
 }
 
+/** One DNS label, lower case (the same rule the redirect function applies). */
+const HOST_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const ZONE_ID = /^Z[A-Z0-9]{1,31}$/;
 

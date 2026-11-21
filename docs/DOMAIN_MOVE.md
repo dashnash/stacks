@@ -145,7 +145,9 @@ works again too.
 aws acm list-certificates --query "CertificateSummaryList[?contains(DomainName, 'iamdashnash')].[DomainName,CertificateArn,InUse]" --output table
 ```
 
-Only the two redirect certificates (`iamdashnash.com`, `test.iamdashnash.com`) should stay, in use.
+Only the two redirect certificates (`mofobookklub.iamdashnash.com`, `mofobookklub.test.iamdashnash.com` since #140) should stay, in use.
 
-The redirects stay up for as long as old links matter. To retire them later, delete
-`legacyRedirects` from `stacks.config.json` and both `stacks-<env>-legacy-redirect` stacks by hand.
+Since #140 the redirects hold only `mofobookklub.iamdashnash.com` and `mofobookklub.test.iamdashnash.com`
+(`hosts` in `stacks.config.json`): the bare `iamdashnash.com` and its other subdomains are free for the
+homelab. To retire the rest later, delete `legacyRedirects` from `stacks.config.json` and both
+`stacks-<env>-legacy-redirect` stacks by hand.

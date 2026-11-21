@@ -44,8 +44,9 @@ export interface LegacyRedirectStackProps {
 
 /**
  * `stacks-<env>-legacy-redirect`: one CloudFront distribution per entry in the environment's
- * `legacyRedirects`, holding `<oldRoot>` and `*.<oldRoot>` (its own certificate and alias records
- * in the old zone) and answering everything with `legacyRedirectCode`. Deploy it after the
+ * `legacyRedirects`, holding `<oldRoot>` and `*.<oldRoot>`, or only `<label>.<oldRoot>` for each of
+ * its `hosts` (its own certificate and alias records in the old zone), and answering everything
+ * with `legacyRedirectCode`. Deploy it after the
  * platform and app stacks have left the old names (infra/bin/stacks.ts adds those dependencies).
  */
 export class LegacyRedirectStack extends cdk.Stack {
@@ -62,10 +63,13 @@ export class LegacyRedirectStack extends cdk.Stack {
     for (const [i, old] of (env.legacyRedirects ?? []).entries()) {
       const id = `Legacy${i}`;
       const zone = route53.HostedZone.fromHostedZoneAttributes(this, `${id}Zone`, { hostedZoneId: old.hostedZoneId, zoneName: old.hostedZoneName ?? old.rootDomain });
-      const names = [old.rootDomain, `*.${old.rootDomain}`];
+      const records: Array<readonly [string, string]> = old.hosts?.length
+        ? old.hosts.map((h, j) => [`Host${j}`, `${h}.${old.rootDomain}`] as const)
+        : [['Apex', old.rootDomain], ['Wildcard', `*.${old.rootDomain}`]];
+      const names = records.map(([, name]) => name);
       const certificate = new acm.Certificate(this, `${id}Certificate`, {
-        domainName: old.rootDomain,
-        subjectAlternativeNames: [`*.${old.rootDomain}`],
+        domainName: names[0]!,
+        subjectAlternativeNames: names.length > 1 ? names.slice(1) : undefined,
         validation: acm.CertificateValidation.fromDns(zone),
       });
       const fn = new cloudfront.Function(this, `${id}Function`, {
@@ -86,7 +90,7 @@ export class LegacyRedirectStack extends cdk.Stack {
         certificate,
       });
       const target = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
-      for (const [suffix, recordName] of [['Apex', old.rootDomain], ['Wildcard', `*.${old.rootDomain}`]] as const) {
+      for (const [suffix, recordName] of records) {
         new route53.ARecord(this, `${id}${suffix}Record`, { zone, recordName, target });
         new route53.AaaaRecord(this, `${id}${suffix}RecordIpv6`, { zone, recordName, target });
       }
