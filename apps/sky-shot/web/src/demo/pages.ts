@@ -14,6 +14,8 @@ export interface ScreenshotPage {
 export const screenshotPages: ScreenshotPage[] = [
   { name: 'mid-round', hash: '#/autoplay', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
   { name: 'mid-round-koi', hash: '#/autoplay/look/koi', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
+  { name: 'mid-round-neon', hash: '#/autoplay/look/neon', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
+  { name: 'mid-round-stars', hash: '#/autoplay/look/stars', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
   { name: 'tuning-panel', hash: '#/autoplay/tuning', as: ['max@demo.stacks'], waitFor: '.hud .score' },
   { name: 'telemetry', hash: '#/telemetry', waitFor: '.telemetry table' },
 ];

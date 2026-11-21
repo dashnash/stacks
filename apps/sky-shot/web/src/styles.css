@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Tilt+Neon&display=swap');
+/* Theme fonts (Ink Koi, Neon Courier, Stargazer), one request; each theme lists its faces in `theme.fonts`. */
+@import url('https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@600;700&family=Chakra+Petch:wght@500;700&family=Tilt+Neon&family=Sniglet:wght@400;800&display=swap');
 
 :root {
   --ink: #fdf6ff;
@@ -715,4 +715,48 @@ tr.current td {
 .gun[data-theme='neon'] .chip {
   border-color: var(--gun-accent);
   border-width: 1px;
+}
+
+/* Stargazer: Sniglet on paper tags, star-shaped shells (themes/stars.ts sets the variables). */
+.screen[data-theme='stars'] .hud {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);
+}
+.screen[data-theme='stars'] .hud > span:not(.shells):not(.gun-chip) {
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+  text-shadow: none;
+  padding: 0.2rem 0.75rem;
+  border-radius: 0.6rem;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.38);
+  transform: rotate(1.2deg);
+}
+.screen[data-theme='stars'] .hud > .score {
+  padding: 0.25rem 0.9rem;
+  transform: rotate(-2deg);
+}
+.screen[data-theme='stars'] .shell {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.screen[data-theme='stars'] .shell.spent {
+  background: var(--star-unlit);
+}
+.screen[data-theme='stars'] .banner {
+  color: var(--tag-ink);
+  font-family: var(--hud-font);
+  font-weight: 800;
+  border: none;
+  border-radius: 0.7rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  transform: translateX(-50%) rotate(-1.5deg);
+}
+.gun[data-theme='stars'] {
+  font-family: var(--hud-font);
+}
+.gun[data-theme='stars'] .trigger {
+  border: 3px solid var(--hud-accent);
+  font-weight: 800;
+  letter-spacing: 0.03em;
 }

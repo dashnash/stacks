@@ -225,3 +225,31 @@ describe('Ink Koi', () => {
     expect(calls.filter((c) => c.name === 'arc').length).toBeGreaterThan(50);
   });
 });
+
+describe('Stargazer', () => {
+  const stars = THEMES.stars;
+  const p = stars.palettes.dusk!;
+
+  it('hangs a sleeping star on a thread that reaches the top of the play area', () => {
+    const { ctx, calls } = fakeCtx();
+    const h = 540;
+    const t = target({ k: 2, y: 0.4, r: 0.06 });
+    stars.target(ctx, t, t.r * h, 0, p, -1);
+    const thread = calls.find((c) => c.name === 'lineTo');
+    expect(thread?.args[0]).toBe(0);
+    expect(thread?.args[1]).toBeCloseTo(-0.4 * h);
+  });
+
+  it('a hit star pops, then has faded out by the end of hitMs', () => {
+    expect(stars.hitMotion).toBe('hold');
+    const at = (hitAge: number) => {
+      const { ctx, calls } = fakeCtx();
+      ctx.globalAlpha = 1;
+      stars.target(ctx, target({ k: 0 }), 27, 0, p, hitAge);
+      return { scale: calls.find((c) => c.name === 'scale')?.args[0] as number, alpha: ctx.globalAlpha };
+    };
+    expect(at(150).scale).toBeCloseTo(1.35);
+    expect(at(500)).toEqual({ scale: 1, alpha: 1 });
+    expect(at(stars.hitMs).alpha).toBe(0);
+  });
+});
