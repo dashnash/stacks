@@ -78,6 +78,8 @@ export interface RoomServerOptions<S, E, V> {
   log?: (message: string, detail?: unknown) => void;
 }
 
+/** How often a warm room's server checks whether it has been taken. */
+export const WARM_POLL_MS = 15_000;
 /** A connection attempt that isn't open within this long is dropped. */
 export const PEER_OPEN_TIMEOUT_MS = 30_000;
 /** Offers one seat may send per 10 s (reconnect storms, or someone poking at the server). */
@@ -112,7 +114,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
   private stopLoop: (() => void) | null = null;
   private watchingWarm = false;
   private checkingWarm = false;
-  private warmRetryAt = 0;
+  private nextWarmCheck = 0;
   private readonly now: () => number;
   private readonly log: (message: string, detail?: unknown) => void;
 
@@ -165,8 +167,9 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
   }
 
   /**
-   * A warm room ends as `unused` once `unusedMs` has passed with nobody joining, but only if its
-   * META still says warm: once its creator's `POST /rooms` has taken it, only the idle limit applies.
+   * A warm room is checked every {@link WARM_POLL_MS} until someone joins. Once its creator's
+   * `POST /rooms` has taken it (META no longer warm), its idle clock starts again, so a Play late in
+   * the warm window isn't cut short. Untaken after `unusedMs`, it ends as `unused`.
    */
   private checkWarm(): void {
     const host = this.host;
@@ -175,17 +178,24 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       this.watchingWarm = false;
       return;
     }
-    if (host.ageMs < Math.max(this.opts.unusedMs!, this.warmRetryAt)) return;
+    const age = host.ageMs;
+    if (age < this.nextWarmCheck) return;
     this.checkingWarm = true;
     const { PK, SK } = roomKeys.meta(this.opts.roomId);
     void this.opts.store
       .get<Item & { warm?: boolean }>(PK, SK)
       .then((m) => {
-        this.watchingWarm = false;
-        if (m?.warm && !host.joinedAny) host.end('unused');
+        if (host.joinedAny || host.ended) this.watchingWarm = false;
+        else if (!m?.warm) {
+          this.watchingWarm = false;
+          host.touch();
+        } else if (age >= this.opts.unusedMs!) {
+          this.watchingWarm = false;
+          host.end('unused');
+        } else this.nextWarmCheck = Math.min(age + WARM_POLL_MS, this.opts.unusedMs!);
       })
       .catch((err) => {
-        this.warmRetryAt = host.ageMs + 5000;
+        this.nextWarmCheck = age + WARM_POLL_MS;
         this.log('warm room not checked', err);
       })
       .finally(() => (this.checkingWarm = false));

@@ -85,6 +85,7 @@ function App() {
   in Safari and the iOS app's web view with no extra bridge.
 - **Pre-warming**: `usePrewarmRoom(enabled)` starts a game server early (`POST /rooms/warm`) so the next
   `POST /rooms` finds it up instead of waiting 30-60 s. Call it where a game is likely (a title screen with
-  Play; not on a phone that only joins). Warms once when `enabled` turns true, again when the tab returns after
-  the warm room expired; quiet on errors, nothing signed out.
+  Play; not on a phone that only joins). Warms each time `enabled` turns true, again when the warm room expires
+  (on tab return, or with the player active since: a forgotten tab doesn't keep a server), and a minute after a
+  refusal; quiet on errors, nothing signed out.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

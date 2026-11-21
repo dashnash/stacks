@@ -13,13 +13,22 @@ export interface Item {
  */
 export interface Store {
   get<T extends Item>(pk: string, sk: string): Promise<T | undefined>;
-  /** Put an item. With `ifNotExists`, fails with {@link ConditionFailedError} when the key exists. */
-  put(item: Item, opts?: { ifNotExists?: boolean }): Promise<void>;
+  /**
+   * Put an item. With `ifNotExists`, fails with {@link ConditionFailedError} when the key exists.
+   * With `ifMatch`, fails unless the item exists and each listed attribute has that value (a
+   * compare-and-swap: write back what you read only if nobody changed it meanwhile).
+   */
+  put(item: Item, opts?: PutOptions): Promise<void>;
   delete(pk: string, sk: string): Promise<void>;
   /** All items under a partition, optionally filtered by sort-key prefix, ascending by SK. */
   query<T extends Item>(pk: string, skPrefix?: string): Promise<T[]>;
   /** All items in a GSI1 partition, ascending by GSI1SK (or descending with `descending`). */
   queryGsi1<T extends Item>(gsi1pk: string, opts?: { descending?: boolean }): Promise<T[]>;
+}
+
+export interface PutOptions {
+  ifNotExists?: boolean;
+  ifMatch?: Record<string, string | number | boolean>;
 }
 
 export class ConditionFailedError extends Error {}
@@ -41,9 +50,13 @@ export class MemoryStore implements Store {
     return item ? (structuredClone(item) as T) : undefined;
   }
 
-  async put(item: Item, opts: { ifNotExists?: boolean } = {}): Promise<void> {
+  async put(item: Item, opts: PutOptions = {}): Promise<void> {
     const key = this.key(item.PK, item.SK);
     if (opts.ifNotExists && this.items.has(key)) throw new ConditionFailedError(`Item ${item.PK}/${item.SK} already exists`);
+    if (opts.ifMatch) {
+      const now = this.items.get(key);
+      if (!now || Object.entries(opts.ifMatch).some(([k, v]) => now[k] !== v)) throw new ConditionFailedError(`Item ${item.PK}/${item.SK} changed`);
+    }
     const clean = Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined)) as Item;
     this.items.set(key, structuredClone(clean));
   }

@@ -30,7 +30,7 @@ export { Router } from './router';
 export type { HttpMethod, RequestContext } from './router';
 export { clearCookie, cookie, createSession, endSession, endUserSessions, readSession, SESSION_COOKIE, SESSION_IDLE_DAYS, userSessionsKey } from './session';
 export { ConditionFailedError, MemoryStore, strip } from './store';
-export type { Item, Store } from './store';
+export type { Item, PutOptions, Store } from './store';
 export { composeMigrations, fixtureUserId, migrateSdkItems, renameEmailField } from './migrate';
 export type { IdFor, ItemMigration } from './migrate';
 export {

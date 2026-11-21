@@ -42,7 +42,8 @@ await store.query<T>(pk, skPrefix?); // ascending by SK
 await store.queryGsi1<T>(gsi1pk, { descending: true });
 ```
 
-`strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate.
+`strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate, and by
+`ifMatch: { attr: value }` (a compare-and-swap) when the item is gone or one of those attributes changed.
 Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`, and with the
 `gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<seatId>`), `ROOMCODE#<code>` and the GSI1 partition `STACKS#ROOMS`.
 

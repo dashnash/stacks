@@ -9,8 +9,9 @@ export const PREWARM_RETRY_MS = 60_000;
  * `POST /rooms` finds it already up instead of waiting 30-60 s. Call it where a game is likely:
  * a title screen with a Play button, a lobby. It warms each time `enabled` turns true (so coming
  * back to the title after a game warms the next one), again when the tab returns after the warm
- * room has expired, and a minute after a refusal. Best effort: it never throws or shows anything,
- * and does nothing signed out.
+ * room has expired, when it expires with the player still active on the page (a key or pointer
+ * since the last warm-up: a forgotten tab doesn't keep a server running), and a minute after a
+ * refusal. Best effort: it never throws or shows anything, and does nothing signed out.
  */
 export function usePrewarmRoom(enabled: boolean): void {
   const stacks = useOptionalStacks();
@@ -23,15 +24,22 @@ export function usePrewarmRoom(enabled: boolean): void {
     let busy = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let gone = false;
+    let activeAt = Date.now();
+    let warmedAt = 0;
+    const active = () => (activeAt = Date.now());
     const warm = () => {
       if (gone || busy || document.visibilityState === 'hidden' || Date.now() < until) return;
       busy = true;
+      warmedAt = Date.now();
       api
         .post<{ room: { warmUntil?: string } }>('/rooms/warm', {})
         .then(
           ({ room }) => {
             const at = room.warmUntil ? Date.parse(room.warmUntil) : NaN;
             until = Number.isFinite(at) ? at : Date.now() + PREWARM_RETRY_MS;
+            clearTimeout(retry);
+            // When it runs out, warm the next one if the player is still about.
+            retry = setTimeout(() => activeAt > warmedAt && warm(), Math.max(0, until - Date.now()) + 1000);
           },
           () => {
             until = Date.now() + PREWARM_RETRY_MS;
@@ -45,10 +53,14 @@ export function usePrewarmRoom(enabled: boolean): void {
     };
     warm();
     document.addEventListener('visibilitychange', warm);
+    document.addEventListener('pointerdown', active);
+    document.addEventListener('keydown', active);
     return () => {
       gone = true;
       clearTimeout(retry);
       document.removeEventListener('visibilitychange', warm);
+      document.removeEventListener('pointerdown', active);
+      document.removeEventListener('keydown', active);
     };
   }, [api, enabled, userId]);
 }

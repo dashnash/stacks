@@ -7,7 +7,7 @@ import {
   QueryCommand,
   type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb';
-import { ConditionFailedError, type Item, type Store } from './store';
+import { ConditionFailedError, type Item, type PutOptions, type Store } from './store';
 
 /** The production {@link Store}, backed by the app's DynamoDB single table. */
 export class DynamoStore implements Store {
@@ -25,18 +25,29 @@ export class DynamoStore implements Store {
     return res.Item as T | undefined;
   }
 
-  async put(item: Item, opts: { ifNotExists?: boolean } = {}): Promise<void> {
+  async put(item: Item, opts: PutOptions = {}): Promise<void> {
+    const match = Object.entries(opts.ifMatch ?? {});
+    const conditions = [
+      ...(opts.ifNotExists ? ['attribute_not_exists(PK)'] : []),
+      ...(opts.ifMatch ? ['attribute_exists(PK)', ...match.map((_, i) => `#m${i} = :m${i}`)] : []),
+    ];
     try {
       await this.doc.send(
         new PutCommand({
           TableName: this.tableName,
           Item: item,
-          ...(opts.ifNotExists ? { ConditionExpression: 'attribute_not_exists(PK)' } : {}),
+          ...(conditions.length ? { ConditionExpression: conditions.join(' AND ') } : {}),
+          ...(match.length
+            ? {
+                ExpressionAttributeNames: Object.fromEntries(match.map(([k], i) => [`#m${i}`, k])),
+                ExpressionAttributeValues: Object.fromEntries(match.map(([, v], i) => [`:m${i}`, v])),
+              }
+            : {}),
         }),
       );
     } catch (err) {
       if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
-        throw new ConditionFailedError(`Item ${item.PK}/${item.SK} already exists`);
+        throw new ConditionFailedError(`Item ${item.PK}/${item.SK} ${opts.ifMatch ? 'changed' : 'already exists'}`);
       }
       throw err;
     }

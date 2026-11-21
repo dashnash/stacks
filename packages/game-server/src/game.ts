@@ -237,6 +237,11 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     return this.opts.now() - this.startedAt;
   }
 
+  /** Start the idle clock again now (a pre-warmed room was just taken: its players are on their way). */
+  touch(): void {
+    this.lastActivity = this.opts.now();
+  }
+
   /**
    * A connection for a seat is up. A seat already in the room (dropped, or the same person and
    * device connecting again from another tab) is taken back with no `onJoin`; the old connection is

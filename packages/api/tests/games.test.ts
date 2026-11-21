@@ -230,7 +230,7 @@ describe('pre-warming', () => {
     expect(t.games.started).toHaveLength(1);
     // A lock that another request just wrote: 409, nothing started.
     const other = harness();
-    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev', Math.floor(other.deps.now().getTime() / WARM_LOCK_MS)), roomId: 'r-in-flight' });
+    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev'), roomId: 'r-in-flight', until: other.deps.now().getTime() + WARM_LOCK_MS });
     const busy = await warm(other);
     expect([busy.status, busy.body.code]).toEqual([409, 'ALREADY_WARMING']);
     expect(other.games.started).toEqual([]);
@@ -256,6 +256,33 @@ describe('pre-warming', () => {
     const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
     expect(res.body.room.id).not.toBe(id);
     expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.status).toBe('ended');
+  });
+
+  it('frees the warm-up lock when its creator ends the warm room, so they can warm again at once', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' });
+    expect((await warm(t)).status).toBe(201);
+  });
+
+  it("doesn't revive a warm room that ended while its Play was taking it", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    // The room ends between the takeover's read and its write.
+    const put = t.store.put.bind(t.store);
+    let once = true;
+    vi.spyOn(t.store, 'put').mockImplementation(async (item, opts) => {
+      if (once && opts?.ifMatch && item.SK === 'META') {
+        once = false;
+        await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' });
+      }
+      return put(item, opts);
+    });
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.status).toBe(201);
+    expect(res.body.room.id).not.toBe(id);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.status).toBe('ended');
+    expect((await t.call('GET', '/rooms', { as: ann })).body.rooms.map((r: { id: string }) => r.id)).toEqual([res.body.room.id]);
   });
 
   it("doesn't go over maxRooms when two POST /rooms race for one warm room", async () => {

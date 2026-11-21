@@ -68,6 +68,29 @@ describe('usePrewarmRoom', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
   });
 
+  it('warms the next one when it expires with the player still active, not in a forgotten tab', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const api = client(async () => ({ room: { id: 'r1', warm: true, warmUntil: new Date(Date.now() + 300_000).toISOString() } }));
+    render(
+      <StacksProvider client={api} silentSignIn={false}>
+        <Title on />
+      </StacksProvider>,
+    );
+    for (let i = 0; i < 10 && !(api.post as ReturnType<typeof vi.fn>).mock.calls.length; i++) await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    // Untouched for the whole 5 minutes: nothing more.
+    await act(async () => vi.advanceTimersByTimeAsync(302_000));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    // A tab return warms again; then a key press before it runs out keeps it going.
+    hide('hidden');
+    await act(async () => hide('visible'));
+    expect(api.post).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+    await act(async () => vi.advanceTimersByTimeAsync(242_000));
+    expect(api.post).toHaveBeenCalledTimes(3);
+  });
+
   it('tries again a minute after a refusal, with the tab left open', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     let refuse = true;
