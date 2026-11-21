@@ -156,7 +156,8 @@ roles, what it tracks, the test-site link, and anything someone must do by hand 
 secret's `aws ssm put-parameter` and, for production, `add-tags-to-resource` commands from `docs/SETUP.md` §7: Dash runs those, never the
 creator). Commit `apps/<slug>/.stacks/usage.json` with it. `npm run app-usage -- <slug> ship`.
 
-Tell the creator, plainly: once the PR is merged the app is live at `https://<slug>.dashnash.ninja`,
+Tell the creator, plainly: Dash approves the PR (every PR needs Dash's approval), then a session merges
+it (the merge train). Once it's merged the app is live at `https://<slug>.dashnash.ninja`,
 listed in the catalog, with them as its owner; they manage who gets in from the app's account menu
 (Manage access).
 
