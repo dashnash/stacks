@@ -148,6 +148,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     });
     this.host = host;
     this.watchingWarm = !!meta.warm && this.opts.unusedMs !== undefined;
+    host.holdIdle(this.watchingWarm);
     this.unsubscribe = await this.opts.signaling.subscribe(roomChannels.toServer(roomId), (data) => void this.onSignal(data));
     await this.writeStatus({ status: 'open', openedAt: new Date(this.now()).toISOString() });
     await this.opts.signaling.publish(roomChannels.room(roomId), { status: 'open' }).catch((err) => this.log('open not announced', err));
@@ -176,6 +177,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     if (!this.watchingWarm || this.checkingWarm || !host) return;
     if (host.joinedAny) {
       this.watchingWarm = false;
+      host.holdIdle(false);
       return;
     }
     const age = host.ageMs;
@@ -183,12 +185,20 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     this.checkingWarm = true;
     const { PK, SK } = roomKeys.meta(this.opts.roomId);
     void this.opts.store
-      .get<Item & { warm?: boolean }>(PK, SK)
+      .get<Item & { warm?: boolean; status?: string }>(PK, SK)
       .then((m) => {
-        if (host.joinedAny || host.ended) this.watchingWarm = false;
-        else if (!m?.warm) {
+        if (host.joinedAny || host.ended) {
+          this.watchingWarm = false;
+          host.holdIdle(false);
+        } else if (!m || m.status === 'ended') {
+          // Ended by the API (and its stop didn't reach us): end here too.
+          this.watchingWarm = false;
+          host.end('stopped');
+        } else if (!m.warm) {
+          // Taken: its players are on their way, so the idle clock starts now.
           this.watchingWarm = false;
           host.touch();
+          host.holdIdle(false);
         } else if (age >= this.opts.unusedMs!) {
           this.watchingWarm = false;
           host.end('unused');

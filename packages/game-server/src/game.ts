@@ -169,6 +169,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
   private lastAdvance: number;
   private lastActivity: number;
   private joinedOnce = false;
+  private idleHeld = false;
   private owed = 0;
   private tickNumber = 0;
   private tickFailures = 0;
@@ -240,6 +241,11 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
   /** Start the idle clock again now (a pre-warmed room was just taken: its players are on their way). */
   touch(): void {
     this.lastActivity = this.opts.now();
+  }
+
+  /** While held, the idle limit doesn't apply (a pre-warmed room, which ends as `unused` instead). */
+  holdIdle(on: boolean): void {
+    this.idleHeld = on;
   }
 
   /**
@@ -345,7 +351,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     if (due > 0) this.sendSnapshots(now);
 
     if (now - this.startedAt >= this.opts.maxMs) this.end('time');
-    else if (now - this.lastActivity >= this.opts.idleMs) this.end('idle');
+    else if (!this.idleHeld && now - this.lastActivity >= this.opts.idleMs) this.end('idle');
   }
 
   /** End the room: everyone gets "game over" on the reliable channel, then `onEnd` runs. Once. */

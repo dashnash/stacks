@@ -463,6 +463,24 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
 
   const tooMany = () => new HttpError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
 
+  /**
+   * The caller's live warm room among `going`; or, when the room index hasn't caught up with one
+   * started a moment ago, the one their warm-up lock names (read by key), added to `going`.
+   */
+  async function warmOf(creatorId: string, going: { meta: RoomMeta; room: Room }[]) {
+    const listed = going.find((r) => r.meta.warm && r.meta.createdBy === creatorId);
+    if (listed) return listed;
+    const key = roomKeys.warmLock(creatorId);
+    const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
+    const m = lock?.roomId ? await meta(lock.roomId) : undefined;
+    if (!m?.warm || m.status === 'ended' || m.createdBy !== creatorId) return undefined;
+    const room = await view(store, m, warmMs);
+    if (room.status === 'ended' || ageOf(m) >= warmMs) return undefined;
+    const r = { meta: m, room };
+    going.push(r);
+    return r;
+  }
+
   return {
     settings,
 
@@ -473,7 +491,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
      */
     async create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
       let going = await active();
-      const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
+      const mine = await warmOf(creator.id, going);
       // Claimed by a request a moment ago: another Play's game now (it counts below), or being
       // retired by a sweep (it doesn't, once ended).
       const won = mine ? await claim(mine.meta) : false;
@@ -523,9 +541,14 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
      * app's `maxRooms` (warm rooms never push out real ones).
      */
     async warm(creator: { id: string; name: string }): Promise<{ room: Room; started: boolean }> {
-      const going = await active();
-      const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
-      if (mine) return { room: mine.room, started: false };
+      let going = await active();
+      const mine = await warmOf(creator.id, going);
+      if (mine) {
+        // Too close to its end for a Play to take it: start the next one now instead.
+        if (ageOf(mine.meta) < warmMs - WARM_ADOPT_MARGIN_MS || !(await claim(mine.meta))) return { room: mine.room, started: false };
+        await retire(mine.meta);
+        going = going.filter((r) => r !== mine);
+      }
       if (going.length >= settings.maxRooms) throw tooMany();
       // One at a time per person: a lock naming the room, written only if absent, or swapped for an
       // expired one only if nobody swapped it first.
@@ -539,9 +562,10 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       } catch (err) {
         if (!(err instanceof ConditionFailedError)) throw err;
         const held = await store.get<Item & { roomId?: string; until?: number }>(key.PK, key.SK);
-        if (!held?.roomId || (held.until ?? 0) > now) throw busy();
+        if (held?.roomId && (held.until ?? 0) > now) throw busy();
         try {
-          await store.put(lock, { ifMatch: { roomId: held.roomId } });
+          // Gone since (freed): write it afresh. Expired: swap it, unless someone swapped it first.
+          await store.put(lock, held?.roomId ? { ifMatch: { roomId: held.roomId } } : { ifNotExists: true });
         } catch (again) {
           if (again instanceof ConditionFailedError) throw busy();
           throw again;
@@ -682,7 +706,8 @@ export function registerGameRoutes<D extends AppDeps>(api: AppRoutes<D>): void {
   });
   api.member('GET', '/rooms/:id', async (req, v) => {
     const room = await rooms(v).get(req.params.id!);
-    if (!room) throw notFound('No such room');
+    // A warm room is its creator's alone until they start the game.
+    if (!room || (room.warm && !isUser(v.user, room.createdBy.id))) throw notFound('No such room');
     return { body: { room } };
   });
   // `{ device? }`: one seat per (user, device), so one person can be the screen and the controller.

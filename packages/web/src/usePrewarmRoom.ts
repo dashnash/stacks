@@ -3,15 +3,17 @@ import { useOptionalStacks } from './auth';
 
 /** After a refused or failed warm-up (429 at `maxRooms`, offline), try again this much later. */
 export const PREWARM_RETRY_MS = 60_000;
+/** Warm the next room this long before the last one runs out (Play stops taking one 30 s before). */
+const REWARM_LEAD_MS = 40_000;
 
 /**
  * Start a game server early (`POST /rooms/warm`) while `enabled`, so the player's next
  * `POST /rooms` finds it already up instead of waiting 30-60 s. Call it where a game is likely:
  * a title screen with a Play button, a lobby. It warms each time `enabled` turns true (so coming
  * back to the title after a game warms the next one), again when the tab returns after the warm
- * room has expired, when it expires with the player still active on the page (a key or pointer
- * since the last warm-up: a forgotten tab doesn't keep a server running), and a minute after a
- * refusal. Best effort: it never throws or shows anything, and does nothing signed out.
+ * room has expired, when it is about to expire with the player still active on the page (a key or
+ * pointer since the last warm-up: a forgotten tab doesn't keep a server running), and a minute
+ * after a refusal if the player is still active. Best effort: it never throws or shows anything, and does nothing signed out.
  */
 export function usePrewarmRoom(enabled: boolean): void {
   const stacks = useOptionalStacks();
@@ -38,13 +40,16 @@ export function usePrewarmRoom(enabled: boolean): void {
             const at = room.warmUntil ? Date.parse(room.warmUntil) : NaN;
             until = Number.isFinite(at) ? at : Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
-            // When it runs out, warm the next one if the player is still about.
-            retry = setTimeout(() => activeAt > warmedAt && warm(), Math.max(0, until - Date.now()) + 1000);
+            // Shortly before Play would stop taking it (30 s before it ends), warm the next one if the
+            // player is still about. At least a minute apart, whatever the clocks say.
+            const next = Math.max(PREWARM_RETRY_MS, until - Date.now() - REWARM_LEAD_MS);
+            until = Date.now() + next;
+            retry = setTimeout(() => activeAt > warmedAt && warm(), next);
           },
           () => {
             until = Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
-            retry = setTimeout(warm, PREWARM_RETRY_MS);
+            retry = setTimeout(() => activeAt > warmedAt && warm(), PREWARM_RETRY_MS);
           },
         )
         .finally(() => {

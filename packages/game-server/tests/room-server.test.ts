@@ -184,6 +184,25 @@ describe('RoomServer', () => {
     expect(plain.server.host!.ended).toBeFalsy();
   }, 20_000);
 
+  it('ends a warm room as unused even when warmMinutes equals idleMinutes, and stops one the API ended', async () => {
+    const same = await setup({ warm: true, unusedMs: 10 * 60_000 });
+    await same.server.start();
+    for (let t = 0; t < 11 * 60_000 && !same.server.host!.ended; t += 15_000) {
+      same.advance(15_000);
+      await settle();
+    }
+    expect(await same.server.done).toMatchObject({ reason: 'unused' });
+
+    const ended = await setup({ warm: true, unusedMs: 5 * 60_000 });
+    await ended.server.start();
+    await ended.store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: 'ended', maxPlayers: 8 });
+    for (let i = 0; i < 3 && !ended.server.host!.ended; i++) {
+      ended.advance(15_000);
+      await settle();
+    }
+    expect(await ended.server.done).toMatchObject({ reason: 'stopped' });
+  }, 20_000);
+
   it('tells the client when an offer cannot be answered', async () => {
     const t = await setup();
     await t.server.start();

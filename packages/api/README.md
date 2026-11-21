@@ -45,7 +45,7 @@ await store.queryGsi1<T>(gsi1pk, { descending: true });
 `strip(item)` drops the keys. `ConditionFailedError` is thrown by `ifNotExists` on a duplicate, and by
 `ifMatch: { attr: value }` (a compare-and-swap) when the item is gone or one of those attributes changed.
 Keys used by the SDK (don't reuse): `SESSION#…`, `USERSESSIONS#…`, `AUDIT#…`, and with the
-`gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<seatId>`), `ROOMCODE#<code>` and the GSI1 partition `STACKS#ROOMS`.
+`gameServer` module `ROOM#<id>` (`META`, `SERVER`, `TASK`, `PLAYER#<seatId>`), `ROOMCODE#<code>`, `ROOMWARM#<userId>` (`LOCK`), a room's `CLAIM`, and the GSI1 partition `STACKS#ROOMS`.
 
 ## People and access (the platform owns them)
 
@@ -179,7 +179,7 @@ module on, these member routes exist (you write none of them):
   person holds at most `MAX_SEATS_PER_USER` (4) seats: 409 `TOO_MANY_SEATS` past it.
 - **Pre-warming** (#152): call `usePrewarmRoom(enabled)` from `@stacks/web` where a game is likely (a title
   screen), so Play doesn't wait for the cold start. A warm room (`warm: true`, `warmUntil`) isn't listed,
-  found by code or joinable. The creator's next `POST /rooms` takes it over (named, listed, joinable, audited,
+  found by code, joinable, or readable by anyone but its creator. The creator's next `POST /rooms` takes it over (named, listed, joinable, audited,
   already on its way up), unless it is within 30 s of `warmUntil`. Untaken, it ends `unused` after the
   manifest's `warmMinutes` (5). One per person; at `maxRooms` a real `POST /rooms` retires the oldest warm room. A taken room's
   `createdAt` (and so its `maxHours`) counts from the warm-up.

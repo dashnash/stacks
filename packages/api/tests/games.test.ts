@@ -285,6 +285,33 @@ describe('pre-warming', () => {
     expect((await t.call('GET', '/rooms', { as: ann })).body.rooms.map((r: { id: string }) => r.id)).toEqual([res.body.room.id]);
   });
 
+  it('swaps a warm room too close to its end for a new one, so Play still finds one it can take', async () => {
+    const t = harness();
+    const old = (await warm(t)).body.room.id;
+    t.advance(5 * 60_000 - 20_000);
+    const res = await warm(t);
+    expect(res.status).toBe(201);
+    expect(res.body.room.id).not.toBe(old);
+    expect(t.games.stopped).toEqual([old]);
+  });
+
+  it('finds the warm room by its lock when the room index lags behind', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    const real = t.store.queryGsi1.bind(t.store);
+    vi.spyOn(t.store, 'queryGsi1').mockImplementationOnce(async () => []).mockImplementation(real);
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).toBe(id);
+    expect(t.games.started).toEqual([id]);
+  });
+
+  it("shows a warm room only to its creator", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    expect((await t.call('GET', `/rooms/${id}`, { as: bob })).status).toBe(404);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.warm).toBe(true);
+  });
+
   it("doesn't go over maxRooms when two POST /rooms race for one warm room", async () => {
     const t = harness({ ...manifest, gameServer: { maxRooms: 2 } });
     await warm(t);

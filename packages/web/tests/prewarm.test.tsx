@@ -106,10 +106,21 @@ describe('usePrewarmRoom', () => {
     for (let i = 0; i < 10 && !(api.post as ReturnType<typeof vi.fn>).mock.calls.length; i++) await act(async () => vi.advanceTimersByTimeAsync(10));
     expect(api.post).toHaveBeenCalledTimes(1);
     refuse = false;
-    await act(async () => vi.advanceTimersByTimeAsync(59_000));
+    // Nobody about: no retry.
+    await act(async () => vi.advanceTimersByTimeAsync(61_000));
     expect(api.post).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    // A tab return tries at once, is refused, and the player is about this time.
+    refuse = true;
+    hide('hidden');
+    await act(async () => hide('visible'));
     expect(api.post).toHaveBeenCalledTimes(2);
+    refuse = false;
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+    await act(async () => vi.advanceTimersByTimeAsync(57_000));
+    expect(api.post).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(api.post).toHaveBeenCalledTimes(3);
   });
 
   it('is quiet when refused, and does nothing signed out', async () => {
