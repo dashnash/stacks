@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { AccountMenu, ApiError, BuildVersion, ErrorNote, Spinner, useApi, useAsync, useHashRoute, useStacks } from '@stacks/web';
+import { useEffect, useState, type FormEvent } from 'react';
+import { AccountMenu, ApiError, BuildVersion, ErrorNote, Spinner, useApi, useAsync, useHashRoute, usePrewarmRoom, useStacks, type PrewarmRoom } from '@stacks/web';
 import { manifest } from '../../api/manifest';
 import type { LeaderEntry } from '../../api/leaderboard';
 import type { GameMode } from '../../game/protocol';
@@ -92,18 +92,75 @@ function JoinAsGun() {
   );
 }
 
+/** A desktop (a fine pointer): the screen that starts games. Phones only join by code. */
+const isDesktop = () => typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+
+/** After this long busy (or stuck warming), the title offers "Play anyway": a server the slow way. */
+export const PLAY_ANYWAY_MS = 60_000;
+/** Roughly how long a server takes to start, for the progress bar. */
+const TYPICAL_START_MS = 45_000;
+
+/** "Getting your game ready…": where the warm server is, until Play can take it. */
+function GameReadiness({ warm, since, now }: { warm: PrewarmRoom; since: number; now: number }) {
+  const secs = Math.max(0, Math.round((now - since) / 1000));
+  if (warm.status === 'busy')
+    return (
+      <div className="ready-bar" role="status">
+        <div className="ready-line">
+          <span>All game servers are busy, retrying…</span>
+        </div>
+      </div>
+    );
+  const reserved = !!warm.roomId;
+  // An estimate: the server says nothing until it's open.
+  const pct = Math.min(95, 8 + ((now - since) / TYPICAL_START_MS) * 87);
+  return (
+    <div className="ready-bar" role="status" aria-label="Getting your game ready">
+      <div className="ready-line">
+        <span>Getting your game ready…</span>
+        <span className="muted">
+          {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}
+        </span>
+      </div>
+      <div className="ready-track">
+        <div className="ready-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <ol className="ready-steps">
+        <li className={reserved ? 'done' : 'now'}>{reserved ? '✓ ' : ''}Reserved</li>
+        <li className={reserved ? 'now' : ''}>Starting server</li>
+        <li>Open</li>
+      </ol>
+    </div>
+  );
+}
+
 function Title() {
   const api = useApi();
   const { status, signIn, accessNotice } = useStacks();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const signedIn = status === 'signedIn';
+  const [desktop] = useState(isDesktop);
+  // Start a game server now; Play waits for it (on a desktop), so the game starts at once.
+  const warm = usePrewarmRoom(signedIn && desktop && !busy);
+  const ready = !desktop || warm.status === 'ready';
+  // How long it has been getting ready (or busy), for the timer and "Play anyway".
+  const [since, setSince] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const waitingKind = warm.status === 'busy' ? 'busy' : 'warm';
+  useEffect(() => setSince(Date.now()), [waitingKind, ready]);
+  useEffect(() => {
+    if (ready || !signedIn || !desktop) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [ready, signedIn, desktop]);
+  const anyway = !ready && warm.status !== 'off' && now - since >= PLAY_ANYWAY_MS;
 
-  async function play(mode: GameMode) {
+  async function play(mode: GameMode = 'rounds') {
     setBusy(true);
     setError(null);
     try {
-      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: mode === 'range' ? 'Whee range' : mode === 'training' ? 'Whee training' : 'Whee' });
+      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: 'Whee' });
       window.location.hash = `#/play/${encodeURIComponent(room.id)}/${mode}`;
     } catch (err) {
       setError(err as Error);
@@ -120,18 +177,26 @@ function Title() {
         <p className="lead">{manifest.tagline}</p>
         {signedIn ? (
           <>
+            {desktop && !ready && warm.status !== 'off' && <GameReadiness warm={warm} since={since} now={now} />}
+            {desktop && ready && (
+              <p className="ready-chip" role="status">
+                Your game is ready
+              </p>
+            )}
             <div className="row center">
-              <button type="button" className="primary big" disabled={busy} onClick={() => void play('rounds')}>
+              <button type="button" className="primary big" disabled={busy || !ready} onClick={() => void play()}>
                 Play
               </button>
-              <button type="button" className="big" disabled={busy} onClick={() => void play('range')}>
-                Range
-              </button>
+              {anyway && (
+                <button type="button" className="big" disabled={busy} onClick={() => void play()}>
+                  Play anyway
+                </button>
+              )}
             </div>
-            <button type="button" className="link" disabled={busy} onClick={() => void play('training')}>
-              Train the aim (2 minutes, fits the controls to you)
-            </button>
-            <p className="muted small">On a desktop: Play shows a QR code for your iPhone. No phone? Pick "Use mouse instead".</p>
+            <p className="muted small">
+              {anyway ? 'Play anyway starts a server the slow way (30-60 s). ' : ''}Play shows a QR code for your phone. Game, look and settings are on the controller. No phone? Pick
+              "Use the mouse instead".
+            </p>
             <ErrorNote error={error} className="error" />
             <JoinAsGun />
             <a className="link" href="#/telemetry">

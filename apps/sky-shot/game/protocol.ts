@@ -49,9 +49,50 @@ export type GameMode = 'rounds' | 'range' | 'training';
 export type RangeKind = 'static' | 'sweep' | 'popup';
 export type Phase = 'ready' | 'playing' | 'roundEnd' | 'over';
 
+/**
+ * The controller's menu (a phone; with only a mouse, the screen's pause panel sends the same as
+ * screen events). Game, look, settings, pause and exit come from the first phone only; any phone may
+ * re-calibrate, redo or skip its own calibration.
+ */
+export type MenuEvent =
+  | { mode: GameMode }
+  | { theme: ThemeChoice }
+  | { tune: Partial<Tuning> }
+  | { pause: boolean }
+  | { range: { kind?: RangeKind; speed?: number } }
+  /** Exit to the menu: end the room (saved) and the screen goes back to the title. */
+  | { finish: true }
+  /** Start the game picked (the controller starts games; the screen only exits). */
+  | { start: true }
+  /** Answer the screen's prompt (`{ prompt }`): one of its options. */
+  | { choose: { prompt: string; option: string } }
+  /** Step 2 again (live crosshair, 5 dots). */
+  | { recalibrate: true }
+  /** Start the current step over, from dot 1. */
+  | { calRedo: true }
+  /** Skip the rest of this phone's calibration. */
+  | { calSkip: true };
+
 /** Events a gun sends. `t` on the sender's clock. */
 /** `calibrate` during a 5-point calibration marks the current dot; otherwise it makes the current pose the centre. */
-export type GunEvent = { shot: { t: number } } | { calibrate: { t: number } };
+export type GunEvent = { shot: { t: number } } | { calibrate: { t: number } } | { menu: MenuEvent };
+
+/**
+ * A choice the screen puts to the controller (the training result, the blind pick, what next): the
+ * phone shows the options and answers with `{ menu: { choose } }`, which reaches the screen as `{ chosen }`.
+ */
+export interface Prompt {
+  id: string;
+  title: string;
+  text?: string;
+  options: { id: string; label: string; primary?: boolean }[];
+}
+
+/**
+ * Calibration on every controller connect, one phone at a time: `init` (5 dots, no crosshair: where
+ * the phone points) then `fine` (5 dots with the live crosshair). Re-calibrate runs `fine` only.
+ */
+export type CalStage = 'init' | 'fine';
 /** Events the screen sends. */
 export type ScreenEvent =
   | { tune: Partial<Tuning> }
@@ -64,14 +105,16 @@ export type ScreenEvent =
    * `aim` for the crosshairs (the newest state), plus its round trip. For lag compensation.
    */
   | { ack: { shown: number; rtt: number; aim?: number } }
-  /** Start a 5-point calibration of the first phone (or cancel one). */
-  | { calibrate: 'points' | 'cancel' }
+  /** Re-calibrate the first phone (step 2), cancel the calibration on now, or skip every one waiting (the demo's autoplay). */
+  | { calibrate: 'points' | 'cancel' | 'skip' }
   /** The screen's shape (width / height): hit distances are measured in screen space. */
   | { view: { aspect: number } }
   /** Done playing: end the room so the session can be saved. */
   | { finish: true }
   /** The look the screen draws (the phones follow it; shots record it). */
-  | { theme: ThemeChoice };
+  | { theme: ThemeChoice }
+  /** Put a choice to the controller (null: none any more). */
+  | { prompt: Prompt | null };
 
 export interface Latency {
   /** Gun → server round trip, ms. */
@@ -103,20 +146,28 @@ export type ServerEvent =
   | { tuning: { tuning: Tuning; id: string } }
   | { stats: Record<string, ConfigStats> }
   /** A 5-point calibration finished: the fit, already applied. `poor`: the points didn't line up well. */
-  | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean } }
-  | { calibrationFailed: { reason: string } }
+  | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean; seat?: string; stage?: CalStage } }
+  | { calibrationFailed: { reason: string; seat?: string } }
 
   /** A training run finished and was fitted. */
   | { trained: FitReport }
   /** A training run couldn't be fitted (no gun, or too little motion). */
   | { trainFailed: { reason: string } }
   /** The screen's look, on joining and whenever it changes. */
-  | { theme: ThemeChoice };
+  | { theme: ThemeChoice }
+  /** The choice the screen is asking the controller for, on joining and whenever it changes. */
+  | { prompt: Prompt | null }
+  /** The controller's answer to a prompt. */
+  | { chosen: { prompt: string; option: string } };
 
 /** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
 export interface CalibrationView {
   i: number;
   pts: [number, number][];
+  /** The phone being calibrated (its seat), the step, and how many phones wait after it. */
+  gun?: string;
+  st?: CalStage;
+  wait?: number;
 }
 /** Training, in the screen's snapshot. */
 export interface TrainingView {
@@ -187,6 +238,8 @@ export interface Snapshot {
   /** Screen only: latency now, and the first gun's motion (for the panel's graphs). */
   lat?: Latency & { lag: number };
   cal?: CalibrationView;
+  /** The seat whose menu drives the game (the first phone), if a phone is paired. */
+  ctl?: string;
   tr?: TrainingView;
   mo?: { yaw: number; pitch: number; roll: number; r: Vec3; a: number };
 }

@@ -20,7 +20,9 @@ import {
   type GunInput,
   type GunView,
   type Latency,
+  type CalStage,
   type Phase,
+  type Prompt,
   type Quat,
   type RangeKind,
   type Results,
@@ -89,6 +91,8 @@ interface Gun {
   rtt: number;
   samples: StampedSample[];
   lastShotAt: number;
+  /** A second phone's own calibration (the first phone's goes into the room's tuning). */
+  fit: Partial<Tuning> | null;
 }
 
 interface PendingShot {
@@ -137,8 +141,14 @@ export interface State {
   /** How far behind the crosshairs on the screen are (it draws them from the newest state); null until it says. */
   aimLag: number | null;
   screenRtt: number;
-  /** A 5-point calibration in progress: the gun, and the pose taken at each dot so far. */
-  cal: { gun: string; poses: Quat[] } | null;
+  /** A 5-point calibration in progress: the gun, the step, and the pose taken at each dot so far. */
+  cal: { gun: string; stage: CalStage; poses: Quat[] } | null;
+  /** Calibrations waiting, one phone at a time. */
+  calQueue: { gun: string; stage: CalStage }[];
+  /** A calibration paused the game in progress: it goes on once the last one is done. */
+  calPaused: boolean;
+  /** The choice the screen has put to the controller. */
+  prompt: Prompt | null;
   guns: Map<string, Gun>;
   targets: Target[];
   history: TargetHistory;
@@ -186,6 +196,12 @@ export function readSample(raw: unknown): WireSample | null {
 
 /** What maps motion now: training always aims in relative mode (each jump starts the crosshair on its dot). */
 export const activeTuning = (state: State): Tuning => (state.mode === 'training' ? { ...state.tuning, mode: 'relative' } : state.tuning);
+
+/** The first phone: its menu drives the game, and its calibration is the room's tuning. */
+export const primaryGun = (state: State): Gun | undefined => [...state.guns.values()].find((g) => !g.mouse);
+
+/** What maps this gun's motion: the room's tuning, with a second phone's own calibration on top. */
+const tuningFor = (state: State, gun: Gun): Tuning => (gun.fit ? applyTune(activeTuning(state), gun.fit) : activeTuning(state));
 
 /** Sender time (s) → server time (ms): the minimum (arrival − send) over recent inputs, less half the round trip. */
 function serverTime(gun: Gun, t: number, now: number): number {
@@ -296,7 +312,7 @@ function publicStats(state: State): Record<string, ConfigStats> {
  * rewind is capped (`maxRewindMs`), so a lagging connection can't hit targets long gone.
  */
 function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger']): void {
-  if (state.phase !== 'playing' || (state.paused && state.mode === 'rounds') || state.mode === 'training') return;
+  if (state.phase !== 'playing' || state.paused || state.cal || state.mode === 'training') return;
   const now = state.room.elapsedMs;
   if (state.mode === 'rounds' && state.shotsLeft <= 0) {
     state.room.broadcast({ empty: { seat: gun.seat.id } });
@@ -424,6 +440,38 @@ export function buildResults(state: State): Results {
   return results;
 }
 
+/** Start the next calibration waiting (if none is on), pausing a game in progress. */
+function nextCalibration(state: State): void {
+  while (!state.cal && state.calQueue.length) {
+    const next = state.calQueue.shift()!;
+    const gun = state.guns.get(next.gun);
+    if (!gun || gun.mouse) continue;
+    state.cal = { gun: next.gun, stage: next.stage, poses: [] };
+    if ((state.phase === 'playing' || state.phase === 'roundEnd') && !state.paused) {
+      state.paused = true;
+      state.calPaused = true;
+    }
+  }
+  if (!state.cal && state.calPaused) {
+    state.calPaused = false;
+    state.paused = false;
+  }
+}
+
+/** Queue a calibration step for `gun` (once: a step already waiting or on is not added again). */
+function queueCalibration(state: State, gun: string, stage: CalStage): void {
+  if (state.cal?.gun === gun || state.calQueue.some((c) => c.gun === gun)) return;
+  state.calQueue.push({ gun, stage });
+  nextCalibration(state);
+}
+
+/** Stop `gun`'s calibration (on now and waiting), and start the next. */
+function dropCalibration(state: State, gun: string): void {
+  state.calQueue = state.calQueue.filter((c) => c.gun !== gun);
+  if (state.cal?.gun === gun) state.cal = null;
+  nextCalibration(state);
+}
+
 /** The phone was on the current dot at time `raw.t` (its clock): take the pose, and fit after the last dot. */
 function calibrationPoint(state: State, gun: Gun, raw: unknown): void {
   const cal = state.cal!;
@@ -437,26 +485,75 @@ function calibrationPoint(state: State, gun: Gun, raw: unknown): void {
   if (!pose) return;
   cal.poses.push(pose);
   if (cal.poses.length < CAL_POINTS.length) return;
-  state.cal = null;
-  const fit = fitCalibration(CAL_POINTS, cal.poses, state.tuning, state.aspect);
+  const primary = primaryGun(state) === gun;
+  const base = primary ? state.tuning : tuningFor(state, gun);
+  const fit = fitCalibration(CAL_POINTS, cal.poses, base, state.aspect);
   if (!fit) {
-    state.room.broadcast({ calibrationFailed: { reason: 'The phone barely moved between the dots. Point right at each one and try again.' } });
+    // Not good enough to go on: the same step again, from dot 1.
+    cal.poses = [];
+    state.room.broadcast({ calibrationFailed: { reason: 'The phone barely moved between the dots. Point right at each one and try again.', seat: gun.seat.id } });
     return;
   }
-  state.tuning = applyTune(state.tuning, fit.change);
-  state.cfg = configId(state.tuning);
+  if (primary) {
+    state.tuning = applyTune(state.tuning, fit.change);
+    state.cfg = configId(state.tuning);
+    state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
+  } else gun.fit = { ...gun.fit, ...fit.change };
   // The centre pose is the reference: the crosshair starts there.
   gun.aim.calibrate();
   gun.aim.ref = cal.poses[0]!;
-  state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
-  state.room.broadcast({ calibrated: { gain: r3(fit.gain), ratioY: r3(fit.ratioY), offsetX: r3(fit.offsetX), offsetY: r3(fit.offsetY), error: r3(fit.error), poor: fit.error > CAL_POOR } });
+  state.room.broadcast({
+    calibrated: { gain: r3(fit.gain), ratioY: r3(fit.ratioY), offsetX: r3(fit.offsetX), offsetY: r3(fit.offsetY), error: r3(fit.error), poor: fit.error > CAL_POOR, seat: gun.seat.id, stage: cal.stage },
+  });
+  // Step 1 leads straight into step 2 (now with the crosshair); after step 2, the next phone.
+  if (cal.stage === 'init') state.cal = { gun: gun.seat.id, stage: 'fine', poses: [] };
+  else {
+    state.cal = null;
+    nextCalibration(state);
+  }
+}
+
+const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+/** A prompt from the screen, or null if it isn't one (bounded: it goes to every phone). */
+export function readPrompt(raw: unknown): Prompt | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Record<string, unknown>;
+  if (!text(p.id, 40) || !text(p.title, 80) || (p.text !== undefined && !text(p.text, 200)) || !Array.isArray(p.options) || !p.options.length || p.options.length > 4) return null;
+  const options: Prompt['options'] = [];
+  for (const o of p.options as unknown[]) {
+    const r = o && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+    if (!text(r.id, 20) || !text(r.label, 40)) return null;
+    options.push({ id: r.id, label: r.label, ...(r.primary === true ? { primary: true } : {}) });
+  }
+  return { id: p.id, title: p.title, ...(typeof p.text === 'string' ? { text: p.text } : {}), options };
+}
+
+/** A phone's menu. Its own calibration from any phone; the rest from the first phone only. */
+function onMenu(state: State, gun: Gun, menu: unknown): void {
+  if (!menu || typeof menu !== 'object') return;
+  const m = menu as Record<string, unknown>;
+  if ('recalibrate' in m) queueCalibration(state, gun.seat.id, 'fine');
+  else if ('calRedo' in m) {
+    if (state.cal?.gun === gun.seat.id) state.cal.poses = [];
+  } else if ('calSkip' in m) dropCalibration(state, gun.seat.id);
+  else if (primaryGun(state) !== gun) return;
+  else if ('choose' in m && m.choose && typeof m.choose === 'object') {
+    const { prompt, option } = m.choose as { prompt?: unknown; option?: unknown };
+    const p = state.prompt;
+    if (!p || p.id !== prompt || !p.options.some((o) => o.id === option)) return;
+    state.prompt = null;
+    state.room.broadcast({ prompt: null });
+    state.room.broadcast({ chosen: { prompt: p.id, option: option as string } });
+  } else if (['mode', 'theme', 'tune', 'pause', 'range', 'finish', 'start'].some((k) => k in m)) onScreenEvent(state, m);
 }
 
 function addGun(state: State, seat: GamePlayer, mouse: boolean): void {
   if (state.guns.size >= MAX_GUNS) return;
   const used = new Set([...state.guns.values()].map((g) => g.color));
   const color = [0, 1, 2].find((c) => !used.has(c)) ?? 0;
-  state.guns.set(seat.id, { seat, mouse, color, aim: new Aim(), lastSeq: -1, lastSampleT: -Infinity, clock: [], rtt: 0, samples: [], lastShotAt: -Infinity });
+  state.guns.set(seat.id, { seat, mouse, color, aim: new Aim(), lastSeq: -1, lastSampleT: -Infinity, clock: [], rtt: 0, samples: [], lastShotAt: -Infinity, fit: null });
+  // Every phone that connects calibrates: step 1 (no crosshair), then step 2 (live crosshair).
+  if (!mouse) queueCalibration(state, seat.id, 'init');
 }
 
 function onGunInput(state: State, gun: Gun, input: Partial<GunInput>): void {
@@ -471,7 +568,7 @@ function onGunInput(state: State, gun: Gun, input: Partial<GunInput>): void {
   if (fin(input.rtt) && input.rtt >= 0 && input.rtt < 5000) gun.rtt = input.rtt;
   gun.clock.push(now - input.t * 1000);
   if (gun.clock.length > 120) gun.clock.shift();
-  const tuning = activeTuning(state);
+  const tuning = tuningFor(state, gun);
   const train = state.train && state.phase === 'playing' && !state.train.fit && state.train.gun === gun.seat.id ? state.train : null;
 
   if (gun.mouse) {
@@ -510,10 +607,17 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
   } else if ('mode' in event && (event.mode === 'rounds' || event.mode === 'range' || event.mode === 'training')) {
     if (event.mode !== state.mode) {
+      // Mid-game: this game ends (kept in the results, so it is saved) and the new one starts.
+      const wasPlaying = state.phase === 'playing' || state.phase === 'roundEnd';
       closeGame(state);
       state.mode = event.mode;
       state.train = null;
       newGame(state);
+      if (wasPlaying) {
+        state.paused = false;
+        if (state.mode === 'training') startTraining(state);
+        else startGame(state);
+      }
     }
   } else if ('range' in event && event.range && typeof event.range === 'object') {
     const r = event.range as { kind?: unknown; speed?: unknown };
@@ -523,10 +627,13 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     }
     if (fin(r.speed)) state.range.speed = Math.min(2, Math.max(0.1, r.speed));
   } else if ('start' in event) {
+    if (state.cal) return;
+    state.paused = false;
     if (state.mode === 'training') startTraining(state);
     else startGame(state);
   } else if ('pause' in event) {
     state.paused = event.pause === true;
+    state.calPaused = false;
   } else if ('ack' in event && event.ack && typeof event.ack === 'object') {
     const { shown, rtt, aim } = event.ack as { shown?: unknown; rtt?: unknown; aim?: unknown };
     if (!fin(shown) || !fin(rtt) || rtt < 0 || rtt > 5000) return;
@@ -538,11 +645,16 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
       state.aimLag = state.aimLag === null ? aimLag : state.aimLag * 0.8 + aimLag * 0.2;
     }
   } else if ('calibrate' in event) {
-    if (event.calibrate === 'cancel') state.cal = null;
-    else if (event.calibrate === 'points') {
-      const gun = [...state.guns.values()].find((g) => !g.mouse);
+    if (event.calibrate === 'cancel') {
+      if (state.cal) dropCalibration(state, state.cal.gun);
+    } else if (event.calibrate === 'skip') {
+      state.calQueue = [];
+      state.cal = null;
+      nextCalibration(state);
+    } else if (event.calibrate === 'points') {
+      const gun = primaryGun(state);
       if (!gun) state.room.broadcast({ calibrationFailed: { reason: 'Pair a phone first.' } });
-      else state.cal = { gun: gun.seat.id, poses: [] };
+      else queueCalibration(state, gun.seat.id, 'fine');
     }
   } else if ('view' in event && event.view && typeof event.view === 'object') {
     const aspect = (event.view as { aspect?: unknown }).aspect;
@@ -552,6 +664,9 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
   } else if ('theme' in event && isThemeChoice(event.theme)) {
     state.theme = { id: event.theme.id, palette: event.theme.palette };
     state.room.broadcast({ theme: state.theme });
+  } else if ('prompt' in event) {
+    state.prompt = event.prompt === null ? null : readPrompt(event.prompt);
+    state.room.broadcast({ prompt: state.prompt });
   }
 }
 
@@ -763,6 +878,9 @@ export function skyShot(opts: SkyShotOptions = {}) {
         aimLag: null,
         screenRtt: 0,
         cal: null,
+        calQueue: [],
+        calPaused: false,
+        prompt: null,
         guns: new Map(),
         targets: [],
         history: new TargetHistory(),
@@ -801,15 +919,16 @@ export function skyShot(opts: SkyShotOptions = {}) {
       state.room.send(player.id, { tuning: { tuning: state.tuning, id: state.cfg } });
       state.room.send(player.id, { stats: publicStats(state) });
       state.room.send(player.id, { theme: state.theme });
+      if (state.prompt) state.room.send(player.id, { prompt: state.prompt });
     },
 
     onLeave(state, player) {
       if (state.screen === player.id) state.screen = null;
       const gun = state.guns.get(player.id);
       if (gun) {
-        if (state.cal?.gun === gun.seat.id) state.cal = null;
         state.pending = state.pending.filter((p) => p.gun !== gun);
         state.guns.delete(player.id);
+        dropCalibration(state, gun.seat.id);
       }
     },
 
@@ -824,7 +943,9 @@ export function skyShot(opts: SkyShotOptions = {}) {
       const gun = state.guns.get(player.id);
       if (gun) {
         const now = state.room.elapsedMs;
-        if ('shot' in e && state.cal?.gun === gun.seat.id) {
+        if ('menu' in e) {
+          onMenu(state, gun, e.menu);
+        } else if ('shot' in e && state.cal?.gun === gun.seat.id) {
           calibrationPoint(state, gun, e.shot);
         } else if ('shot' in e && e.shot && typeof e.shot === 'object' && (gun.mouse || state.tuning.trigger === 'tap')) {
           const t = (e.shot as { t?: unknown }).t;
@@ -844,13 +965,15 @@ export function skyShot(opts: SkyShotOptions = {}) {
     tick(state, dt) {
       const now = state.room.elapsedMs;
       settleShots(state);
-      if (state.paused && state.mode === 'rounds') {
+      if (state.paused && state.mode !== 'training') {
         // Frozen: push every deadline back by the time that passed.
         const ms = dt * 1000;
         for (const t of state.targets) t.until += ms;
         if (state.nextReleaseAt !== null) state.nextReleaseAt += ms;
         state.phaseUntil += ms;
         for (const t of state.targets) t.born += ms;
+      } else if (state.cal && state.mode !== 'training') {
+        // Calibrating (outside a game): nothing moves.
       } else if (state.mode === 'rounds') tickRounds(state, dt, now);
       else if (state.mode === 'training') tickTraining(state, now);
       else tickRange(state, dt, now);
@@ -876,7 +999,9 @@ export function skyShot(opts: SkyShotOptions = {}) {
         left: state.toRelease,
         cfg: state.cfg,
       };
-      if (state.cal) snap.cal = { i: state.cal.poses.length, pts: CAL_POINTS };
+      if (state.cal) snap.cal = { i: state.cal.poses.length, pts: CAL_POINTS, gun: state.cal.gun, st: state.cal.stage, wait: state.calQueue.length };
+      const ctl = primaryGun(state);
+      if (ctl) snap.ctl = ctl.seat.id;
       if (state.mode === 'training') snap.tr = trainingView(state, state.room.elapsedMs);
       if (forPlayer.id === state.screen) {
         const first = [...state.guns.values()][0];

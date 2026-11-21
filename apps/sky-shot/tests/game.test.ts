@@ -35,8 +35,10 @@ function mouse(g: ReturnType<typeof playGame>, who = ANN) {
 }
 
 /** A phone gun: sends its last 8 samples every 16 ms, like the controller page. */
-function phone(g: ReturnType<typeof playGame>, who = ANN, device = 'gun') {
+function phone(g: ReturnType<typeof playGame>, who = ANN, device = 'gun', calibrate = false) {
   const p = g.join(who, { device }) as Player;
+  // Every phone calibrates on connect; most tests skip it.
+  if (!calibrate) p.event({ menu: { calSkip: true } });
   let seq = 0;
   const recent: WireSample[] = [];
   let pose = { yaw: 0, pitch: 0 };

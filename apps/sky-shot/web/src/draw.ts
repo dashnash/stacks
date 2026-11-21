@@ -137,7 +137,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, s
     for (const c of copies) if (now - c.at < theme.hitMs) drawTarget({ id: c.id, k: c.k, x: c.x, y: c.y, r: c.r, s: 1, h: c.h }, now - c.at);
     if (opts.hitboxes) for (const t of snap.tg) if (t.s === 0) hitbox(ctx, t.x * w, t.y * h, t.r * h * opts.hitboxes);
     for (const e of effects) step(() => theme.effect(ctx, e, w, h, now, p));
-    for (const g of opts.training && !opts.training.show ? [] : (opts.guns ?? snap.g)) {
+    // Step 1 of calibration points blind: no crosshair for the phone being calibrated.
+    const blind = opts.cal?.st === 'init' ? opts.cal.gun : undefined;
+    for (const g of opts.training && !opts.training.show ? [] : (opts.guns ?? snap.g).filter((x) => x.id !== blind)) {
       const trail = (opts.trails?.get(g.id) ?? []).map(([x, y]) => [x * w, y * h] as [number, number]);
       step(() => theme.crosshair(ctx, g, { x: g.x * w, y: g.y * h, raw: opts.overlay ? [g.rx * w, g.ry * h] : undefined }, h, now, p, trail));
     }

@@ -86,6 +86,8 @@ describe('5-point calibration in a room', () => {
     const screen = g.join(ANN, { device: 'screen' }) as TestPlayer<Snapshot>;
     screen.event({ view: { aspect: ASPECT } });
     const p = g.join(ANN, { device: 'gun' }) as TestPlayer<Snapshot>;
+    // Connecting starts step 1; these tests start their own.
+    p.event({ menu: { calSkip: true } });
     let seq = 0;
     let pose: Quat = IDENTITY;
     const recent: WireSample[] = [];
@@ -107,7 +109,7 @@ describe('5-point calibration in a room', () => {
     t.run(200);
     t.screen.event({ calibrate: 'points' });
     t.run(50);
-    expect(t.screen.state!.cal).toEqual({ i: 0, pts: CAL_POINTS });
+    expect(t.screen.state!.cal).toEqual({ i: 0, pts: CAL_POINTS, gun: t.phone.id, st: 'fine', wait: 0 });
     for (const [k, p] of CAL_POINTS.entries()) {
       t.point(poseFor(p, 1.2, 0.9, 0, 0, PISTOL));
       t.run(400);
@@ -147,3 +149,191 @@ describe('5-point calibration in a room', () => {
   });
 });
 
+
+describe('calibration on connect, and the controller menu', () => {
+  const ANN = 'ann@test.dev';
+  const BOB = 'bob@test.dev';
+  function room() {
+    const g = playGame(skyShot({ seed: 1 }), { maxPlayers: 3 });
+    const screen = g.join(ANN, { device: 'screen' }) as TestPlayer<Snapshot>;
+    screen.event({ view: { aspect: ASPECT } });
+    const phones: { p: TestPlayer<Snapshot>; pose: Quat; seq: number; recent: WireSample[] }[] = [];
+    const add = (who: string, device: string) => {
+      const ph = { p: g.join(who, { device }) as TestPlayer<Snapshot>, pose: IDENTITY as Quat, seq: 0, recent: [] as WireSample[] };
+      phones.push(ph);
+      return ph;
+    };
+    const run = (ms: number) => {
+      const end = g.now + ms;
+      while (g.now < end) {
+        for (const ph of phones) {
+          ph.recent.push({ t: g.now / 1000, q: ph.pose, r: [0, 0, 0.3], a: [0, 0, 0] });
+          if (ph.recent.length > 8) ph.recent.shift();
+          ph.p.input({ seq: ++ph.seq, t: g.now / 1000, rtt: 0, samples: [...ph.recent] });
+        }
+        g.advance(16);
+      }
+    };
+    /** Point at the five dots (as a player with gain `gain`) and tap each. */
+    const fiveDots = (ph: (typeof phones)[number], gain: number) => {
+      for (const p of CAL_POINTS) {
+        ph.pose = poseFor(p, gain, 1, 0, 0, PISTOL);
+        run(400);
+        ph.p.event({ shot: { t: g.now / 1000 } });
+        run(50);
+      }
+    };
+    const calibrated = () => (screen.events as ServerEvent[]).flatMap((e) => ('calibrated' in e ? [e.calibrated] : []));
+    return { g, screen, add, run, fiveDots, calibrated };
+  }
+
+  it('each phone runs step 1 (no crosshair) then step 2 (live crosshair), one phone at a time', () => {
+    const t = room();
+    const ann = t.add(ANN, 'gun');
+    t.run(100);
+    expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'init', i: 0, wait: 0 });
+    expect(t.screen.state!.ctl).toBe(ann.p.id);
+    const bob = t.add(BOB, 'gun-2');
+    t.run(100);
+    // Bob waits his turn.
+    expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'init', wait: 1 });
+    t.fiveDots(ann, 1.2);
+    expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'fine', i: 0 });
+    // Bob's taps don't count for Ann's dots, and don't shoot.
+    bob.p.event({ shot: { t: t.g.now / 1000 } });
+    t.run(50);
+    expect(t.screen.state!.cal!.i).toBe(0);
+    t.fiveDots(ann, 1.2);
+    expect(t.screen.state!.cal).toMatchObject({ gun: bob.p.id, st: 'init', wait: 0 });
+    const roomCfg = t.screen.state!.cfg;
+    t.fiveDots(bob, 2);
+    t.fiveDots(bob, 2);
+    expect(t.screen.state!.cal).toBeUndefined();
+    expect(t.calibrated().map((c) => [c.seat, c.stage])).toEqual([
+      [ann.p.id, 'init'],
+      [ann.p.id, 'fine'],
+      [bob.p.id, 'init'],
+      [bob.p.id, 'fine'],
+    ]);
+    // Bob's fit is his own: the room's tuning (Ann's) is unchanged, and each crosshair follows its own hand.
+    expect(t.screen.state!.cfg).toBe(roomCfg);
+    expect(t.calibrated()[0]!.gain).toBeCloseTo(1.2, 1);
+    expect(t.calibrated()[3]!.gain).toBeCloseTo(2, 1);
+    ann.pose = poseFor([0.3, 0.7], 1.2, 1, 0, 0, PISTOL);
+    bob.pose = poseFor([0.7, 0.3], 2, 1, 0, 0, PISTOL);
+    t.run(1500);
+    const [a, b] = t.screen.state!.g;
+    expect([a!.x, a!.y, b!.x, b!.y].map((v) => Math.round(v * 10) / 10)).toEqual([0.3, 0.7, 0.7, 0.3]);
+  });
+
+  it('a failed step starts over from dot 1; Redo and Skip; Re-calibrate is step 2 only', () => {
+    const t = room();
+    const ann = t.add(ANN, 'gun');
+    t.run(100);
+    // Barely moving: the same step again.
+    for (let i = 0; i < 5; i++) {
+      ann.p.event({ shot: { t: t.g.now / 1000 } });
+      t.run(200);
+    }
+    expect(t.screen.events).toContainEqual({ calibrationFailed: { reason: expect.stringMatching(/barely moved/), seat: ann.p.id } });
+    expect(t.screen.state!.cal).toMatchObject({ st: 'init', i: 0 });
+    t.fiveDots(ann, 1.2);
+    t.run(200);
+    ann.p.event({ shot: { t: t.g.now / 1000 } });
+    t.run(200);
+    expect(t.screen.state!.cal).toMatchObject({ st: 'fine', i: 1 });
+    ann.p.event({ menu: { calRedo: true } });
+    t.run(50);
+    expect(t.screen.state!.cal).toMatchObject({ st: 'fine', i: 0 });
+    ann.p.event({ menu: { calSkip: true } });
+    t.run(50);
+    expect(t.screen.state!.cal).toBeUndefined();
+    ann.p.event({ menu: { recalibrate: true } });
+    t.run(50);
+    expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'fine', i: 0 });
+  });
+
+  it('a phone that joins mid-game pauses it to calibrate, and the game goes on after', () => {
+    const t = room();
+    t.screen.event({ mode: 'range' });
+    t.screen.event({ start: true });
+    t.run(500);
+    expect(t.screen.state).toMatchObject({ ph: 'playing', pz: false });
+    const ann = t.add(ANN, 'gun');
+    t.run(100);
+    expect(t.screen.state).toMatchObject({ ph: 'playing', pz: true });
+    t.screen.event({ start: true }); // Start waits for calibration
+    t.run(50);
+    expect(t.screen.state!.pz).toBe(true);
+    ann.p.event({ menu: { calSkip: true } });
+    t.run(50);
+    expect(t.screen.state!.pz).toBe(false);
+  });
+
+  it("the first phone's menu drives the game: switching game mid-round ends it (saved) and starts the new one", () => {
+    const t = room();
+    const ann = t.add(ANN, 'gun');
+    ann.p.event({ menu: { calSkip: true } });
+    const bob = t.add(BOB, 'gun-2');
+    bob.p.event({ menu: { calSkip: true } });
+    t.run(100);
+    t.screen.event({ start: true });
+    t.run(200);
+    expect(t.screen.state).toMatchObject({ m: 'rounds', ph: 'playing', rd: 1 });
+    // Shoot once so the round has something to keep.
+    ann.p.event({ shot: { t: t.g.now / 1000 } });
+    t.run(100);
+    // The second phone can't change the game, the look or pause it.
+    bob.p.event({ menu: { mode: 'range' } });
+    bob.p.event({ menu: { pause: true } });
+    bob.p.event({ menu: { theme: { id: 'koi', palette: 'rice' } } });
+    t.run(100);
+    expect(t.screen.state).toMatchObject({ m: 'rounds', pz: false });
+    ann.p.event({ menu: { pause: true } });
+    t.run(50);
+    expect(t.screen.state!.pz).toBe(true);
+    ann.p.event({ menu: { theme: { id: 'koi', palette: 'rice' } } });
+    ann.p.event({ menu: { mode: 'range' } });
+    t.run(100);
+    expect(t.screen.state).toMatchObject({ m: 'range', ph: 'playing', pz: false });
+    expect(bob.p.events).toContainEqual({ theme: { id: 'koi', palette: 'rice' } });
+    ann.p.event({ menu: { finish: true } });
+    t.g.advance(100);
+    const results = t.g.ended!.results as { games: { mode: string; shots: number }[] };
+    expect(results.games.map((x) => [x.mode, x.shots])).toEqual([['rounds', 1]]);
+  });
+});
+
+describe('the controller starts games and answers the screen', () => {
+  it('only the first phone starts; prompts go to the phones and the answer comes back to the screen', () => {
+    const g = playGame(skyShot({ seed: 1 }), { maxPlayers: 3 });
+    const screen = g.join('ann@test.dev', { device: 'screen' }) as TestPlayer<Snapshot>;
+    const ann = g.join('ann@test.dev', { device: 'gun' }) as TestPlayer<Snapshot>;
+    const bob = g.join('bob@test.dev', { device: 'gun-2' }) as TestPlayer<Snapshot>;
+    ann.event({ menu: { calSkip: true } });
+    bob.event({ menu: { calSkip: true } });
+    g.advance(100);
+    bob.event({ menu: { start: true } });
+    g.advance(100);
+    expect(screen.state!.ph).toBe('ready');
+    ann.event({ menu: { start: true } });
+    g.advance(100);
+    expect(screen.state!.ph).toBe('playing');
+    const prompt = { id: 'fit', title: 'Your fitted aim', options: [{ id: 'use', label: 'Use the fit', primary: true }, { id: 'keep', label: 'Keep mine' }] };
+    screen.event({ prompt: { ...prompt, options: [...prompt.options, { id: 'x'.repeat(30), label: 'too long an id' }] } });
+    g.advance(50);
+    expect(ann.events).toContainEqual({ prompt: null });
+    screen.event({ prompt });
+    g.advance(50);
+    expect(ann.events).toContainEqual({ prompt });
+    // Only the first phone answers, and only with one of the options.
+    bob.event({ menu: { choose: { prompt: 'fit', option: 'use' } } });
+    ann.event({ menu: { choose: { prompt: 'fit', option: 'nope' } } });
+    g.advance(50);
+    expect((screen.events as ServerEvent[]).some((e) => 'chosen' in e)).toBe(false);
+    ann.event({ menu: { choose: { prompt: 'fit', option: 'keep' } } });
+    g.advance(50);
+    expect(screen.events).toContainEqual({ chosen: { prompt: 'fit', option: 'keep' } });
+    expect(screen.events.at(-2)).toEqual({ prompt: null });
+  });
+});

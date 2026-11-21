@@ -61,6 +61,63 @@ async function renderDemo(as?: string, withPhone = false) {
 
 const T = { timeout: 8000 };
 
+/** The phone's connect-time calibration, skipped (the calibration tests walk it). */
+async function skipCalibration(phone: HTMLElement) {
+  await userEvent.click(await within(phone).findByRole('button', { name: 'Skip' }, T));
+}
+/** Pick a game on the phone's menu (the controller runs the game). */
+async function pickGame(phone: HTMLElement, name: 'Rounds' | 'Range' | 'Training') {
+  await userEvent.click(await within(phone).findByRole('radio', { name: new RegExp(`^${name}`) }, T));
+}
+/** Play, pair the pretend phone, skip its calibration, and pick a game. */
+async function playOn(name: 'Rounds' | 'Range' | 'Training' = 'Rounds') {
+  await userEvent.click(await screen.findByRole('button', { name: 'Play' }, T));
+  const phone = await screen.findByTestId('phone');
+  await skipCalibration(phone);
+  if (name !== 'Rounds') await pickGame(phone, name);
+  return phone;
+}
+
+describe('Whee: pre-warming', () => {
+  // jsdom has no matchMedia: a desktop has a fine pointer, a phone doesn't.
+  const pointer = (fine: boolean) =>
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: (q: string) => ({ matches: fine && q === '(pointer: fine)', media: q }) as MediaQueryList });
+  afterEach(() => Reflect.deleteProperty(window, 'matchMedia'));
+
+  it('starts a server on the title screen (desktop), and Play takes it instead of starting another', async () => {
+    pointer(true);
+    const demo = createDemo({ ...demoOptions(), storageKey: false, gameStartDelayMs: 300 });
+    demos.push(demo);
+    const start = vi.spyOn(demo.games!, 'start');
+    await demo.signInAs(MAX);
+    render(<DemoApp demo={demo}><App /></DemoApp>);
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1), T);
+    const warmId = start.mock.calls[0]![0];
+    // Play waits for the server, showing how it's going.
+    expect(await screen.findByRole('status', { name: 'Getting your game ready' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled(), T);
+    expect(screen.getByText('Your game is ready')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await waitFor(() => expect(window.location.hash).toBe(`#/play/${warmId}/rounds`), T);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Use the mouse instead', {}, T)).toBeInTheDocument();
+    expect(screen.queryByText('Starting the game server…')).toBeNull();
+  });
+
+  it("doesn't warm on a phone (it joins by code)", async () => {
+    pointer(false);
+    const demo = createDemo({ ...demoOptions(), storageKey: false, gameStartDelayMs: 30 });
+    demos.push(demo);
+    const start = vi.spyOn(demo.games!, 'start');
+    await demo.signInAs(MAX);
+    render(<DemoApp demo={demo}><App /></DemoApp>);
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(start).not.toHaveBeenCalled();
+  });
+});
+
 describe('Whee: title and leaderboard', () => {
   it('signed out: the title, the leaderboard with first names, and Sign in to play', async () => {
     await renderDemo();
@@ -88,34 +145,38 @@ describe('Whee: playing', () => {
   it('Play starts a room and shows the QR code and code to pair the phone', async () => {
     await renderDemo(MAX);
     await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
-    expect(await screen.findByText('Pair your phone', {}, T)).toBeInTheDocument();
+    expect(await screen.findByText('Pair your controller', {}, T)).toBeInTheDocument();
     const id = window.location.hash.split('/')[2]!;
     const qr = screen.getByRole('img', { name: 'QR code to open the gun on your phone' });
     expect(qr.closest('a')).toHaveAttribute('href', gunLink(id));
     expect(screen.getByText(/^[A-HJKMNP-Z2-9]{4}$/)).toHaveClass('code');
   });
 
-  it('pairs the phone as a second seat, calibrates, starts, and a tap fires a shot the server judges', async () => {
+  it('pairs the phone as a second seat, calibrates, starts from the phone, and a tap fires a shot the server judges', async () => {
     await renderDemo(MAX, true);
     await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
-    // The phone (same person, device "gun") joins: the screen goes to Calibrate.
+    // The phone (same person, device "gun") joins: it calibrates first, step 1 with no crosshair.
     const phone = await screen.findByTestId('phone');
     await waitFor(() => expect(within(phone).getByText(/^Live/)).toBeInTheDocument(), T);
-    expect(await screen.findByText('Point your phone at the dot and tap Calibrate', {}, T)).toBeInTheDocument();
-    await userEvent.click(within(phone).getByRole('button', { name: 'Calibrate' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Start Round 1' }));
+    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Player 1 · Step 1 of 2 · Initialize · Dot 1 of 5');
+    expect(await within(phone).findByText('Step 1 of 2 · Initialize', {}, T)).toBeInTheDocument();
+    await skipCalibration(phone);
+    // The lobby: the phone has the menu, the screen starts.
+    expect(await within(phone).findByText('Rounds · Dusk', {}, T)).toBeInTheDocument();
+    expect(await screen.findByText('Pick the game and start it on your phone.', {}, T)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog', { name: 'Ready' })).queryByRole('button', { name: /^Start/ })).toBeNull();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start Round 1' }, T));
     await waitFor(() => expect(screen.getByLabelText('3 shots left')).toBeInTheDocument(), T);
 
-    await userEvent.pointer({ keys: '[MouseLeft>]', target: within(phone).getByRole('button', { name: 'Fire' }) });
+    await userEvent.pointer({ keys: '[MouseLeft>]', target: await within(phone).findByRole('button', { name: 'Fire' }, T) });
     await waitFor(() => expect(screen.queryByLabelText('3 shots left')).toBeNull(), T);
     expect(screen.getByLabelText(/^[0-2] shots left$/)).toBeInTheDocument();
   }, 20_000);
 
   it('the tuning panel sends changes live: flick mode turns the trigger off and a jolt fires', async () => {
     await renderDemo(MAX, true);
-    await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
-    const phone = await screen.findByTestId('phone');
-    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const phone = await playOn('Range');
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start the Range' }, T));
     await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     const before = within(panel).getByText(/^config /).textContent;
@@ -133,9 +194,14 @@ describe('Whee: playing', () => {
   it('plays with the mouse when there is no phone', async () => {
     await renderDemo(MAX);
     await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Use mouse instead' }, T));
-    expect(await screen.findByRole('button', { name: 'Start Round 1' }, T)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Use the mouse instead' }, T));
+    expect(await screen.findByRole('button', { name: 'Start Round 1 (Enter)' }, T)).toBeInTheDocument();
     expect(screen.getByText('● mouse')).toBeInTheDocument();
+    // No phone: the screen has the menu, and Training needs a phone.
+    const lobby = screen.getByRole('dialog', { name: 'Ready' });
+    expect(within(lobby).getByRole('radio', { name: /^Training/ })).toBeDisabled();
+    await userEvent.click(within(lobby).getByRole('radio', { name: /^Range/ }));
+    expect(await screen.findByRole('button', { name: 'Start the Range (Enter)' }, T)).toBeInTheDocument();
   }, 15_000);
 });
 
@@ -148,14 +214,13 @@ describe('Whee: the look', () => {
 
   it('the screen and the phone wear the look; the tuning panel can change it and show hitboxes', async () => {
     await renderDemo(MAX, true);
-    await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
-    const phone = await screen.findByTestId('phone');
-    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const phone = await playOn('Range');
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start the Range' }, T));
     const play = screen.getByLabelText('Whee play area').closest('.screen') as HTMLElement;
     expect(play).toHaveAttribute('data-theme', 'dusk');
     expect(play.style.getPropertyValue('--hud-accent')).toBe('#ffd23f');
     await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'dusk'), T);
-    expect(within(phone).getByRole('button', { name: 'Fire' })).toHaveTextContent('FIRE');
+    expect(await within(phone).findByRole('button', { name: 'Fire' }, T)).toHaveTextContent('FIRE');
     await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     expect(within(panel).getByLabelText('Look (L)')).toHaveValue('dusk/dusk');
@@ -180,16 +245,15 @@ describe('Whee: the look', () => {
     const again = await screen.findByRole('radiogroup', { name: 'Look' });
     await waitFor(() => expect(within(again).getByRole('radio', { name: 'Ink Koi' })).toHaveAttribute('aria-checked', 'true'), T);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Range' }));
-    const phone = await screen.findByTestId('phone');
-    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const phone = await playOn('Range');
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start the Range' }, T));
     const play = screen.getByLabelText('Whee play area').closest('.screen') as HTMLElement;
     expect(play).toHaveAttribute('data-theme', 'koi');
     expect(play).toHaveAttribute('data-palette', 'rice');
     expect(play.style.getPropertyValue('--gun-bg')).toBe('#ede4cf');
     // The room's theme event reaches the phone.
     await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'koi'), T);
-    expect(within(phone).getByRole('button', { name: 'Fire' })).toHaveTextContent('Tap to catch');
+    expect(await within(phone).findByRole('button', { name: 'Fire' }, T)).toHaveTextContent('Tap to catch');
   }, 20_000);
 
   it('ignores a look in this browser that does not exist', async () => {
@@ -200,46 +264,108 @@ describe('Whee: the look', () => {
   });
 });
 
-describe('Whee: 5-point calibration', () => {
-  it('walks five dots with the phone, applies the fit and saves it; the next room starts with it', async () => {
-    await renderDemo(MAX, true);
-    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
-    const phone = await screen.findByTestId('phone');
-    await waitFor(() => expect(within(phone).getByText(/^Live/)).toBeInTheDocument(), T);
-    await userEvent.click(await screen.findByRole('button', { name: 'Calibrate (5 dots)' }, T));
-    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Dot 1 of 5');
-    const dots: [number, number][] = [
-      [0.5, 0.5],
-      [0.15, 0.2],
-      [0.85, 0.2],
-      [0.85, 0.8],
-      [0.15, 0.8],
-    ];
+describe('Whee: calibration on connect', () => {
+  const dots: [number, number][] = [
+    [0.5, 0.5],
+    [0.15, 0.2],
+    [0.85, 0.2],
+    [0.85, 0.8],
+    [0.15, 0.8],
+  ];
+  /** Point at each dot (gain 1.5 widths/rad), hold a moment, tap. */
+  async function fiveDots(phone: HTMLElement) {
     for (const [k, [x, y]] of dots.entries()) {
-      // Point at the dot (gain 1.5 widths/rad), hold a moment, tap.
       act(() => motion.set({ roll: 0, pitch: -(y - 0.5) / (1.5 * 1.6), yaw: -(x - 0.5) / 1.5 }));
       await new Promise((r) => setTimeout(r, 350));
       await userEvent.pointer({ keys: '[MouseLeft>]', target: await within(phone).findByRole('button', { name: `On the dot (${k + 1} of 5)` }, T) });
       await userEvent.pointer({ keys: '[/MouseLeft]' });
     }
+  }
+
+  it('step 1 (no crosshair) then step 2 (live crosshair); the fit is saved and the next room starts with it', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    const phone = await screen.findByTestId('phone');
+    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Step 1 of 2 · Initialize');
+    expect(screen.getByText('No crosshair yet: this finds where your phone points.')).toBeInTheDocument();
+    await fiveDots(phone);
+    expect(await within(phone).findByText('Step 2 of 2 · Calibrate', {}, T)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Calibrating' })).toHaveTextContent('Put the crosshair on the dot and tap'), T);
+    await fiveDots(phone);
     expect(await screen.findByText(/^Calibrated: .* Saved as your default\.$/, {}, T)).toBeInTheDocument();
+    // Re-calibrate from the phone's menu: step 2 only.
+    await userEvent.click(await within(phone).findByRole('button', { name: /^Re-calibrate/ }, T));
+    expect(await within(phone).findByText('Step 2 of 2 · Calibrate', {}, T)).toBeInTheDocument();
+    await skipCalibration(phone);
     // The saved default carries to a new room.
     act(() => void (window.location.hash = '#/'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Range' }, T));
-    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const phone2 = await playOn('Range');
+    await userEvent.click(await within(phone2).findByRole('button', { name: 'Start the Range' }, T));
     await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     await waitFor(() => expect(within(panel).getByRole('slider', { name: /^Turn gain/ })).not.toHaveValue('1.6'), T);
+  }, 40_000);
+});
+
+describe('Whee: the controller', () => {
+  it('swaps the look mid-round, pauses into the menu, switches game live, and exits to the title', async () => {
+    await renderDemo(MAX, true);
+    const phone = await playOn();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start Round 1' }, T));
+    await waitFor(() => expect(screen.getByLabelText('3 shots left')).toBeInTheDocument(), T);
+    const play = screen.getByLabelText('Whee play area').closest('.screen') as HTMLElement;
+    // The look chip: the next look, live, without pausing (and it's kept as yours).
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Look: Dusk. Tap for the next look' }, T));
+    await waitFor(() => expect(play).toHaveAttribute('data-theme', 'koi'), T);
+    expect(screen.queryByText('Paused')).toBeNull();
+    // Pause: the screen says the menu is on the phone.
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Pause' }, T));
+    expect(await screen.findByText('The menu is on your phone.', {}, T)).toBeInTheDocument();
+    // Switching game ends the round and starts the Range.
+    await pickGame(phone, 'Range');
+    await waitFor(() => expect(screen.getByText(/^Range · /)).toBeInTheDocument(), T);
+    expect(screen.queryByText('The menu is on your phone.')).toBeNull();
+    // Exit from the phone, confirmed: saved, and the screen goes back to the title.
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Pause' }, T));
+    await userEvent.click(await within(phone).findByRole('button', { name: '← Exit to menu' }, T));
+    await userEvent.click(within(phone).getByRole('button', { name: 'Exit' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'), T);
+  }, 30_000);
+
+  it('the screen only exits: Esc asks in a game (a second Esc exits), and exits at once outside one', async () => {
+    await renderDemo(MAX, true);
+    const phone = await playOn();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start Round 1' }, T));
+    await waitFor(() => expect(screen.getByLabelText('3 shots left')).toBeInTheDocument(), T);
+    await userEvent.keyboard('{Escape}');
+    const ask = await screen.findByRole('alertdialog', { name: 'Exit to menu?' }, T);
+    await userEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog', { name: 'Exit to menu?' })).toBeNull();
+    // Paused from the phone: no Resume on the screen, only Exit.
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Pause' }, T));
+    const card = (await screen.findByText('The menu is on your phone.', {}, T)).closest('.overlay') as HTMLElement;
+    expect(within(card).queryByRole('button', { name: 'Resume' })).toBeNull();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Resume' }, T));
+    await waitFor(() => expect(screen.queryByText('The menu is on your phone.')).toBeNull(), T);
+    await userEvent.keyboard('{Escape}');
+    await screen.findByRole('alertdialog', { name: 'Exit to menu?' }, T);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(window.location.hash).toBe('#/'), T);
+    // Outside a game (the lobby), Esc exits.
+    await playOn();
+    await screen.findByText('Pick the game and start it on your phone.', {}, T);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(window.location.hash).toBe('#/'), T);
   }, 30_000);
 });
 
 describe('Whee: training', () => {
   it('Train the aim pairs the phone, explains, and runs the script with the phone told to watch the screen', async () => {
     await renderDemo(MAX, true);
-    await userEvent.click(await screen.findByRole('button', { name: /Train the aim/ }));
-    const phone = await screen.findByTestId('phone');
+    const phone = await playOn('Training');
     expect(await screen.findByRole('dialog', { name: 'Training' }, T)).toHaveTextContent('When the crosshair vanishes');
-    await userEvent.click(screen.getByRole('button', { name: 'Start training' }));
+    expect(screen.queryByRole('button', { name: 'Start training' })).toBeNull();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start training' }, T));
     expect(await screen.findByText(/^[12] \/ 31$/, {}, T)).toBeInTheDocument();
     expect(await within(phone).findByText(/follow the dot/, {}, T)).toBeInTheDocument();
     expect(within(phone).queryByRole('button', { name: 'Fire' })).toBeNull();
@@ -275,8 +401,8 @@ describe('Whee: training', () => {
 
   it('"Save as my default" sticks: the next room starts with it', async () => {
     await renderDemo(MAX, true);
-    await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const first = await playOn('Range');
+    await userEvent.click(await within(first).findByRole('button', { name: 'Start the Range' }, T));
     await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     await userEvent.selectOptions(within(panel).getByLabelText('Trigger'), 'flick');
@@ -285,8 +411,9 @@ describe('Whee: training', () => {
     expect(await screen.findByText('Saved as your default', {}, T)).toBeInTheDocument();
     // A new room: the screen sends the saved default, and the phone switches to flick.
     act(() => void (window.location.hash = '#/'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Play' }, T));
-    expect(await within(await screen.findByTestId('phone')).findByRole('button', { name: 'Flick to fire' }, T)).toBeInTheDocument();
+    const phone = await playOn();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Start Round 1' }, T));
+    expect(await within(phone).findByRole('button', { name: 'Flick to fire' }, T)).toBeInTheDocument();
   }, 25_000);
 });
 
