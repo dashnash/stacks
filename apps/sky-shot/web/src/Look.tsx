@@ -9,7 +9,8 @@ import { DEFAULT_THEME, isThemeChoice, THEME_IDS, THEME_PALETTES, type ThemeChoi
 import { drawThumb } from './draw';
 import { THEMES } from './themes';
 
-const STORAGE_KEY = 'sky-shot:theme';
+/** Where the look is kept in this browser (signed out, the demo). */
+export const STORAGE_KEY = 'sky-shot:theme';
 
 function readLocal(): ThemeChoice {
   try {

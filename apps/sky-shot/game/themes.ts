@@ -8,6 +8,9 @@
 /** Each theme and its palettes, the first palette being the theme's default. */
 export const THEME_PALETTES = {
   dusk: ['dusk'],
+  koi: ['rice', 'moon'],
+  neon: ['midnight', 'amber'],
+  stars: ['dusk', 'indigo'],
 } as const satisfies Record<string, readonly [string, ...string[]]>;
 
 export type ThemeId = keyof typeof THEME_PALETTES;

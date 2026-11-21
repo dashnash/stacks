@@ -189,3 +189,67 @@ describe('drawing a frame', () => {
     expect(dashed).toHaveLength(1);
   });
 });
+
+describe('Ink Koi', () => {
+  const koi = THEMES.koi;
+  it('Rice paper is its default, catches sink for a second, and the phone says catch', () => {
+    expect(THEME_PALETTES.koi[0]).toBe('rice');
+    expect(themeOf({ id: 'koi', palette: 'rice' }).palette.name).toBe('Rice paper');
+    expect(themeOf({ id: 'koi', palette: 'moon' }).palette.name).toBe('Moon pond');
+    expect(koi.hitMotion).toBe('sink');
+    expect(koi.hitMs).toBe(1000);
+    expect(koi.verb).toEqual({ tap: 'Tap to catch', flick: 'Flick to catch' });
+    expect(koi.fonts.join()).toMatch(/Yuji Syuku.*Shippori Mincho/);
+  });
+
+  it('a caught target shrinks and fades out over its second (times in ms)', () => {
+    const p = koi.palettes.rice!;
+    const scaleAt = (hitAge: number) => {
+      const { ctx } = fakeCtx();
+      ctx.globalAlpha = 1;
+      // The first scale is the sink's; note the alpha it set just before.
+      let seen: { alpha: number; scale: number } | undefined;
+      ctx.scale = (x: number) => void (seen ??= { alpha: ctx.globalAlpha, scale: x });
+      koi.target(ctx, target({ s: 1 }), 20, 5_000, p, hitAge);
+      return seen!;
+    };
+    expect(scaleAt(0)).toEqual({ alpha: 1, scale: 1 });
+    expect(scaleAt(500).scale).toBeCloseTo(1 - 0.5 * 0.45);
+    expect(scaleAt(1000).alpha).toBe(0);
+  });
+
+  it('draws its own calibration dots (Dusk\'s white and lime vanish on rice paper)', () => {
+    expect(koi.calibration).toBeDefined();
+    const { ctx, calls } = fakeCtx();
+    koi.calibration!(ctx, 800, 450, 0, koi.palettes.rice!, { centre: true, cal: { i: 1, pts: [[0.5, 0.5], [0.2, 0.2]] } });
+    expect(calls.filter((c) => c.name === 'arc').length).toBeGreaterThan(50);
+  });
+});
+
+describe('Stargazer', () => {
+  const stars = THEMES.stars;
+  const p = stars.palettes.dusk!;
+
+  it('hangs a sleeping star on a thread that reaches the top of the play area', () => {
+    const { ctx, calls } = fakeCtx();
+    const h = 540;
+    const t = target({ k: 2, y: 0.4, r: 0.06 });
+    stars.target(ctx, t, t.r * h, 0, p, -1);
+    const thread = calls.find((c) => c.name === 'lineTo');
+    expect(thread?.args[0]).toBe(0);
+    expect(thread?.args[1]).toBeCloseTo(-0.4 * h);
+  });
+
+  it('a hit star pops, then has faded out by the end of hitMs', () => {
+    expect(stars.hitMotion).toBe('hold');
+    const at = (hitAge: number) => {
+      const { ctx, calls } = fakeCtx();
+      ctx.globalAlpha = 1;
+      stars.target(ctx, target({ k: 0 }), 27, 0, p, hitAge);
+      return { scale: calls.find((c) => c.name === 'scale')?.args[0] as number, alpha: ctx.globalAlpha };
+    };
+    expect(at(150).scale).toBeCloseTo(1.35);
+    expect(at(500)).toEqual({ scale: 1, alpha: 1 });
+    expect(at(stars.hitMs).alpha).toBe(0);
+  });
+});
