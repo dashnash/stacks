@@ -45,7 +45,7 @@ export type ServerEvent =
   | { event: unknown }
   /** Answer to a ping: the client's own timestamp back. */
   | { pong: number }
-  /** Game over: `idle`, `unused` (nobody joined), `time`, `stopped`, `error`, or the game's own reason. */
+  /** Game over: `idle`, `unused` (pre-warmed, never taken), `time`, `stopped`, `error`, or the game's own reason. */
   | { over: { reason: string; results?: unknown } };
 
 /** Client → server on `events`. */

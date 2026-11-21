@@ -221,6 +221,42 @@ describe('pre-warming', () => {
     expect(t.games.stopped).toEqual([bobs]);
   });
 
+  it('starts one server for two warm-ups at once, and warms again once the last was taken', async () => {
+    const t = harness();
+    const [a, b] = await Promise.all([warm(t), warm(t)]);
+    // The second finds the first's room (200), or its lock while it starts (409).
+    expect([a!.status, b!.status]).toContain(201);
+    expect(t.games.started).toHaveLength(1);
+    // A lock that another request just wrote: 409, nothing started.
+    const other = harness();
+    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev'), roomId: 'r-in-flight', at: other.deps.now().toISOString() });
+    const busy = await warm(other);
+    expect([busy.status, busy.body.code]).toEqual([409, 'ALREADY_WARMING']);
+    expect(other.games.started).toEqual([]);
+    await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    // Back on the title screen after the game: a new warm room, no lock left behind.
+    const next = await warm(t);
+    expect(next.status).toBe(201);
+    expect(t.games.started).toHaveLength(2);
+  });
+
+  it('replaces a warm-up lock left behind by a room that crashed', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    t.games.crash(id);
+    t.advance(61_000);
+    expect((await warm(t)).status).toBe(201);
+  });
+
+  it("doesn't go over maxRooms when two POST /rooms race for one warm room", async () => {
+    const t = harness({ ...manifest, gameServer: { maxRooms: 2 } });
+    await warm(t);
+    await openRoom(t, bob);
+    const both = await Promise.all([0, 1].map(() => t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} })));
+    expect(both.map((r) => r.status).sort()).toEqual([201, 429]);
+    expect(t.games.started).toHaveLength(2);
+  });
+
   it('lets only one of two POST /rooms at once take the warm room', async () => {
     const t = harness();
     const id = (await warm(t)).body.room.id;

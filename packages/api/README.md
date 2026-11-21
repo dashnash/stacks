@@ -160,7 +160,7 @@ module on, these member routes exist (you write none of them):
 | Route | Does |
 |---|---|
 | `POST /rooms { name? }` | Creates a room (`{ room }`, 201) and starts its server (30-60 s to `open`), or takes over the caller's warm room (below). 429 `TOO_MANY_GAMES` at the manifest's `maxRooms`. |
-| `POST /rooms/warm` | Pre-warms: starts a hidden room for the caller (201), or returns their warm room (200). Not audited; 429 at `maxRooms`. |
+| `POST /rooms/warm` | Pre-warms: starts a hidden room for the caller (201), or returns their warm room (200). Not audited; 429 at `maxRooms`; 409 `ALREADY_WARMING` while their last warm-up is still starting. |
 | `GET /rooms` | Open and starting rooms with player counts. Also sweeps: rooms whose server is gone or over time are closed. |
 | `GET /rooms/:id`, `GET /rooms/by-code/:code` | One room (ended ones stay readable for 7 days, with `results`). |
 | `POST /rooms/:id/join { device? }` | `{ ticket, iceServers, channels, player, room }`: a 60 s join ticket for the caller's seat on `device`. 409 `ROOM_FULL` / `ROOM_ENDED` / `ROOM_STARTING`; 400 for a bad label. |

@@ -58,6 +58,35 @@ describe('usePrewarmRoom', () => {
     vi.setSystemTime(Date.parse('2026-11-21T10:06:00Z'));
     await act(async () => hide('visible'));
     expect(api.post).toHaveBeenCalledTimes(2);
+    // Off during a game (Play took the warm room), on again back at the title: the next one warms at once.
+    for (const on of [false, true])
+      view.rerender(
+        <StacksProvider client={api} silentSignIn={false}>
+          <Title on={on} />
+        </StacksProvider>,
+      );
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
+  });
+
+  it('tries again a minute after a refusal, with the tab left open', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let refuse = true;
+    const api = client(async () => {
+      if (refuse) throw new ApiError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
+      return { room: { id: 'r1', warm: true, warmUntil: new Date(Date.now() + 300_000).toISOString() } };
+    });
+    render(
+      <StacksProvider client={api} silentSignIn={false}>
+        <Title on />
+      </StacksProvider>,
+    );
+    for (let i = 0; i < 10 && !(api.post as ReturnType<typeof vi.fn>).mock.calls.length; i++) await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    refuse = false;
+    await act(async () => vi.advanceTimersByTimeAsync(59_000));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(api.post).toHaveBeenCalledTimes(2);
   });
 
   it('is quiet when refused, and does nothing signed out', async () => {

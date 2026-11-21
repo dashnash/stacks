@@ -28,6 +28,11 @@ export const OVERTIME_GRACE_MS = 5 * 60_000;
  * as `unused` before anyone joined): it is retired and a fresh one starts.
  */
 export const WARM_ADOPT_MARGIN_MS = 30_000;
+/**
+ * A person's warm-up lock younger than this is a server still being started: a second
+ * `POST /rooms/warm` meanwhile gets 409 `ALREADY_WARMING` instead of starting another.
+ */
+export const WARM_LOCK_MS = 60_000;
 /** STUN only: what a join gets when the platform has no TURN key. */
 export const STUN_ONLY: IceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478'] }];
 /** The platform's TURN key (SSM names under `/stacks/<env>/secrets/platform/`). */
@@ -75,6 +80,8 @@ export const roomKeys = {
   code: (code: string) => ({ PK: codePk(code), SK: 'META' }),
   /** Written once (if absent) by whoever takes a warm room: its creator's `POST /rooms`, or the sweeper retiring it. */
   claim: (id: string) => ({ PK: roomPk(id), SK: 'CLAIM' }),
+  /** One person's warm room (written if absent, so two warm-ups at once start one server). */
+  warmLock: (userId: string) => ({ PK: `ROOMWARM#${userId}`, SK: 'META' }),
 };
 
 export type RoomStatus = 'starting' | 'open' | 'ended';
@@ -366,10 +373,18 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     }
   }
 
+  /** Free a person's warm-up lock if it is still this room's. */
+  async function unlock(userId: string, roomId: string): Promise<void> {
+    const key = roomKeys.warmLock(userId);
+    const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
+    if (lock?.roomId === roomId) await store.delete(key.PK, key.SK);
+  }
+
   /** End a warm room nobody took (expired, or making space under `maxRooms`). */
   async function retire(m: RoomMeta): Promise<void> {
     await deps.games.stop(m.id).catch((err) => log.error('Warm game server not stopped', { roomId: m.id, error: err }));
     await finish(m, 'unused');
+    await unlock(m.createdBy, m.id);
     await announceEnd(m.id);
   }
 
@@ -406,8 +421,8 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
   }
 
   /** Start a room's server and record it (`warm`: pre-warmed, hidden until its creator takes it). */
-  async function start(creator: { id: string; name: string }, opts: { name?: string; warm?: boolean }): Promise<Room> {
-    const id = deps.newId();
+  async function start(creator: { id: string; name: string }, opts: { name?: string; warm?: boolean; id?: string }): Promise<Room> {
+    const id = opts.id ?? deps.newId();
     if (!ROOM_ID.test(id)) throw new Error(`Room id "${id}" can't be a channel segment (letters, digits and "-")`);
     let code = '';
     for (let attempt = 0; ; attempt++) {
@@ -458,18 +473,20 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     async create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
       let going = await active();
       const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
-      if (mine) {
-        const fresh = ageOf(mine.meta) < warmMs - WARM_ADOPT_MARGIN_MS;
-        if (await claim(mine.meta)) {
-          if (fresh) {
-            const { warm: _warm, ...rest } = mine.meta;
-            const taken: RoomMeta = { ...rest, name: opts.name?.trim() || `${creator.name}'s game` };
-            await store.put(taken);
-            return view(store, taken, warmMs);
-          }
-          await retire(mine.meta);
+      // Claimed by a request a moment ago: it's that request's game now, and still counts below.
+      if (mine && (await claim(mine.meta))) {
+        // Re-read it: it may have ended since the list was read (ended by its creator, or its server stopped).
+        const now = await meta(mine.meta.id);
+        const room = now && (await view(store, now, warmMs));
+        if (now?.warm && room?.status !== 'ended' && ageOf(now) < warmMs - WARM_ADOPT_MARGIN_MS) {
+          const { warm: _warm, ...rest } = now;
+          const taken: RoomMeta = { ...rest, name: opts.name?.trim() || `${creator.name}'s game` };
+          await store.put(taken);
+          await unlock(creator.id, taken.id);
+          return view(store, taken, warmMs);
         }
-        // Taken by a request a moment ago, or about to expire: start a fresh one.
+        // About to expire, or already over: retire it and start a fresh one.
+        if (now) await retire(now);
         going = going.filter((r) => r !== mine);
       }
       if (going.length >= settings.maxRooms) {
@@ -496,7 +513,35 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
       if (mine) return { room: mine.room, started: false };
       if (going.length >= settings.maxRooms) throw tooMany();
-      return { room: await start(creator, { warm: true }), started: true };
+      // One at a time per person: a lock naming the room, written only if absent.
+      const id = deps.newId();
+      const key = roomKeys.warmLock(creator.id);
+      const lock = async () => {
+        const now = deps.now();
+        await store.put({ ...key, roomId: id, at: now.toISOString(), expiresAt: Math.floor(now.getTime() / 1000) + settings.warmMinutes * 60 + 3600 }, { ifNotExists: true });
+      };
+      try {
+        await lock();
+      } catch (err) {
+        if (!(err instanceof ConditionFailedError)) throw err;
+        const held = await store.get<Item & { at?: string }>(key.PK, key.SK);
+        const busy = () => new HttpError(409, 'Already warming a game for you', 'ALREADY_WARMING');
+        if (held?.at && deps.now().getTime() - Date.parse(held.at) < WARM_LOCK_MS) throw busy();
+        // Left over (its room was taken, ended or crashed without freeing it): replace it.
+        await store.delete(key.PK, key.SK);
+        try {
+          await lock();
+        } catch (again) {
+          if (again instanceof ConditionFailedError) throw busy();
+          throw again;
+        }
+      }
+      try {
+        return { room: await start(creator, { warm: true, id }), started: true };
+      } catch (err) {
+        await unlock(creator.id, id);
+        throw err;
+      }
     },
 
     /** Open and starting rooms, oldest first (dead ones are closed on the way). */

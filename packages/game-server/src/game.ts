@@ -117,11 +117,6 @@ export interface GameHostOptions {
   idleMs: number;
   /** End after this long whatever happens. */
   maxMs: number;
-  /**
-   * End (`unused`) after this long if nobody has joined yet: a pre-warmed room its creator never
-   * picked up, or a room whose players never arrived. Default: no such limit (only `idleMs`).
-   */
-  unusedMs?: number;
   rejoinGraceMs?: number;
   /** The room ended: write results, tell watchers, shut down. Called once. */
   onEnd?(end: { reason: string; results?: unknown }): void;
@@ -232,6 +227,16 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     return this.tickNumber;
   }
 
+  /** Whether anyone has joined since the room opened (even if they left again). */
+  get joinedAny(): boolean {
+    return this.joinedOnce;
+  }
+
+  /** Milliseconds since the room opened (monotonic). */
+  get ageMs(): number {
+    return this.opts.now() - this.startedAt;
+  }
+
   /**
    * A connection for a seat is up. A seat already in the room (dropped, or the same person and
    * device connecting again from another tab) is taken back with no `onJoin`; the old connection is
@@ -335,7 +340,6 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     if (due > 0) this.sendSnapshots(now);
 
     if (now - this.startedAt >= this.opts.maxMs) this.end('time');
-    else if (!this.joinedOnce && this.opts.unusedMs !== undefined && now - this.startedAt >= this.opts.unusedMs) this.end('unused');
     else if (now - this.lastActivity >= this.opts.idleMs) this.end('idle');
   }
 

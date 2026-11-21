@@ -62,7 +62,10 @@ export interface RoomServerOptions<S, E, V> {
   maxPlayers: number;
   idleMs: number;
   maxMs: number;
-  /** End (`unused`) when nobody has joined within this long (the manifest's `warmMinutes`). */
+  /**
+   * A pre-warmed room (META `warm`) that nobody takes within this long ends as `unused` (the
+   * manifest's `warmMinutes`). Taken rooms, and rooms that were never warm, keep only the idle limit.
+   */
   unusedMs?: number;
   /** Wall clock in milliseconds (ticket expiry, timestamps). Default `Date.now`. */
   now?: () => number;
@@ -107,6 +110,9 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
   private readonly offers = new Map<string, number[]>();
   private unsubscribe: (() => void) | null = null;
   private stopLoop: (() => void) | null = null;
+  private watchingWarm = false;
+  private checkingWarm = false;
+  private warmRetryAt = 0;
   private readonly now: () => number;
   private readonly log: (message: string, detail?: unknown) => void;
 
@@ -122,7 +128,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
    */
   async start(): Promise<boolean> {
     const { roomId, store } = this.opts;
-    const meta = await store.get<Item & { status?: string; maxPlayers?: number }>(roomKeys.meta(roomId).PK, roomKeys.meta(roomId).SK);
+    const meta = await store.get<Item & { status?: string; maxPlayers?: number; warm?: boolean }>(roomKeys.meta(roomId).PK, roomKeys.meta(roomId).SK);
     if (!meta || meta.status === 'ended') {
       this.log(`room ${roomId} is ${meta ? 'already over' : 'unknown'}; nothing to run`);
       return false;
@@ -134,12 +140,12 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       maxPlayers: Math.min(this.opts.maxPlayers, meta.maxPlayers ?? this.opts.maxPlayers),
       idleMs: this.opts.idleMs,
       maxMs: this.opts.maxMs,
-      ...(this.opts.unusedMs !== undefined ? { unusedMs: this.opts.unusedMs } : {}),
       onEnd: (end) => void this.shutdown(end),
       onPlayerGone: (player) => void store.delete(roomKeys.player(roomId, player.id).PK, roomKeys.player(roomId, player.id).SK).catch((err) => this.log('player record not removed', err)),
       log: this.log,
     });
     this.host = host;
+    this.watchingWarm = !!meta.warm && this.opts.unusedMs !== undefined;
     this.unsubscribe = await this.opts.signaling.subscribe(roomChannels.toServer(roomId), (data) => void this.onSignal(data));
     await this.writeStatus({ status: 'open', openedAt: new Date(this.now()).toISOString() });
     await this.opts.signaling.publish(roomChannels.room(roomId), { status: 'open' }).catch((err) => this.log('open not announced', err));
@@ -147,7 +153,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       const timer = setInterval(fn, ms);
       return () => clearInterval(timer);
     });
-    this.stopLoop = every(1000 / host.tickHz, () => host.advance());
+    this.stopLoop = every(1000 / host.tickHz, () => this.advance());
     this.log(`room ${roomId} is open`);
     return true;
   }
@@ -155,6 +161,34 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
   /** Run the ticks that are due (for callers that drive the loop themselves). */
   advance(): void {
     this.host?.advance();
+    this.checkWarm();
+  }
+
+  /**
+   * A warm room ends as `unused` once `unusedMs` has passed with nobody joining, but only if its
+   * META still says warm: once its creator's `POST /rooms` has taken it, only the idle limit applies.
+   */
+  private checkWarm(): void {
+    const host = this.host;
+    if (!this.watchingWarm || this.checkingWarm || !host) return;
+    if (host.joinedAny) {
+      this.watchingWarm = false;
+      return;
+    }
+    if (host.ageMs < Math.max(this.opts.unusedMs!, this.warmRetryAt)) return;
+    this.checkingWarm = true;
+    const { PK, SK } = roomKeys.meta(this.opts.roomId);
+    void this.opts.store
+      .get<Item & { warm?: boolean }>(PK, SK)
+      .then((m) => {
+        this.watchingWarm = false;
+        if (m?.warm && !host.joinedAny) host.end('unused');
+      })
+      .catch((err) => {
+        this.warmRetryAt = host.ageMs + 5000;
+        this.log('warm room not checked', err);
+      })
+      .finally(() => (this.checkingWarm = false));
   }
 
   /** End the room from outside (the task was told to stop). */

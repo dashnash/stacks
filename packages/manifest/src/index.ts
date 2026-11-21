@@ -131,6 +131,8 @@ export function gameServerSettings(manifest: Pick<AppManifest, 'gameServer'>): G
   const merged = { ...GAME_SERVER_DEFAULTS, ...manifest.gameServer };
   // A bigger CPU without a memory setting gets the least memory Fargate pairs with it.
   if (manifest.gameServer?.memory === undefined) merged.memory = Math.max(merged.memory, GAME_SERVER_MIN_MEMORY[merged.cpu] ?? 0);
+  // A short idle limit brings the warm limit down with it (a warm room must outlast neither).
+  if (manifest.gameServer?.warmMinutes === undefined) merged.warmMinutes = Math.min(merged.warmMinutes, merged.idleMinutes);
   return merged;
 }
 
@@ -244,6 +246,9 @@ export function validateManifest(input: unknown): ValidationResult {
           }
         } else errors.push(`gameServer: unknown setting "${key}" (known: ${Object.keys(GAME_SERVER_DEFAULTS).join(', ')})`);
       }
+      // An unjoined warm room would otherwise end as idle before anyone could take it.
+      const idle = typeof g.idleMinutes === 'number' ? g.idleMinutes : GAME_SERVER_DEFAULTS.idleMinutes;
+      if (typeof g.warmMinutes === 'number' && g.warmMinutes > idle) errors.push(`gameServer.warmMinutes must be at most idleMinutes (${idle})`);
       const cpu = typeof g.cpu === 'number' ? g.cpu : GAME_SERVER_DEFAULTS.cpu;
       const least = GAME_SERVER_MIN_MEMORY[cpu];
       if (least !== undefined && GAME_SERVER_MEMORY.includes(g.memory as number) && (g.memory as number) < least) errors.push(`gameServer.memory must be at least ${least} with cpu ${cpu} (a Fargate rule)`);
