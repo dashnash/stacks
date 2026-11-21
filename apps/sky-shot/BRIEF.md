@@ -40,8 +40,9 @@ way to see it move.
 
 Switchable looks (spec `docs/specs/144-sky-shot-themes.md`); the game is the same in every one.
 **Dusk** (the default): flat vector arcade, bold shapes and colours on a dusk-sky gradient, chunky
-type, no pixel art. Coming: **Ink Koi** (sumi-e), **Neon Courier** (synthwave), **Stargazer**
-(cut paper).
+type, no pixel art. **Ink Koi**: sumi-e brush painting on rice paper (or a moonlit pond).
+**Neon Courier**: synthwave wireframe over a scrolling grid (midnight or amber). **Stargazer**:
+a cut-paper night sky (dusk or indigo).
 
 ## User stories
 
