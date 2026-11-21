@@ -52,6 +52,8 @@ a cut-paper night sky (dusk or indigo).
 ## User stories
 
 - As a shooter I press Play, scan the QR with my iPhone, calibrate, and shoot targets in Rounds.
+- As a shooter I don't wait for a game server at Play: the title screen (on a desktop) starts one
+  while I read it (`usePrewarmRoom`, #152), and Play, Range or Train takes it over.
 - As a shooter I open the Range and tune the aim live (mode, gains, smoothing, trigger) until it
   feels right, watching accuracy per config.
 - As a shooter I calibrate on five dots (centre and corners: point, tap). The fit sets my gain,
