@@ -308,6 +308,18 @@ describe('pre-warming', () => {
     expect(t.games.started).toEqual([id]);
   });
 
+  it('shows a just-taken room to everyone even while the room index still has it as warm', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    await t.games.open(id);
+    const stale = await t.store.queryGsi1('STACKS#ROOMS');
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: { name: 'Friday dots' } });
+    vi.spyOn(t.store, 'queryGsi1').mockResolvedValue(stale as never);
+    expect((await t.call('GET', `/rooms/by-code/${res.body.room.code}`, { as: bob })).body.room).toMatchObject({ id, name: 'Friday dots' });
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms.map((r: { id: string }) => r.id)).toEqual([id]);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).status).toBe(200);
+  });
+
   it("shows a warm room only to its creator", async () => {
     const t = harness();
     const id = (await warm(t)).body.room.id;

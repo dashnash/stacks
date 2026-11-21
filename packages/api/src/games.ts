@@ -405,8 +405,11 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
    * and nobody took it within `warmMinutes`.
    */
   async function active(): Promise<{ meta: RoomMeta; room: Room }[]> {
-    const metas = await store.queryGsi1<RoomMeta>(ROOMS_INDEX);
-    if (!metas.length) return [];
+    // The index finds them; each record is then read by key, since the index can lag a write (a
+    // warm room just taken over would still look warm, and a sweep would write back the old copy).
+    const indexed = await store.queryGsi1<RoomMeta>(ROOMS_INDEX);
+    if (!indexed.length) return [];
+    const metas = await Promise.all(indexed.map(async (m) => (await meta(m.id)) ?? m));
     const rooms = await Promise.all(metas.map(async (m) => ({ meta: m, room: await view(store, m, warmMs) })));
     const alive = await deps.games.running(rooms.filter((r) => r.room.status !== 'ended').map((r) => r.meta.id));
     const limit = settings.maxHours * 3_600_000 + OVERTIME_GRACE_MS;
@@ -596,7 +599,12 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       // Others started rooms meanwhile and the app is over its cap: the newest warm rooms give way,
       // as many as it is over (so two warm-ups racing for one slot don't both lose it).
       const after = await active();
-      const self = after.find((r) => r.meta.id === id);
+      // Not indexed yet: count it from its record.
+      let self = after.find((r) => r.meta.id === id);
+      if (!self) {
+        const m = await meta(id);
+        if (m && m.status !== 'ended') after.push((self = { meta: m, room }));
+      }
       const newest = after.filter((r) => r.meta.warm).sort((a, b) => b.meta.GSI1SK!.localeCompare(a.meta.GSI1SK!));
       const over = after.length - settings.maxRooms;
       if (self && over > 0 && newest.slice(0, over).includes(self) && (await claim(self.meta))) {

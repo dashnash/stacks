@@ -8,6 +8,8 @@ export const PREWARM_RETRY_MS = 60_000;
  * new one (60 s before), before Play stops taking it (30 s before).
  */
 const REWARM_LEAD_MS = 45_000;
+/** A warm-up triggered by a key or pointer waits this long (that press may be Play's). */
+const ACTIVITY_WARM_DELAY_MS = 1500;
 
 /**
  * Start a game server early (`POST /rooms/warm`) while `enabled`, so the player's next
@@ -33,11 +35,16 @@ export function usePrewarmRoom(enabled: boolean): void {
     let warmedAt = 0;
     /** When the last warm room ends (browser clock), so activity after it can warm the next. */
     let endsAt = 0;
+    let soon: ReturnType<typeof setTimeout> | undefined;
     const active = () => {
       activeAt = Date.now();
-      // Back after the last warm room ended: warm the next one now. (Not earlier: in its last minute
-      // a warm-up swaps it, and this pointerdown may be the click on Play, which can still take it.)
-      if (Date.now() >= endsAt) warm();
+      // Back after the last warm room ended: warm the next one, a moment later. (Not earlier: in its
+      // last minute a warm-up swaps it. And this press may be the click on Play, which unmounts the
+      // title, so the delay lets that cancel it instead of starting a second server.)
+      if (Date.now() >= endsAt) {
+        clearTimeout(soon);
+        soon = setTimeout(warm, ACTIVITY_WARM_DELAY_MS);
+      }
     };
     const warm = () => {
       if (gone || busy || document.visibilityState === 'hidden' || Date.now() < until) return;
@@ -77,6 +84,7 @@ export function usePrewarmRoom(enabled: boolean): void {
     return () => {
       gone = true;
       clearTimeout(retry);
+      clearTimeout(soon);
       document.removeEventListener('visibilitychange', warm);
       document.removeEventListener('pointerdown', active);
       document.removeEventListener('keydown', active);
