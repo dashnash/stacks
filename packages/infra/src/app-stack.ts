@@ -390,6 +390,7 @@ export class AppStack extends cdk.Stack {
           STACKS_GAME_KEY_ARN: gameKey.secretArn,
           STACKS_GAME_MAX_PLAYERS: String(settings.maxPlayers),
           STACKS_GAME_IDLE_MINUTES: String(settings.idleMinutes),
+          STACKS_GAME_WARM_MINUTES: String(settings.warmMinutes),
           STACKS_GAME_MAX_HOURS: String(settings.maxHours),
           STACKS_GAME_PORT_MIN: String(GAME_PORT_MIN),
           STACKS_GAME_PORT_MAX: String(GAME_PORT_MAX),

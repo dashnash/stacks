@@ -293,6 +293,7 @@ describe('AppStack gameServer module', () => {
       STACKS_REALTIME_NAMESPACE: 'app',
       STACKS_GAME_MAX_PLAYERS: '8',
       STACKS_GAME_IDLE_MINUTES: '10',
+      STACKS_GAME_WARM_MINUTES: '5',
       STACKS_GAME_MAX_HOURS: '2',
       STACKS_GAME_PORT_MIN: '40000',
       STACKS_GAME_PORT_MAX: '40019',

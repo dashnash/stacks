@@ -263,6 +263,7 @@ export class DemoGames implements Games {
       maxPlayers: settings.maxPlayers,
       idleMs: settings.idleMinutes * 60_000,
       maxMs: settings.maxHours * 3_600_000,
+      unusedMs: settings.warmMinutes * 60_000,
       lingerMs: 100,
       log: (message, detail) => console.debug(`[demo game ${roomId}] ${message}`, detail ?? ''),
     });

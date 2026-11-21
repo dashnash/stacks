@@ -145,6 +145,64 @@ describe('RoomServer', () => {
     expect(t.answers(ANN).at(-1)).toMatchObject({ t: 'answer', sid: 's10' });
   });
 
+  it('ends a warm room nobody takes as unused; a taken one, or one never warm, only when idle', async () => {
+    const untaken = await setup({ warm: true, unusedMs: 5 * 60_000 });
+    await untaken.server.start();
+    for (let t = 0; t < 5 * 60_000 - 15_000; t += 15_000) {
+      untaken.advance(15_000);
+      await settle();
+    }
+    expect(untaken.server.host!.ended).toBeFalsy();
+    // It ends at the first check past 5 minutes (they run every 15 s).
+    for (let i = 0; i < 2; i++) {
+      untaken.advance(15_000);
+      await settle();
+    }
+    expect(await untaken.server.done).toMatchObject({ reason: 'unused' });
+
+    // Taken at minute 4 (its META no longer warm): not `unused`, and its 10-minute idle clock starts
+    // again from the takeover (seen within 15 s), not from when it opened.
+    const taken = await setup({ warm: true, unusedMs: 5 * 60_000 });
+    await taken.server.start();
+    const step = async (ms: number) => {
+      for (let t = 0; t < ms; t += 15_000) {
+        taken.advance(15_000);
+        await settle();
+      }
+    };
+    await step(4 * 60_000);
+    await taken.store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: 'starting', maxPlayers: 8 });
+    await step(9 * 60_000 + 15_000);
+    expect(taken.server.host!.ended).toBeFalsy();
+    await step(90_000);
+    expect(await taken.server.done).toMatchObject({ reason: 'idle' });
+
+    const plain = await setup({ unusedMs: 5 * 60_000 });
+    await plain.server.start();
+    plain.advance(6 * 60_000);
+    await settle();
+    expect(plain.server.host!.ended).toBeFalsy();
+  }, 20_000);
+
+  it('ends a warm room as unused even when warmMinutes equals idleMinutes, and stops one the API ended', async () => {
+    const same = await setup({ warm: true, unusedMs: 10 * 60_000 });
+    await same.server.start();
+    for (let t = 0; t < 11 * 60_000 && !same.server.host!.ended; t += 15_000) {
+      same.advance(15_000);
+      await settle();
+    }
+    expect(await same.server.done).toMatchObject({ reason: 'unused' });
+
+    const ended = await setup({ warm: true, unusedMs: 5 * 60_000 });
+    await ended.server.start();
+    await ended.store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: 'ended', endedReason: 'unused', maxPlayers: 8 });
+    for (let i = 0; i < 3 && !ended.server.host!.ended; i++) {
+      ended.advance(15_000);
+      await settle();
+    }
+    expect(await ended.server.done).toMatchObject({ reason: 'unused' });
+  }, 20_000);
+
   it('tells the client when an offer cannot be answered', async () => {
     const t = await setup();
     await t.server.start();

@@ -168,6 +168,8 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
   private readonly graceMs: number;
   private lastAdvance: number;
   private lastActivity: number;
+  private joinedOnce = false;
+  private idleHeld = false;
   private owed = 0;
   private tickNumber = 0;
   private tickFailures = 0;
@@ -226,6 +228,26 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     return this.tickNumber;
   }
 
+  /** Whether anyone has joined since the room opened (even if they left again). */
+  get joinedAny(): boolean {
+    return this.joinedOnce;
+  }
+
+  /** Milliseconds since the room opened (monotonic). */
+  get ageMs(): number {
+    return this.opts.now() - this.startedAt;
+  }
+
+  /** Start the idle clock again now (a pre-warmed room was just taken: its players are on their way). */
+  touch(): void {
+    this.lastActivity = this.opts.now();
+  }
+
+  /** While held, the idle limit doesn't apply (a pre-warmed room, which ends as `unused` instead). */
+  holdIdle(on: boolean): void {
+    this.idleHeld = on;
+  }
+
   /**
    * A connection for a seat is up. A seat already in the room (dropped, or the same person and
    * device connecting again from another tab) is taken back with no `onJoin`; the old connection is
@@ -254,6 +276,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
         pings: new Bucket(5, now),
       };
       this.slots.set(player.id, slot);
+      this.joinedOnce = true;
       this.safely('onJoin', () => this.game.onJoin?.(this.state, slot!.player));
     }
     this.lastActivity = now;
@@ -328,7 +351,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     if (due > 0) this.sendSnapshots(now);
 
     if (now - this.startedAt >= this.opts.maxMs) this.end('time');
-    else if (now - this.lastActivity >= this.opts.idleMs) this.end('idle');
+    else if (!this.idleHeld && now - this.lastActivity >= this.opts.idleMs) this.end('idle');
   }
 
   /** End the room: everyone gets "game over" on the reliable channel, then `onEnd` runs. Once. */

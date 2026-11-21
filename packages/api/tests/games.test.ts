@@ -17,6 +17,7 @@ import {
   STUN_ONLY,
   verifyGameTicket,
   verifyRealtimeToken,
+  WARM_LOCK_MS,
   type AppDeps,
   type AppRoutes,
 } from '../src/index';
@@ -137,6 +138,223 @@ describe('rooms', () => {
     }
     expect((await t.call('POST', '/rooms', { as: ann, body: {}, noCsrf: true })).status).toBe(403);
     expect(t.games.started).toHaveLength(1);
+  });
+});
+
+describe('pre-warming', () => {
+  const warm = (t: Harness, as = ann) => t.call('POST', '/rooms/warm', { as, role: 'EDITOR' });
+
+  it('starts one hidden server per person, which their next POST /rooms takes over', async () => {
+    const t = harness();
+    const first = await warm(t);
+    expect(first.status).toBe(201);
+    const id = first.body.room.id;
+    expect(first.body.room).toMatchObject({ status: 'starting', warm: true, warmUntil: expect.any(String) });
+    expect(first.body.leftMs).toBeGreaterThan(4.9 * 60_000);
+    expect(Date.parse(first.body.room.warmUntil) - Date.parse(first.body.room.createdAt)).toBe(5 * 60_000);
+    // Asking again doesn't start a second.
+    const again = await warm(t);
+    expect([again.status, again.body.room.id]).toEqual([200, id]);
+    expect(t.games.started).toEqual([id]);
+    await t.games.open(id);
+    // Hidden: not listed, not found by its code, not joinable, not audited.
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms).toEqual([]);
+    expect((await t.call('GET', `/rooms/by-code/${first.body.room.code}`, { as: bob })).status).toBe(404);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).status).toBe(404);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: ann })).body.code).toBe('ROOM_STARTING');
+    expect(t.platform.audit.filter((a) => a.action === 'room.create')).toEqual([]);
+
+    // Play: the same room, already open, now named, listed, joinable and audited.
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: { name: 'Friday dots' } });
+    expect(res.status).toBe(201);
+    expect(res.body.room).toMatchObject({ id, name: 'Friday dots', status: 'open' });
+    expect(res.body.room).not.toHaveProperty('warm');
+    expect(t.games.started).toEqual([id]);
+    expect(t.platform.audit.at(-1)).toMatchObject({ action: 'room.create' });
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms.map((r: { id: string }) => r.id)).toEqual([id]);
+    expect((await t.call('GET', `/rooms/by-code/${res.body.room.code}`, { as: bob })).body.room.id).toBe(id);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: ann })).status).toBe(200);
+    // Taken once: the next Play starts its own.
+    const next = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(next.body.room.id).not.toBe(id);
+    expect(t.games.started).toHaveLength(2);
+  });
+
+  it("doesn't hand you someone else's warm room", async () => {
+    const t = harness();
+    const bobs = (await warm(t, bob)).body.room.id;
+    const mine = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(mine.body.room.id).not.toBe(bobs);
+    expect(t.games.started).toEqual([bobs, mine.body.room.id]);
+  });
+
+  it('ends a warm room nobody takes after warmMinutes, as unused', async () => {
+    const t = harness({ ...manifest, gameServer: { warmMinutes: 2 } });
+    const id = (await warm(t)).body.room.id;
+    t.advance(2 * 60_000);
+    await t.call('GET', '/rooms', { as: bob });
+    expect(t.games.stopped).toEqual([id]);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room).toMatchObject({ status: 'ended', endedReason: 'unused' });
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room).not.toHaveProperty('warm');
+    // Play then starts a fresh one.
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+  });
+
+  it("doesn't take a warm room about to expire: it retires it and starts a fresh one", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    t.advance(5 * 60_000 - 20_000);
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+    expect(t.games.stopped).toEqual([id]);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.endedReason).toBe('unused');
+  });
+
+  it('gives way to real games at maxRooms, and is refused there itself', async () => {
+    const t = harness({ ...manifest, gameServer: { maxRooms: 2 } });
+    const bobs = (await warm(t, bob)).body.room.id;
+    await openRoom(t);
+    // Full: Cy's game pushes out Bob's warm room.
+    const cys = await t.call('POST', '/rooms', { as: 'cy@test.dev', body: {} });
+    expect(cys.status).toBe(201);
+    expect(t.games.stopped).toEqual([bobs]);
+    // Full of real games: warming is refused, and nothing is pushed out.
+    expect((await warm(t, bob)).status).toBe(429);
+    expect(t.games.stopped).toEqual([bobs]);
+  });
+
+  it('starts one server for two warm-ups at once, and warms again once the last was taken', async () => {
+    const t = harness();
+    const [a, b] = await Promise.all([warm(t), warm(t)]);
+    // The second finds the first's room (200), or its lock while it starts (409).
+    expect([a!.status, b!.status]).toContain(201);
+    expect(t.games.started).toHaveLength(1);
+    // A lock that another request just wrote: 409, nothing started.
+    const other = harness();
+    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev'), roomId: 'r-in-flight', until: other.deps.now().getTime() + WARM_LOCK_MS });
+    const busy = await warm(other);
+    expect([busy.status, busy.body.code]).toEqual([409, 'ALREADY_WARMING']);
+    expect(other.games.started).toEqual([]);
+    await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    // Back on the title screen after the game: a new warm room, no lock left behind.
+    const next = await warm(t);
+    expect(next.status).toBe(201);
+    expect(t.games.started).toHaveLength(2);
+  });
+
+  it('replaces a warm-up lock left behind by a room that crashed', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    t.games.crash(id);
+    t.advance(61_000);
+    expect((await warm(t)).status).toBe(201);
+  });
+
+  it('lets its creator end a warm room; their next Play starts a fresh one', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    expect((await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' })).body.room.status).toBe('ended');
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.status).toBe('ended');
+  });
+
+  it('frees the warm-up lock when its creator ends the warm room, so they can warm again at once', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' });
+    expect((await warm(t)).status).toBe(201);
+  });
+
+  it("doesn't revive a warm room that ended while its Play was taking it", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    // The room ends between the takeover's read and its write.
+    const put = t.store.put.bind(t.store);
+    let once = true;
+    vi.spyOn(t.store, 'put').mockImplementation(async (item, opts) => {
+      if (once && opts?.ifMatch && item.SK === 'META') {
+        once = false;
+        await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' });
+      }
+      return put(item, opts);
+    });
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.status).toBe(201);
+    expect(res.body.room.id).not.toBe(id);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.status).toBe('ended');
+    expect((await t.call('GET', '/rooms', { as: ann })).body.rooms.map((r: { id: string }) => r.id)).toEqual([res.body.room.id]);
+  });
+
+  it('starts the next warm room near the end of the last, and Play takes the readier one', async () => {
+    const t = harness();
+    // A clock that stays put between requests (the harness's moves 1 s per read).
+    let at = Date.parse('2026-11-21T10:00:00Z');
+    vi.spyOn(t.deps, 'now').mockImplementation(() => new Date(at));
+    const old = (await warm(t)).body.room.id;
+    await t.games.open(old);
+    // 50 s before its end: a warm-up starts a replacement but leaves the open one running.
+    at += 5 * 60_000 - 50_000;
+    const next = await warm(t);
+    expect(next.status).toBe(201);
+    expect(next.body.room.id).not.toBe(old);
+    expect(t.games.stopped).toEqual([]);
+    // Another warm-up now finds the fresh one.
+    expect((await warm(t)).body.room.id).toBe(next.body.room.id);
+    // Play (still before the old one's cutoff) takes the open old room, not the starting new one.
+    const play = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(play.body.room).toMatchObject({ id: old, status: 'open' });
+    // Past the old one's cutoff, the next Play takes the new one.
+    at += 30_000;
+    const play2 = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(play2.body.room.id).toBe(next.body.room.id);
+  });
+
+  it('finds the warm room by its lock when the room index lags behind', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    const real = t.store.queryGsi1.bind(t.store);
+    vi.spyOn(t.store, 'queryGsi1').mockImplementationOnce(async () => []).mockImplementation(real);
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).toBe(id);
+    expect(t.games.started).toEqual([id]);
+  });
+
+  it('shows a just-taken room to everyone even while the room index still has it as warm', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    await t.games.open(id);
+    const stale = await t.store.queryGsi1('STACKS#ROOMS');
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: { name: 'Friday dots' } });
+    vi.spyOn(t.store, 'queryGsi1').mockResolvedValue(stale as never);
+    expect((await t.call('GET', `/rooms/by-code/${res.body.room.code}`, { as: bob })).body.room).toMatchObject({ id, name: 'Friday dots' });
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms.map((r: { id: string }) => r.id)).toEqual([id]);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).status).toBe(200);
+  });
+
+  it("shows a warm room only to its creator", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    expect((await t.call('GET', `/rooms/${id}`, { as: bob })).status).toBe(404);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.warm).toBe(true);
+  });
+
+  it("doesn't go over maxRooms when two POST /rooms race for one warm room", async () => {
+    const t = harness({ ...manifest, gameServer: { maxRooms: 2 } });
+    await warm(t);
+    await openRoom(t, bob);
+    const both = await Promise.all([0, 1].map(() => t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} })));
+    expect(both.map((r) => r.status).sort()).toEqual([201, 429]);
+    expect(t.games.started).toHaveLength(2);
+  });
+
+  it('lets only one of two POST /rooms at once take the warm room', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    const [a, b] = await Promise.all([0, 1].map(() => t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} })));
+    expect([a!.body.room.id, b!.body.room.id].filter((x) => x === id)).toHaveLength(1);
+    expect(t.games.started).toHaveLength(2);
   });
 });
 

@@ -100,19 +100,25 @@ export interface GameServerSettings {
   idleMinutes: number;
   /** A room ends after this many hours whatever happens, 0.25-4. */
   maxHours: number;
+  /**
+   * How long a pre-warmed room (`POST /rooms/warm`) waits for its creator's next `POST /rooms` to
+   * take it, 2-15 (the idle limit doesn't apply meanwhile); untaken, it ends as `unused`. Other rooms aren't affected.
+   */
+  warmMinutes: number;
   /** Fargate CPU units per room: 256 (0.25 vCPU), 512 or 1024. */
   cpu: number;
   /** Fargate memory per room in MiB, 512-2048 (1024 and up with cpu 512, 2048 and up with cpu 1024). */
   memory: number;
 }
 
-export const GAME_SERVER_DEFAULTS: GameServerSettings = { maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, cpu: 256, memory: 512 };
+export const GAME_SERVER_DEFAULTS: GameServerSettings = { maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, warmMinutes: 5, cpu: 256, memory: 512 };
 
 const GAME_SERVER_RANGES: Record<Exclude<keyof GameServerSettings, 'cpu' | 'memory'>, [number, number]> = {
   maxRooms: [1, 10],
   maxPlayers: [2, 16],
   idleMinutes: [1, 60],
   maxHours: [0.25, 4],
+  warmMinutes: [2, 15],
 };
 const GAME_SERVER_CPU = [256, 512, 1024];
 /** The Fargate memory sizes from 512 to 2048 MiB. */

@@ -80,9 +80,9 @@ export const game = defineGame<DotsState>({
   results: (s) => ({ seen: s.seen.length }),
 });
 
-export async function setup(opts: { status?: string; maxPlayers?: number; store?: MemoryStore; game?: typeof game } = {}) {
+export async function setup(opts: { status?: string; maxPlayers?: number; store?: MemoryStore; game?: typeof game; warm?: boolean; unusedMs?: number } = {}) {
   const store = opts.store ?? new MemoryStore();
-  if (opts.status !== 'missing') await store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: opts.status ?? 'starting', maxPlayers: opts.maxPlayers ?? 8 });
+  if (opts.status !== 'missing') await store.put({ ...roomKeys.meta(ROOM), id: ROOM, status: opts.status ?? 'starting', maxPlayers: opts.maxPlayers ?? 8, ...(opts.warm ? { warm: true } : {}) });
   const signaling = new FakeSignaling();
   const peers: FakePeer[] = [];
   const clock = { wall: Date.parse('2026-06-01T12:00:00Z'), mono: 0 };
@@ -101,6 +101,7 @@ export async function setup(opts: { status?: string; maxPlayers?: number; store?
     maxPlayers: 8,
     idleMs: 10 * 60_000,
     maxMs: 2 * 3_600_000,
+    ...(opts.unusedMs !== undefined ? { unusedMs: opts.unusedMs } : {}),
     now: () => clock.wall,
     monotonic: () => clock.mono,
     every: () => () => undefined,

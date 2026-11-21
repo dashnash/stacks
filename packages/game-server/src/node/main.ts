@@ -44,6 +44,8 @@ export function readEnvironment(env: Record<string, string | undefined> = proces
     keyArn: need('STACKS_GAME_KEY_ARN'),
     maxPlayers: number('STACKS_GAME_MAX_PLAYERS', 8),
     idleMs: number('STACKS_GAME_IDLE_MINUTES', 10) * 60_000,
+    // How long a pre-warmed room waits to be taken (a stack from before warmMinutes: the idle limit).
+    unusedMs: number('STACKS_GAME_WARM_MINUTES', number('STACKS_GAME_IDLE_MINUTES', 10)) * 60_000,
     maxMs: number('STACKS_GAME_MAX_HOURS', 2) * 3_600_000,
     portRange: [number('STACKS_GAME_PORT_MIN', 40000), number('STACKS_GAME_PORT_MAX', 40019)] as [number, number],
   };
@@ -83,6 +85,7 @@ export async function runGameServer<S, E, V>(game: GameDefinition<S, E, V>): Pro
     maxPlayers: config.maxPlayers,
     idleMs: config.idleMs,
     maxMs: config.maxMs,
+    unusedMs: config.unusedMs,
     log,
   });
 
