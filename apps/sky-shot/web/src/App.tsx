@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { AccountMenu, ApiError, BuildVersion, ErrorNote, Spinner, useApi, useAsync, useHashRoute, useStacks } from '@stacks/web';
+import { AccountMenu, ApiError, BuildVersion, ErrorNote, Spinner, useApi, useAsync, useHashRoute, usePrewarmRoom, useStacks } from '@stacks/web';
 import { manifest } from '../../api/manifest';
 import type { LeaderEntry } from '../../api/leaderboard';
 import type { GameMode } from '../../game/protocol';
@@ -92,12 +92,18 @@ function JoinAsGun() {
   );
 }
 
+/** A desktop (a fine pointer): the screen that starts games. Phones only join by code. */
+const isDesktop = () => typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+
 function Title() {
   const api = useApi();
   const { status, signIn, accessNotice } = useStacks();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const signedIn = status === 'signedIn';
+  const [desktop] = useState(isDesktop);
+  // Start a game server now, so Play, Range or Train doesn't wait 30-60 s for one.
+  usePrewarmRoom(signedIn && desktop && !busy);
 
   async function play(mode: GameMode) {
     setBusy(true);
