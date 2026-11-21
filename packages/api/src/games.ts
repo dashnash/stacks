@@ -316,7 +316,8 @@ async function view(store: Store, meta: RoomMeta, warmMs: number): Promise<Room>
   const ended = meta.status === 'ended' || server?.status === 'ended';
   const status: RoomStatus = ended ? 'ended' : server?.status === 'open' ? 'open' : 'starting';
   const endedAt = meta.endedAt ?? server?.endedAt;
-  const endedReason = server?.reason ?? meta.endedReason;
+  // The API's `unused` wins: retiring a warm room stops its task, which then reports `stopped`.
+  const endedReason = meta.endedReason === 'unused' ? 'unused' : (server?.reason ?? meta.endedReason);
   return {
     id: meta.id,
     code: meta.code,
@@ -711,7 +712,9 @@ export function registerGameRoutes<D extends AppDeps>(api: AppRoutes<D>): void {
   // Pre-warm: start a server for the caller's next `POST /rooms`. Speculative, so not audited.
   api.member('POST', '/rooms/warm', async (_req, v) => {
     const { room, started } = await rooms(v).warm(player(v));
-    return { status: started ? 201 : 200, body: { room } };
+    // How long it has left, by the server's clock (the browser's may be off).
+    const leftMs = room.warmUntil ? Math.max(0, Date.parse(room.warmUntil) - v.deps.now().getTime()) : 0;
+    return { status: started ? 201 : 200, body: { room, leftMs } };
   });
   api.member('GET', '/rooms', async (_req, v) => ({ body: { rooms: await rooms(v).list() } }));
   api.member('GET', '/rooms/by-code/:code', async (req, v) => {

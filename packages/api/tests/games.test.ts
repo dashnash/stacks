@@ -150,6 +150,7 @@ describe('pre-warming', () => {
     expect(first.status).toBe(201);
     const id = first.body.room.id;
     expect(first.body.room).toMatchObject({ status: 'starting', warm: true, warmUntil: expect.any(String) });
+    expect(first.body.leftMs).toBeGreaterThan(4.9 * 60_000);
     expect(Date.parse(first.body.room.warmUntil) - Date.parse(first.body.room.createdAt)).toBe(5 * 60_000);
     // Asking again doesn't start a second.
     const again = await warm(t);

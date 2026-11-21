@@ -31,32 +31,37 @@ export function usePrewarmRoom(enabled: boolean): void {
     let gone = false;
     let activeAt = Date.now();
     let warmedAt = 0;
+    /** When the last warm room ends (browser clock), so activity after it can warm the next. */
+    let endsAt = 0;
     const active = () => {
       activeAt = Date.now();
-      // Back after the last warm room ran out: warm the next one now.
-      if (Date.now() >= until) warm();
+      // Back after the last warm room ended: warm the next one now. (Not earlier: in its last minute
+      // a warm-up swaps it, and this pointerdown may be the click on Play, which can still take it.)
+      if (Date.now() >= endsAt) warm();
     };
     const warm = () => {
       if (gone || busy || document.visibilityState === 'hidden' || Date.now() < until) return;
       busy = true;
       warmedAt = Date.now();
       api
-        .post<{ room: { warmUntil?: string } }>('/rooms/warm', {})
+        .post<{ room: { warmUntil?: string }; leftMs?: number }>('/rooms/warm', {})
         .then(
-          ({ room }) => {
+          ({ room, leftMs }) => {
             if (gone) return;
+            // Time left by the server's clock (older APIs: from warmUntil, by ours).
             const at = room.warmUntil ? Date.parse(room.warmUntil) : NaN;
-            until = Number.isFinite(at) ? at : Date.now() + PREWARM_RETRY_MS;
+            const left = typeof leftMs === 'number' ? leftMs : Number.isFinite(at) ? at - Date.now() : PREWARM_RETRY_MS;
+            endsAt = Date.now() + left;
             clearTimeout(retry);
             // Shortly before Play would stop taking it (45 s before it ends), warm the next one if the
-            // player is still about. At least a minute apart, whatever the clocks say.
-            const next = Math.max(PREWARM_RETRY_MS, until - Date.now() - REWARM_LEAD_MS);
+            // player is still about. At least a minute apart.
+            const next = Math.max(PREWARM_RETRY_MS, left - REWARM_LEAD_MS);
             until = Date.now() + next;
             retry = setTimeout(() => activeAt > warmedAt && warm(), next);
           },
           () => {
             if (gone) return;
-            until = Date.now() + PREWARM_RETRY_MS;
+            until = endsAt = Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
             retry = setTimeout(() => activeAt > warmedAt && warm(), PREWARM_RETRY_MS);
           },
