@@ -160,7 +160,9 @@ redeploy it from your machine with admin credentials before merging anything tha
   self-hosted runners (step 9).
 - **Ruleset on `main`** (#93; free because the repo is public). The rules live in
   `.github/rulesets/main.json`: no deletion or force push, every change through a PR, the `check`
-  job of `CI` green, and code-owner review on `CODEOWNERS` paths (app-only PRs merge on green CI).
+  job of `CI` green, one approval on every PR (app-only ones included), and code-owner review on
+`CODEOWNERS` paths. Once you've approved, an agent session merges it (the merge train; see
+`.claude/skills/merge-train/SKILL.md`). A `hold` label stops any PR from merging.
   Repository admins may bypass only through a PR (to merge their own), so nobody pushes straight to
   `main`. PRs touching `packages/infra/`, `.github/` or `platform/api/` also need the `agent-review`
   status (#111, posted by `.github/workflows/agent-review.yml` once a session records a code review

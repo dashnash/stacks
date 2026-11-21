@@ -1,5 +1,6 @@
 # Shared platform code needs review from the platform owner.
-# App folders (apps/*) deploy on green CI without this review.
+# App folders (apps/*) need no code-owner review, but every PR needs one approval (merge train,
+# docs/specs/merge-train.md).
 /packages/   @dashnash
 /platform/   @dashnash
 /infra/      @dashnash

@@ -36,7 +36,7 @@ describe('main ruleset', () => {
     expect(rule('deletion')).toBeDefined();
     expect(rule('non_fast_forward')).toBeDefined();
     expect(rule('pull_request').parameters).toMatchObject({
-      required_approving_review_count: 0,
+      required_approving_review_count: 1,
       require_code_owner_review: true,
       dismiss_stale_reviews_on_push: true,
       require_last_push_approval: true,
@@ -73,6 +73,8 @@ describe('workflows on a public repo', () => {
     expect(steps).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(steps).not.toMatch(/contents: write|pull-requests: write/);
     expect(steps).toMatch(/run: node scripts\/agent-review-gate\.mjs$/m);
+    // The merge train's `hold` label must re-run the gate.
+    expect(steps).toMatch(/types: \[[^\]]*\blabeled\b[^\]]*\bunlabeled\b[^\]]*\]/);
   });
 
   it('keep fork PRs off self-hosted runners', () => {
