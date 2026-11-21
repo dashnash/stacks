@@ -551,3 +551,62 @@ tr.current td {
   font-weight: 600;
   opacity: 0.8;
 }
+
+/* Training */
+.train-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 5%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  background: rgba(23, 13, 51, 0.75);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 1.1rem;
+  font-weight: 800;
+  pointer-events: none;
+  max-width: calc(100vw - 32px);
+}
+.train-hud progress {
+  width: 7rem;
+  accent-color: #c6ff3d;
+}
+.training-intro .steps {
+  text-align: left;
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.4rem;
+}
+.training-result {
+  max-width: min(92vw, 560px);
+}
+.compare {
+  border-collapse: collapse;
+  width: 100%;
+}
+.compare th,
+.compare td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.compare td:nth-child(3) {
+  color: #c6ff3d;
+  font-weight: 800;
+}
+.changes {
+  text-align: left;
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+.ab-banner {
+  top: 4%;
+}
+.gun-training .gun-note {
+  margin: auto;
+  text-align: center;
+  padding: 1rem;
+}

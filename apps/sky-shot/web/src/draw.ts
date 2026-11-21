@@ -2,7 +2,7 @@
  * The screen's canvas: a dusk sky, rolling hills, flat vector targets and the crosshairs. Pure
  * drawing from a snapshot (interpolated by `createStateBuffer`) plus short-lived effects.
  */
-import type { CalibrationView, GunView, Snapshot, TargetView } from '../../game/protocol';
+import type { CalibrationView, GunView, Snapshot, TargetView, TrainingView } from '../../game/protocol';
 
 /** One colour per gun seat (the server hands out the index). */
 export const GUN_COLORS = ['#ff4f6d', '#3ec8ff', '#ffd23f'];
@@ -204,6 +204,32 @@ function calibrationDots(ctx: CanvasRenderingContext2D, cal: CalibrationView, w:
   ctx.stroke();
 }
 
+/** Training's dot: a bright ring; on a jump, the start dot faint behind it; between trials, faint. */
+function trainingDot(ctx: CanvasRenderingContext2D, tr: TrainingView, w: number, h: number, now: number) {
+  if (!['gap', 'jump', 'track', 'hold'].includes(tr.k)) return;
+  const r = Math.max(9, h * 0.018);
+  if (tr.ax !== undefined && tr.ay !== undefined) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(tr.ax * w, tr.ay * h, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const x = tr.x * w;
+  const y = tr.y * h;
+  ctx.globalAlpha = tr.k === 'gap' ? 0.35 : 1;
+  ctx.fillStyle = '#c6ff3d';
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#c6ff3d';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, r + (tr.k === 'hold' ? Math.sin(now / 250) * 2 : 0), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 /**
  * Draw one frame. `guns`: the crosshairs from the newest state (the targets are interpolated about
  * 100 ms back; a crosshair that far behind the hand feels laggy). `calibrate`: show the centre dot.
@@ -214,7 +240,7 @@ export function drawFrame(
   h: number,
   snap: Snapshot | undefined,
   effects: Effect[],
-  opts: { now: number; overlay: boolean; calibrate: boolean; guns?: GunView[]; cal?: CalibrationView },
+  opts: { now: number; overlay: boolean; calibrate: boolean; guns?: GunView[]; cal?: CalibrationView; training?: TrainingView },
 ) {
   sky(ctx, w, h);
   if (opts.calibrate) {
@@ -229,8 +255,10 @@ export function drawFrame(
     ctx.stroke();
   }
   if (opts.cal) calibrationDots(ctx, opts.cal, w, h, opts.now);
+  if (opts.training) trainingDot(ctx, opts.training, w, h, opts.now);
   if (!snap) return;
   for (const t of snap.tg) target(ctx, t, w, h, opts.now);
   for (const e of effects) effect(ctx, e, w, h, opts.now);
+  if (opts.training && !opts.training.show) return;
   for (const g of opts.guns ?? snap.g) crosshair(ctx, g, w, h, opts.overlay);
 }

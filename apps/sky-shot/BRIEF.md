@@ -26,8 +26,10 @@ Mobile Safari at ~60 Hz). No phone: the mouse plays too.
 - **Session**: room id, mode, score, accuracy, rounds, shooter, saved once per room.
 - **Shot** (30-day TTL): time, config id, trigger, hit, miss distance, rewind, latency, motion window.
 - **Tuning config**: stored once per config id next to the shots.
-- **Your default tuning**: one per person (by user id), saved by a 5-point calibration or "Save as my
-  default"; the screen sends it to every new room.
+- **Your default tuning**: one per person (by user id), saved by a 5-point calibration, a training
+  fit or "Save as my default"; the screen sends it to every new room.
+- **Training run** (90-day TTL): the fit report (before/after, both tunings), the trials, and the raw
+  motion at 25 Hz, so runs can be refitted when the fitter improves.
 
 ## What signed-out visitors see
 
@@ -45,6 +47,26 @@ Flat vector arcade: bold shapes and colours on a dusk-sky gradient, chunky type,
   feels right, watching accuracy per config.
 - As a shooter I calibrate on five dots (centre and corners: point, tap). The fit sets my gain,
   vertical gain and offsets, and is saved as my default for every new room.
+- As a shooter I run Training (about 2 minutes: follow a dot, and point at new dots with the
+  crosshair hidden). The room fits sensitivity, accel curve, vertical gain, smoothing, prediction and
+  deadzone to how I move, shows before/after, lets me compare blind (A/B), and saves the winner as my
+  default for every new room.
 - As a shooter without a phone I use the mouse.
 - As a shooter I see the leaderboard and my own shot telemetry, and download it.
 - As the owner I see everyone's telemetry and remove bad leaderboard rows.
+
+## Training and the fit (`game/training.ts`, `game/fit.ts`)
+
+- **Script** (31 trials, ~2 min): 24 jumps with the crosshair hidden (4 distances × 6 directions),
+  4 smooth tracks at rising speeds, 3 holds. The crosshair is put on the start dot of each trial
+  (training aims in relative mode).
+- **Gain** comes from the hidden jumps: without a crosshair to correct against, where you stop is
+  your own sense of "this far". For each accel curve on a grid the best sensitivity is a least-squares
+  fit; the curve with the smallest endpoint error wins. Vertical gain is fitted separately.
+- **Feel** (smoothing cutoff and β, prediction, deadzone) is fitted by replaying all the motion
+  through the game's own `Aim`: as little lag (against your intent, as it reaches the screen) as
+  possible while the shake while holding still stays under ~1.5 px.
+- Fitting runs in the room in 8 ms slices per tick, then the screen shows before/after and offers
+  a blind A/B: two 20 s Range rounds, fit and yours in random order, then "which felt better?".
+- Turning is read about the room's vertical and the horizontal axis across the barrel, so the grip
+  (flat, pistol, tilted) doesn't matter.

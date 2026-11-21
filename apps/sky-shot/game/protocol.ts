@@ -2,6 +2,8 @@
  * What travels between the screen, the guns and the game server. Shared by `game/server.ts` and the
  * web UI. Seats are told apart by their device label: `screen`, `gun` / `gun-2`, `mouse`.
  */
+import type { FitReport } from './fit';
+import type { RecSample, TrialKind } from './training';
 import type { Tuning } from './tuning';
 
 export type Vec3 = [number, number, number];
@@ -42,7 +44,7 @@ export interface GunInput {
   p?: [number, number];
 }
 
-export type GameMode = 'rounds' | 'range';
+export type GameMode = 'rounds' | 'range' | 'training';
 export type RangeKind = 'static' | 'sweep' | 'popup';
 export type Phase = 'ready' | 'playing' | 'roundEnd' | 'over';
 
@@ -99,12 +101,34 @@ export type ServerEvent =
   | { stats: Record<string, ConfigStats> }
   /** A 5-point calibration finished: the fit, already applied. `poor`: the points didn't line up well. */
   | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean } }
-  | { calibrationFailed: { reason: string } };
+  | { calibrationFailed: { reason: string } }
+
+  /** A training run finished and was fitted. */
+  | { trained: FitReport }
+  /** A training run couldn't be fitted (no gun, or too little motion). */
+  | { trainFailed: { reason: string } };
 
 /** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
 export interface CalibrationView {
   i: number;
   pts: [number, number][];
+}
+/** Training, in the screen's snapshot. */
+export interface TrainingView {
+  /** What is on now: a trial, the gap before one, waiting to start, fitting, or done. */
+  k: TrialKind | 'gap' | 'ready' | 'fit' | 'done';
+  /** Trial number (from 0) and how many there are. */
+  i: number;
+  n: number;
+  /** The dot (x in widths, y in heights), and on a jump the start dot too. */
+  x: number;
+  y: number;
+  ax?: number;
+  ay?: number;
+  /** Show the crosshair (hidden while a jump is being made). */
+  show: boolean;
+  /** Fitting: progress 0-1. */
+  p?: number;
 }
 
 export type TargetKind = 'bird' | 'clay' | 'balloon';
@@ -158,6 +182,7 @@ export interface Snapshot {
   /** Screen only: latency now, and the first gun's motion (for the panel's graphs). */
   lat?: Latency & { lag: number };
   cal?: CalibrationView;
+  tr?: TrainingView;
   mo?: { yaw: number; pitch: number; roll: number; r: Vec3; a: number };
 }
 
@@ -205,7 +230,27 @@ export interface Results {
   droppedShots: number;
   /** Each config the shots refer to, once. */
   configs: Record<string, Tuning>;
+  /** Training runs in this room: the fit, and the raw motion of the jumps (for refitting later). */
+  training?: TrainingRecord[];
 }
+
+/** A raw sample, compact: `[t, qx, qy, qz, qw, rx, ry, rz]`, t in ms since the run started; q to 4 decimals, rates to 3. */
+export type RawSample = [number, number, number, number, number, number, number, number];
+
+export interface TrainingRecord {
+  /** Ms since the room started. */
+  t: number;
+  shooterId: string;
+  report: FitReport;
+  /** The trials with their times (ms since the run started). */
+  trials: { kind: TrialKind; a: [number, number]; b?: [number, number]; t0: number; move?: number; end: number }[];
+  /** The motion at 25 Hz (dropped, oldest run first, if the results would be too big). */
+  raw: RawSample[];
+  aspect: number;
+}
+
+const fixed = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
+export const toRaw = (s: RecSample, t0: number): RawSample => [Math.round(s.st - t0), ...s.q.map((v) => fixed(v, 4)), ...s.r.map((v) => fixed(v, 3))] as RawSample;
 
 /** Results are capped at this many shots and this many bytes of JSON (the room record is a 400 KB DynamoDB item). */
 export const MAX_SHOTS = 500;

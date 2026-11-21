@@ -9,7 +9,9 @@ import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInpu
 import { configId, DEFAULT_TUNING, type Tuning } from '../../game/tuning';
 import { drawFrame, EFFECT_MS, GUN_COLORS, type Effect } from './draw';
 import { encodeQr, qrPath } from './qr';
+import { AB_MS, AbBanner, AbChoice, TrainingDone, TrainingHud, TrainingIntro, TrainingResult, type Pick } from './Training';
 import { GRAPH_MS, TuningPanel, type MotionPoint } from './Tuning';
+import type { FitReport } from '../../game/fit';
 
 interface RoomInfo {
   id: string;
@@ -21,6 +23,15 @@ interface RoomInfo {
 /** The screen draws this far behind the server (createStateBuffer's default). */
 const DELAY_MS = 100;
 const ACK_MS = 400;
+
+/** Training's flow on the screen after the fit: the result, the two blind rounds, the pick, done. */
+type Which = 'base' | 'fitted';
+type Flow =
+  | { k: 'none' }
+  | { k: 'result' }
+  | { k: 'ab'; order: [Which, Which]; step: 0 | 1; until: number }
+  | { k: 'pick'; order: [Which, Which] }
+  | { k: 'done'; message: string };
 
 /** The link the phone opens: the controller page for this room. */
 export const gunLink = (roomId: string, base = `${window.location.origin}${window.location.pathname}`) => `${base}#/gun/${encodeURIComponent(roomId)}`;
@@ -92,17 +103,33 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<Error | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [report, setReport] = useState<FitReport | null>(null);
+  const [trainError, setTrainError] = useState<string | null>(null);
+  const [flow, setFlow] = useState<Flow>({ k: 'none' });
+  const [tuneSaving, setTuneSaving] = useState(false);
+  const [tuneError, setTuneError] = useState<string | null>(null);
+  const [, setClock] = useState(0);
+  /** Hits and shots in each A/B round. */
+  const abScore = useRef<[{ hits: number; shots: number }, { hits: number; shots: number }]>([
+    { hits: 0, shots: 0 },
+    { hits: 0, shots: 0 },
+  ]);
+  const abStep = useRef<0 | 1 | null>(null);
   const tuningNow = useRef<Tuning>(DEFAULT_TUNING);
   // Your saved default goes to the room once it is live.
   const mine = useAsync(() => api.get<{ tuning: Tuning | null }>('/tuning'), []);
   const saveDefault = useCallback(
-    async (t: Tuning, source: 'calibration' | 'manual') => {
+    async (t: Tuning, source: 'calibration' | 'training' | 'manual') => {
+      setTuneSaving(true);
+      setTuneError(null);
       try {
         await api.put('/tuning', { tuning: t, source });
         return true;
       } catch (err) {
-        setSaveError(err as Error);
+        setTuneError((err as Error).message);
         return false;
+      } finally {
+        setTuneSaving(false);
       }
     },
     [api],
@@ -119,6 +146,11 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const onEvent = useCallback(
     (e: ServerEvent) => {
       const now = performance.now();
+      if (('hit' in e || 'miss' in e) && abStep.current !== null) {
+        const s = abScore.current[abStep.current];
+        s.shots++;
+        if ('hit' in e) s.hits++;
+      }
       if ('hit' in e) {
         effects.current.push({ kind: 'pop', x: e.hit.x, y: e.hit.y, c: colorOf(e.hit.seat), at: now }, ...(e.hit.pts ? [{ kind: 'score' as const, x: e.hit.x, y: e.hit.y, c: 0, at: now, text: `+${e.hit.pts}` }] : []));
         setLastShot({ ...e.hit.lat, rw: e.hit.rw });
@@ -142,6 +174,11 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       else if ('roundEnd' in e) show(e.roundEnd.passed ? `Round ${e.roundEnd.round} clear! +${e.roundEnd.bonus} accuracy bonus` : `Round ${e.roundEnd.round}: ${e.roundEnd.hits} of ${e.roundEnd.quota}`, 2400);
       else if ('gameOver' in e) setOver(e.gameOver);
       else if ('empty' in e) show('Out of shots', 800);
+      else if ('trained' in e) {
+        setReport(e.trained);
+        setTrainError(null);
+        setFlow({ k: 'result' });
+      } else if ('trainFailed' in e) setTrainError(e.trainFailed.reason);
       effects.current = effects.current.filter((x) => now - x.at < EFFECT_MS);
     },
     [show, saveDefault],
@@ -168,12 +205,17 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const rtt = useRef(0);
   rtt.current = room.rttMs ?? 0;
 
-  // Once live: tell the server the screen's shape and the mode; keep telling it what we draw.
+  // Once live: tell the server the screen's shape and the mode (once: a reconnect keeps the room's);
+  // keep telling it what we draw: targets ~100 ms back, crosshairs from the newest state.
+  const modeSent = useRef(false);
   useEffect(() => {
     if (!live) return;
     const view = () => sendEvent({ view: { aspect: Math.max(0.5, Math.min(3, window.innerWidth / Math.max(1, window.innerHeight))) } });
     view();
-    sendEvent({ mode: startMode });
+    if (!modeSent.current) {
+      modeSent.current = true;
+      sendEvent({ mode: startMode });
+    }
     window.addEventListener('resize', view);
     // Targets are drawn ~100 ms back (interpolated), crosshairs from the newest state.
     const ack = setInterval(() => {
@@ -192,6 +234,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     const id = setInterval(() => setSnap(latest.current), 100);
     return () => clearInterval(id);
   }, []);
+  // Your saved default, once per room.
   const sentMine = useRef(false);
   useEffect(() => {
     if (live && mine.data && !sentMine.current) {
@@ -199,7 +242,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       if (mine.data.tuning) sendEvent({ tune: mine.data.tuning });
     }
   }, [live, mine.data, sendEvent]);
-  const calibrating = !!snap && snap.g.length > 0 && snap.ph === 'ready';
+  const training = snap?.m === 'training';
+  const calibrating = !!snap && snap.g.length > 0 && snap.ph === 'ready' && !training;
   const pointCal = snap?.cal;
   const phone = !!snap?.g.some((g) => !g.m);
   useEffect(() => {
@@ -216,7 +260,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
         }
         ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
         const cal = latest.current?.cal;
-        drawFrame(ctx, w, h, buffer.sample(), effects.current, { now: performance.now(), overlay, calibrate: calibrating && !cal, guns: latest.current?.g, cal });
+        drawFrame(ctx, w, h, buffer.sample(), effects.current, { now: performance.now(), overlay, calibrate: calibrating && !cal, guns: latest.current?.g, cal, training: latest.current?.tr });
       }
       frame = requestAnimationFrame(draw);
     };
@@ -231,7 +275,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-      if (e.key === 't' || e.key === 'T') setPanel((p) => !p);
+      if ((e.key === 't' || e.key === 'T') && abStep.current === null) setPanel((p) => !p);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -284,6 +328,67 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   };
 
   const tune = (change: Partial<Tuning>) => sendEvent({ tune: change });
+
+  // --- Training: after the fit ---
+  const trainAgain = () => {
+    setReport(null);
+    setFlow({ k: 'none' });
+    abStep.current = null;
+    sendEvent({ mode: 'training' });
+    sendEvent({ start: true });
+  };
+  const applyFit = (message = 'Using the fit') => {
+    if (!report) return;
+    sendEvent({ tune: report.fitted });
+    setFlow({ k: 'done', message: `${message}. Saved as your default.` });
+    void saveDefault(report.fitted, 'training');
+  };
+  const keepMine = (message = 'Kept yours') => {
+    if (report) sendEvent({ tune: report.base });
+    setFlow({ k: 'done', message: `${message}. Nothing changed.` });
+  };
+  /** One blind round: that config, on the Range with sweeping targets. */
+  const abRound = (which: Which) => {
+    if (!report) return;
+    sendEvent({ tune: which === 'base' ? report.base : report.fitted });
+    sendEvent({ mode: 'range' });
+    sendEvent({ range: { kind: 'sweep', speed: 1 } });
+    sendEvent({ start: true });
+  };
+  const startAb = () => {
+    const order: [Which, Which] = Math.random() < 0.5 ? ['base', 'fitted'] : ['fitted', 'base'];
+    abScore.current = [
+      { hits: 0, shots: 0 },
+      { hits: 0, shots: 0 },
+    ];
+    abStep.current = 0;
+    setPanel(false);
+    setFlow({ k: 'ab', order, step: 0, until: Date.now() + AB_MS });
+    abRound(order[0]);
+  };
+  useEffect(() => {
+    if (flow.k !== 'ab') return;
+    const id = setInterval(() => {
+      setClock((c) => c + 1);
+      if (Date.now() < flow.until) return;
+      if (flow.step === 0) {
+        abStep.current = 1;
+        setFlow({ ...flow, step: 1, until: Date.now() + AB_MS });
+        abRound(flow.order[1]);
+      } else {
+        abStep.current = null;
+        setFlow({ k: 'pick', order: flow.order });
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [flow]);
+  const pick = (p: Pick) => {
+    if (flow.k !== 'pick') return;
+    const fitWas = flow.order[0] === 'fitted' ? 'A' : 'B';
+    if (p === 'same') keepMine(`Can't tell: kept yours (the fit was ${fitWas})`);
+    else if ((p === 'A' ? flow.order[0] : flow.order[1]) === 'fitted') applyFit(`You picked the fit (${fitWas})`);
+    else keepMine(`You picked yours (the fit was ${fitWas})`);
+  };
   const changeRange = (change: { kind?: RangeKind; speed?: number }) => {
     setRange((r) => ({ ...r, ...change }));
     sendEvent({ range: change });
@@ -312,6 +417,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
                 Hits {snap.h}/{snap.q || '-'}
               </span>
             </>
+          ) : snap.m === 'training' ? (
+            <span>Training</span>
           ) : (
             <span>Range · {range.kind}</span>
           )}
@@ -325,6 +432,9 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           </button>
         </div>
       )}
+
+      {training && snap?.tr && ['gap', 'jump', 'track', 'hold', 'fit'].includes(snap.tr.k) && <TrainingHud tr={snap.tr} />}
+      {flow.k === 'ab' && <AbBanner label={flow.step === 0 ? 'A' : 'B'} msLeft={flow.until - Date.now()} />}
 
       {banner && (
         <div className="banner" role="status">
@@ -358,7 +468,23 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             </a>
           </div>
         </div>
-      ) : over ? (
+      ) : flow.k === 'result' && report ? (
+        <TrainingResult report={report} onCompare={startAb} onUse={() => applyFit()} onKeep={() => keepMine()} onAgain={trainAgain} />
+      ) : flow.k === 'pick' ? (
+        <AbChoice onPick={pick} score={abScore.current} />
+      ) : flow.k === 'done' ? (
+        <TrainingDone
+          message={flow.message}
+          saving={tuneSaving}
+          error={tuneError}
+          onPlay={() => {
+            setFlow({ k: 'none' });
+            sendEvent({ mode: 'rounds' });
+          }}
+          onAgain={trainAgain}
+          onDone={() => sendEvent({ finish: true })}
+        />
+      ) : flow.k === 'ab' ? null : over ? (
         <Results over={over} best={saved} saving={saving} onAgain={start} onDone={() => sendEvent({ finish: true })} />
       ) : live && !guns ? (
         <div className="overlay pair">
@@ -384,6 +510,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             Cancel
           </button>
         </div>
+      ) : live && training && snap?.tr?.k === 'ready' ? (
+        <TrainingIntro onStart={start} error={trainError} />
       ) : live && calibrating ? (
         <div className="overlay calibrate">
           <h2>{tuning.tuning.mode === 'relative' ? 'Wave to find your crosshair' : 'Point your phone at the dot and tap Calibrate'}</h2>

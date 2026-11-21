@@ -193,3 +193,51 @@ describe('your aim settings', () => {
     expect((await t.call('GET', '/tuning')).status).toBe(401);
   });
 });
+
+describe('training runs', () => {
+  const run = (shooterId: string, t: number): NonNullable<Results['training']>[number] => ({
+    t,
+    shooterId,
+    aspect: 1.6,
+    report: {
+      v: 1,
+      base: DEFAULT_TUNING,
+      fitted: { ...DEFAULT_TUNING, mode: 'relative', sensitivity: 0.7, beta: 50 },
+      before: { jumpErr: 0.1, gain: 1.6, jitter: 0.001, lagMs: 140 },
+      after: { jumpErr: 0.03, gain: 1, jitter: 0.001, lagMs: 60 },
+      usedJumps: 22,
+      totalJumps: 24,
+      latencyMs: 60,
+      jumps: [],
+    },
+    trials: [{ kind: 'hold', a: [0.5, 0.5], t0: 600, end: 4600 }],
+    raw: [[0, 0, 0, 0, 1, 0, 0, 0.1], [40, 0, 0, 0, 1, 0, 0, 0.1]],
+  });
+
+  it('saving a room keeps its runs for 90 days; you list yours (no raw) and fetch one in full', async () => {
+    const t = harness();
+    const r = { ...results([]), training: [run(ann, 1000), run(bob, 5000)] };
+    const saved = await t.call('POST', `/sessions/${await playedRoom(t, r)}/save`, { as: ANN });
+    expect(saved.body).toMatchObject({ saved: true, training: 2 });
+    const [item] = await t.store.query<{ PK: string; SK: string; expiresAt: number }>(`TRAINING#${ann}`);
+    expect(Math.abs(item!.expiresAt - (Math.floor(t.deps.now().getTime() / 1000) + 90 * 86_400))).toBeLessThan(60);
+
+    const mine = (await t.call('GET', '/training', { as: ANN })).body;
+    expect(mine.runs).toHaveLength(1);
+    expect(mine.runs[0]).toMatchObject({ userId: ann, samples: 2, report: { usedJumps: 22 } });
+    expect(mine.runs[0]).not.toHaveProperty('raw');
+    // Stored tunings are clamped like any other.
+    expect(mine.runs[0].report.fitted.beta).toBe(10);
+    const full = await t.call('GET', `/training/${ann}/${encodeURIComponent(mine.runs[0].sk)}`, { as: ANN });
+    expect(full.body.run.raw).toHaveLength(2);
+    expect((await t.call('GET', `/training/${ann}/${encodeURIComponent(mine.runs[0].sk)}`, { as: BOB })).status).toBe(403);
+    expect((await t.call('GET', '/training', { as: BOB, query: { user: ann } })).status).toBe(400);
+
+    // The owner sees everyone's.
+    const all = (await t.call('GET', '/training', { as: OWNER, role: 'OWNER' })).body;
+    expect(all.runs.map((x: { userId: string }) => x.userId)).toEqual([bob, ann]);
+    expect((await t.call('GET', `/training/${ann}/${encodeURIComponent(mine.runs[0].sk)}`, { as: OWNER, role: 'OWNER' })).status).toBe(200);
+    t.advance(91 * 86_400_000);
+    expect((await t.call('GET', '/training', { as: ANN })).body.runs).toEqual([]);
+  });
+});

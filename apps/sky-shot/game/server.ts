@@ -7,6 +7,7 @@
 import { defineGame, type GamePlayer, type GameRoom } from '@stacks/game-server';
 import { Aim, qnorm, toEuler } from './aim';
 import { CAL_POINTS, CAL_POOR, fitCalibration, meanPose, POSE_FROM_MS, POSE_TO_MS } from './calibrate';
+import { fitTraining, type FitReport } from './fit';
 import {
   MAX_RESULTS_BYTES,
   MAX_SAMPLES_PER_INPUT,
@@ -26,11 +27,15 @@ import {
   type ServerEvent,
   type ShotRecord,
   type Snapshot,
+  toRaw,
+  type TrainingRecord,
+  type TrainingView,
   type Vec3,
   type WindowSample,
   type WireSample,
 } from './protocol';
 import { rng, spawnRangeTarget, spawnRoundTarget, stepTargets, TargetHistory, targetView, type Target } from './targets';
+import { GAP_MS, JUMP_AIM_MS, MAX_REC_SAMPLES, trackAt, trainingScript, TRIALS, type Recording, type RecTrial, type Trial } from './training';
 import { applyTune, configId, DEFAULT_TUNING, type Tuning } from './tuning';
 
 export const TICK_HZ = 60;
@@ -53,8 +58,16 @@ const WINDOW_STEP_MS = 40;
 const SAMPLES_KEPT_MS = 1500;
 /** Two taps closer than this are one (a bounce on the glass). */
 const TAP_DEBOUNCE_MS = 80;
-/** The crosshairs' lag: as the screen reports it, or (a screen that doesn't) the same as the targets'. */
+/** A guess at the crosshair's lag for the fit, when the screen never reported one. */
+export const DEFAULT_AIM_LAG_MS = 50;
+/** The crosshairs' lag: as reported, or (a screen that doesn't say) the same as the targets'. */
 const aimLagOf = (state: State) => state.aimLag ?? state.screenLag;
+/** Fitting runs in the tick, at most this long per tick (ms of wall time). */
+const FIT_BUDGET_MS = 8;
+/** A training run's raw motion in the results: one sample per this many ms. */
+const RAW_STEP_MS = 40;
+/** Fewer samples than this and there is nothing to fit. */
+const MIN_TRAINING_SAMPLES = 300;
 
 interface StampedSample {
   /** Server time, ms. */
@@ -82,6 +95,23 @@ interface PendingShot {
   gun: Gun;
   /** Server time of the shot. */
   at: number;
+}
+
+/** A training run in progress (mode `training`). */
+interface Train {
+  script: Trial[];
+  /** Index of the trial on now, when it (with its gap) began, and the trial as recorded so far. */
+  i: number;
+  trialAt: number;
+  cur: RecTrial | null;
+  /** The gun being trained (the first phone). */
+  gun: string;
+  rec: Recording;
+  startedAt: number;
+  latSum: number;
+  latN: number;
+  fit: Generator<number, FitReport> | null;
+  progress: number;
 }
 
 interface Stat extends ConfigStats {
@@ -132,6 +162,8 @@ export interface State {
   pending: PendingShot[];
   stats: Record<string, Stat>;
   range: { kind: RangeKind; speed: number };
+  train: Train | null;
+  trainings: TrainingRecord[];
 }
 
 const fin = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
@@ -149,6 +181,9 @@ export function readSample(raw: unknown): WireSample | null {
   if (!fin(s.t) || s.t < 0 || !q || !r || !a || Math.hypot(...q) < 0.5) return null;
   return { t: s.t, q: qnorm(q as Quat), r: r as Vec3, a: a as Vec3 };
 }
+
+/** What maps motion now: training always aims in relative mode (each jump starts the crosshair on its dot). */
+export const activeTuning = (state: State): Tuning => (state.mode === 'training' ? { ...state.tuning, mode: 'relative' } : state.tuning);
 
 /** Sender time (s) → server time (ms): the minimum (arrival − send) over recent inputs, less half the round trip. */
 function serverTime(gun: Gun, t: number, now: number): number {
@@ -258,7 +293,7 @@ function publicStats(state: State): Record<string, ConfigStats> {
  * rewind is capped (`maxRewindMs`), so a lagging connection can't hit targets long gone.
  */
 function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger']): void {
-  if (state.phase !== 'playing' || (state.paused && state.mode === 'rounds')) return;
+  if (state.phase !== 'playing' || (state.paused && state.mode === 'rounds') || state.mode === 'training') return;
   const now = state.room.elapsedMs;
   if (state.mode === 'rounds' && state.shotsLeft <= 0) {
     state.room.broadcast({ empty: { seat: gun.seat.id } });
@@ -361,14 +396,22 @@ export function buildResults(state: State): Results {
   if (open) games.push(open);
   let shots = state.shots;
   let dropped = state.dropped;
+  const training = state.trainings.map((r) => ({ ...r }));
   const make = (): Results => {
     const configs: Record<string, Tuning> = {};
     for (const s of shots) configs[s.configId] = state.configs[s.configId] ?? state.tuning;
-    return { v: 1, startedAt: state.startedAt, games, shots, droppedShots: dropped, configs };
+    const out: Results = { v: 1, startedAt: state.startedAt, games, shots, droppedShots: dropped, configs };
+    if (training.length) out.training = training;
+    return out;
   };
   let results = make();
-  // Keep the latest shots that fit.
-  while (shots.length && new TextEncoder().encode(JSON.stringify(results)).length > MAX_RESULTS_BYTES) {
+  const tooBig = () => new TextEncoder().encode(JSON.stringify(results)).length > MAX_RESULTS_BYTES;
+  // Drop the raw motion of the oldest training runs first (their fits stay), then the oldest shots.
+  for (const run of results.training ?? []) {
+    if (!tooBig()) break;
+    run.raw = [];
+  }
+  while (shots.length && tooBig()) {
     const cut = Math.max(1, Math.ceil(shots.length / 10));
     shots = shots.slice(cut);
     dropped += cut;
@@ -424,7 +467,8 @@ function onGunInput(state: State, gun: Gun, input: Partial<GunInput>): void {
   if (fin(input.rtt) && input.rtt >= 0 && input.rtt < 5000) gun.rtt = input.rtt;
   gun.clock.push(now - input.t * 1000);
   if (gun.clock.length > 120) gun.clock.shift();
-  const tuning = state.tuning;
+  const tuning = activeTuning(state);
+  const train = state.train && state.phase === 'playing' && !state.train.fit && state.train.gun === gun.seat.id ? state.train : null;
 
   if (gun.mouse) {
     const p = vec(input.p, 2, 2);
@@ -442,6 +486,7 @@ function onGunInput(state: State, gun: Gun, input: Partial<GunInput>): void {
     const st = serverTime(gun, s.t, now);
     gun.aim.update(st, s.q, s.r, tuning, state.aspect);
     gun.samples.push({ st, s });
+    if (train && train.rec.samples.length < MAX_REC_SAMPLES) train.rec.samples.push({ st, q: s.q, r: s.r });
     while (gun.samples.length > 2 && gun.samples[0]!.st < st - SAMPLES_KEPT_MS) gun.samples.shift();
     if (tuning.trigger === 'flick') {
       const a = tuning.flickAxis === 'y' ? Math.abs(s.a[1]) : tuning.flickAxis === 'z' ? Math.abs(s.a[2]) : Math.hypot(...s.a);
@@ -459,10 +504,11 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     state.tuning = applyTune(state.tuning, event.tune);
     state.cfg = configId(state.tuning);
     state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
-  } else if ('mode' in event && (event.mode === 'rounds' || event.mode === 'range')) {
+  } else if ('mode' in event && (event.mode === 'rounds' || event.mode === 'range' || event.mode === 'training')) {
     if (event.mode !== state.mode) {
       closeGame(state);
       state.mode = event.mode;
+      state.train = null;
       newGame(state);
     }
   } else if ('range' in event && event.range && typeof event.range === 'object') {
@@ -473,7 +519,8 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     }
     if (fin(r.speed)) state.range.speed = Math.min(2, Math.max(0.1, r.speed));
   } else if ('start' in event) {
-    startGame(state);
+    if (state.mode === 'training') startTraining(state);
+    else startGame(state);
   } else if ('pause' in event) {
     state.paused = event.pause === true;
   } else if ('ack' in event && event.ack && typeof event.ack === 'object') {
@@ -499,6 +546,145 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
   } else if ('finish' in event) {
     state.room.end(buildResults(state));
   }
+}
+
+// --- Training ------------------------------------------------------------------------------------
+
+function trainGun(state: State): Gun | undefined {
+  return [...state.guns.values()].find((g) => !g.mouse);
+}
+
+function startTraining(state: State): void {
+  const gun = trainGun(state);
+  if (!gun) {
+    state.room.broadcast({ trainFailed: { reason: 'Training needs a phone: pair one first.' } });
+    return;
+  }
+  newGame(state);
+  const now = state.room.elapsedMs;
+  state.train = {
+    script: trainingScript(Math.floor(state.random() * 2 ** 31), state.aspect),
+    i: 0,
+    trialAt: now,
+    cur: null,
+    gun: gun.seat.id,
+    rec: { samples: [], trials: [], aspect: state.aspect, latencyMs: 0, base: { ...state.tuning } },
+    startedAt: now,
+    latSum: 0,
+    latN: 0,
+    fit: null,
+    progress: 0,
+  };
+  state.phase = 'playing';
+}
+
+/** Put the training gun's crosshair on `a` (relative mode: where the next move starts from). */
+function placeOn(state: State, train: Train, a: [number, number]): void {
+  const tuning = activeTuning(state);
+  state.guns.get(train.gun)?.aim.place(a[0] - tuning.offsetX, a[1] - tuning.offsetY);
+}
+
+/** The raw motion for the results, at 25 Hz. */
+function rawFor(train: Train): TrainingRecord['raw'] {
+  const raw: TrainingRecord['raw'] = [];
+  let last = -Infinity;
+  for (const s of train.rec.samples) {
+    if (s.st - last < RAW_STEP_MS - 2) continue;
+    last = s.st;
+    raw.push(toRaw(s, train.startedAt));
+  }
+  return raw;
+}
+
+function finishTraining(state: State, train: Train, report: FitReport): void {
+  const gun = state.guns.get(train.gun);
+  const t0 = train.startedAt;
+  state.trainings.push({
+    t: Math.round(t0),
+    shooterId: gun?.seat.userId ?? state.shooter?.id ?? '',
+    report,
+    trials: train.rec.trials.map((t) => ({ ...t, t0: Math.round(t.t0 - t0), end: Math.round(t.end - t0), ...(t.move !== undefined ? { move: Math.round(t.move - t0) } : {}) })),
+    raw: rawFor(train),
+    aspect: train.rec.aspect,
+  });
+  if (gun) state.shooter = { id: gun.seat.userId, name: gun.seat.name };
+  state.phase = 'over';
+  state.room.broadcast({ trained: report });
+}
+
+function failTraining(state: State, reason: string): void {
+  state.train = null;
+  state.phase = 'ready';
+  state.room.broadcast({ trainFailed: { reason } });
+}
+
+function tickTraining(state: State, now: number): void {
+  const train = state.train;
+  if (!train || state.phase !== 'playing') return;
+  if (train.fit) {
+    const until = performance.now() + FIT_BUDGET_MS;
+    try {
+      do {
+        const step = train.fit.next();
+        if (step.done) {
+          train.fit = null;
+          finishTraining(state, train, step.value);
+          return;
+        }
+        train.progress = step.value;
+      } while (performance.now() < until);
+    } catch {
+      failTraining(state, "The fit didn't work out. Try another run.");
+    }
+    return;
+  }
+  const gun = state.guns.get(train.gun);
+  if (gun) {
+    train.latSum += gun.rtt / 2 + aimLagOf(state);
+    train.latN++;
+  }
+  const trial = train.script[train.i]!;
+  const local = now - train.trialAt - GAP_MS;
+  if (local >= 0 && !train.cur) {
+    train.cur = { kind: trial.kind, a: trial.a, ...(trial.b ? { b: trial.b } : {}), t0: now, end: now };
+    placeOn(state, train, trial.a);
+  }
+  if (train.cur && trial.kind === 'jump' && local >= JUMP_AIM_MS && train.cur.move === undefined) {
+    // B appears and the crosshair hides: from A, point where you think B is.
+    train.cur.move = now;
+    placeOn(state, train, trial.a);
+  }
+  if (train.cur && local >= trial.ms) {
+    train.cur.end = now;
+    train.rec.trials.push(train.cur);
+    train.cur = null;
+    train.i++;
+    train.trialAt = now;
+    if (train.i >= train.script.length) {
+      train.rec.latencyMs = train.latN ? train.latSum / train.latN : DEFAULT_AIM_LAG_MS;
+      if (train.rec.samples.length < MIN_TRAINING_SAMPLES) failTraining(state, 'No motion came in from the phone. Is it still connected?');
+      else train.fit = fitTraining(train.rec);
+    }
+  }
+}
+
+/** Training as the screen draws it. */
+function trainingView(state: State, now: number): TrainingView {
+  const train = state.train;
+  const n = train?.script.length ?? TRIALS;
+  if (!train || state.phase === 'ready') return { k: 'ready', i: 0, n, x: 0.5, y: 0.5, show: true };
+  if (state.phase === 'over') return { k: 'done', i: n, n, x: 0.5, y: 0.5, show: true };
+  if (train.fit) return { k: 'fit', i: n, n, x: 0.5, y: 0.5, show: false, p: r3(train.progress) };
+  const trial = train.script[train.i]!;
+  const local = now - train.trialAt - GAP_MS;
+  const [ax, ay] = trial.a;
+  if (local < 0) return { k: 'gap', i: train.i, n, x: ax, y: ay, show: true };
+  if (trial.kind === 'track') {
+    const [x, y] = trackAt(trial, local);
+    return { k: 'track', i: train.i, n, x: r3(x), y: r3(y), show: true };
+  }
+  if (trial.kind === 'jump' && local >= JUMP_AIM_MS) return { k: 'jump', i: train.i, n, x: trial.b![0], y: trial.b![1], ax, ay, show: false };
+  return { k: trial.kind, i: train.i, n, x: ax, y: ay, show: true };
 }
 
 function tickRounds(state: State, dt: number, now: number): void {
@@ -594,6 +780,8 @@ export function skyShot(opts: SkyShotOptions = {}) {
         pending: [],
         stats: {},
         range: { kind: 'static', speed: 1 },
+        train: null,
+        trainings: [],
       };
       return state;
     },
@@ -655,6 +843,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         state.phaseUntil += ms;
         for (const t of state.targets) t.born += ms;
       } else if (state.mode === 'rounds') tickRounds(state, dt, now);
+      else if (state.mode === 'training') tickTraining(state, now);
       else tickRange(state, dt, now);
       state.history.record(now, state.targets);
     },
@@ -679,6 +868,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         cfg: state.cfg,
       };
       if (state.cal) snap.cal = { i: state.cal.poses.length, pts: CAL_POINTS };
+      if (state.mode === 'training') snap.tr = trainingView(state, state.room.elapsedMs);
       if (forPlayer.id === state.screen) {
         const first = [...state.guns.values()][0];
         snap.lat = { gun: Math.round(first?.rtt ?? 0), screen: Math.round(state.screenRtt), pix: Math.round((first?.rtt ?? 0) / 2 + aimLagOf(state)), lag: Math.round(aimLagOf(state)) };

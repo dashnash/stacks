@@ -204,6 +204,18 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
         </button>
       </div>
     );
+  if (hud?.mode === 'training')
+    return (
+      <div className="gun gun-training">
+        <div className="gun-top">
+          <span className={`chip ${live ? 'ok' : ''}`}>{live ? `Live · ${room.rttMs ?? '-'} ms` : 'Connecting…'}</span>
+        </div>
+        <div className="gun-note" role="status">
+          <h2>Training</h2>
+          <p>Watch the screen and follow the dot. Hold the phone the way you play. No need to tap.</p>
+        </div>
+      </div>
+    );
   return (
     <div className={`gun${flash ? ` gun-${flash}` : ''}`}>
       <div className="gun-top">

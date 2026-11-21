@@ -1,11 +1,14 @@
 /** The app's keys in its single table, and what each item holds. */
 import type { Item } from '@stacks/api';
-import type { GameSummary, ShotRecord } from '../game/protocol';
+import type { FitReport } from '../game/fit';
+import type { GameSummary, ShotRecord, TrainingRecord } from '../game/protocol';
 import type { Tuning } from '../game/tuning';
 
 /** Shots (and the configs they used) are kept 30 days. */
 export const TELEMETRY_DAYS = 30;
 export const LEADERBOARD_SIZE = 20;
+/** Training runs (with their raw motion) are kept 90 days: long enough to refit them with a better fitter. */
+export const TRAINING_DAYS = 90;
 
 export const keys = {
   /** One per saved room: makes the save idempotent. */
@@ -22,14 +25,28 @@ export const keys = {
   config: (id: string) => ({ PK: `CONFIG#${id}`, SK: 'META' }),
   /** A person's own default tuning (what a new room starts with on their screen). */
   tuning: (userId: string) => ({ PK: `TUNING#${userId}`, SK: 'CURRENT' }),
+  /** A person's training runs, newest last; GSI1 `TRAINING` lists everyone's (the owner's view). */
+  training: (userId: string, at: string, roomId: string, n: number) => ({
+    PK: `TRAINING#${userId}`,
+    SK: `${at}#${roomId}#${n}`,
+    GSI1PK: 'TRAINING',
+    GSI1SK: `${at}#${userId}#${roomId}#${n}`,
+  }),
 };
 
 export interface TuningItem extends Item {
   userId: string;
   tuning: Tuning;
-  /** Where it came from: a calibration, or set by hand from the tuning panel. */
-  source: 'calibration' | 'manual';
+  /** Where it came from: a calibration, a training run's fit, or set by hand from the tuning panel. */
+  source: 'calibration' | 'training' | 'manual';
   at: string;
+}
+
+export interface TrainingItem extends Item, Omit<TrainingRecord, 'report'> {
+  report: FitReport;
+  roomId: string;
+  at: string;
+  expiresAt: number;
 }
 
 export interface SessionItem extends Item {
