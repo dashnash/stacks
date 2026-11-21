@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Tilt+Neon&display=swap');
+
 :root {
   --ink: #fdf6ff;
   --muted: #c9b8e8;
@@ -592,4 +594,62 @@ tr.current td {
   font-size: 1rem;
   font-weight: 600;
   opacity: 0.8;
+}
+
+/* Neon Courier: glowing HUD text, bar-shaped shells, a neon-tube trigger */
+.screen[data-theme='neon'] .hud {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  text-shadow: 0 0 0.6em var(--hud-glow);
+}
+.screen[data-theme='neon'] .hud .score {
+  color: var(--hud-fg);
+  font-variant-numeric: tabular-nums;
+}
+.screen[data-theme='neon'] .shell {
+  width: 1.5rem;
+  height: 0.6rem;
+  border-radius: 0;
+  box-shadow: 0 0 0.5em var(--hud-shell);
+}
+.screen[data-theme='neon'] .shell.spent {
+  background: transparent;
+  border: 1.5px solid var(--hud-shell-spent);
+  box-shadow: none;
+}
+.screen[data-theme='neon'] .banner,
+.screen[data-theme='neon'] .overlay h2 {
+  font-family: var(--title-font);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.screen[data-theme='neon'] .banner {
+  border-radius: 4px;
+  color: var(--hud-fg);
+  text-shadow: 0 0 0.5em var(--hud-glow);
+  box-shadow: 0 0 1em var(--hud-accent);
+}
+.gun[data-theme='neon'] {
+  font-family: var(--trigger-font);
+}
+.gun[data-theme='neon'] .trigger {
+  font-size: 2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 2px solid var(--gun-accent);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0.6em var(--gun-accent),
+    0 0 0.6em var(--gun-accent) inset;
+  text-shadow: 0 0 0.5em var(--gun-accent);
+}
+.gun-hit[data-theme='neon'] .trigger {
+  box-shadow:
+    0 0 0 6px var(--teal) inset,
+    0 0 0.6em var(--gun-accent);
+}
+.gun[data-theme='neon'] .chip {
+  border-color: var(--gun-accent);
+  border-width: 1px;
 }
