@@ -1,5 +1,5 @@
 /**
- * The phone: a light gun. Asks for motion, joins the room as device `gun`, and streams raw motion
+ * The phone: the pointer. Asks for motion, joins the room as device `gun`, and streams raw motion
  * (attitude as a quaternion, rotation rate, acceleration) about 60 times a second, always with the
  * latest 8 samples so a lost packet loses nothing. The server maps it to a crosshair. Most of the
  * screen is the trigger (tap mode); in flick mode a jerk of the wrist fires.
@@ -112,7 +112,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
       }
       if (recent.current.length > MAX_SAMPLES_PER_INPUT) recent.current.splice(0, recent.current.length - MAX_SAMPLES_PER_INPUT);
     });
-    stop.ready.catch((e: { code?: string }) => setProblem(e.code === 'forbidden' ? "DashyHQ didn't let Sky Shot use motion." : 'Motion is not available here.'));
+    stop.ready.catch((e: { code?: string }) => setProblem(e.code === 'forbidden' ? "DashyHQ didn't let Whee use motion." : 'Motion is not available here.'));
     return () => stop();
   }, [enabled]);
 
@@ -184,8 +184,8 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   if (!enabled)
     return (
       <div className="gun gun-setup" {...dressed}>
-        <h2>Sky Shot gun</h2>
-        <p>Hold your phone like a light gun: top edge at the screen.</p>
+        <h2>Whee controller</h2>
+        <p>Hold your phone like a pointer: top edge at the screen.</p>
         <button type="button" className="primary big" onClick={() => void enable()}>
           Enable motion
         </button>

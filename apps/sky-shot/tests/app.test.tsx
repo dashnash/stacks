@@ -61,7 +61,7 @@ async function renderDemo(as?: string, withPhone = false) {
 
 const T = { timeout: 8000 };
 
-describe('Sky Shot: title and leaderboard', () => {
+describe('Whee: title and leaderboard', () => {
   it('signed out: the title, the leaderboard with first names, and Sign in to play', async () => {
     await renderDemo();
     expect(await screen.findByText(manifest.tagline)).toBeInTheDocument();
@@ -84,7 +84,7 @@ describe('Sky Shot: title and leaderboard', () => {
   });
 });
 
-describe('Sky Shot: playing', () => {
+describe('Whee: playing', () => {
   it('Play starts a room and shows the QR code and code to pair the phone', async () => {
     await renderDemo(MAX);
     await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
@@ -139,7 +139,7 @@ describe('Sky Shot: playing', () => {
   }, 15_000);
 });
 
-describe('Sky Shot: the look', () => {
+describe('Whee: the look', () => {
   it('the title screen offers the looks, Dusk by default, signed in and out', async () => {
     await renderDemo();
     const looks = await screen.findByRole('radiogroup', { name: 'Look' });
@@ -151,7 +151,7 @@ describe('Sky Shot: the look', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
     const phone = await screen.findByTestId('phone');
     await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
-    const play = screen.getByLabelText('Sky Shot play area').closest('.screen') as HTMLElement;
+    const play = screen.getByLabelText('Whee play area').closest('.screen') as HTMLElement;
     expect(play).toHaveAttribute('data-theme', 'dusk');
     expect(play.style.getPropertyValue('--hud-accent')).toBe('#ffd23f');
     await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'dusk'), T);
@@ -183,7 +183,7 @@ describe('Sky Shot: the look', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Range' }));
     const phone = await screen.findByTestId('phone');
     await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
-    const play = screen.getByLabelText('Sky Shot play area').closest('.screen') as HTMLElement;
+    const play = screen.getByLabelText('Whee play area').closest('.screen') as HTMLElement;
     expect(play).toHaveAttribute('data-theme', 'koi');
     expect(play).toHaveAttribute('data-palette', 'rice');
     expect(play.style.getPropertyValue('--gun-bg')).toBe('#ede4cf');
@@ -200,7 +200,7 @@ describe('Sky Shot: the look', () => {
   });
 });
 
-describe('Sky Shot: 5-point calibration', () => {
+describe('Whee: 5-point calibration', () => {
   it('walks five dots with the phone, applies the fit and saves it; the next room starts with it', async () => {
     await renderDemo(MAX, true);
     await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
@@ -233,7 +233,7 @@ describe('Sky Shot: 5-point calibration', () => {
   }, 30_000);
 });
 
-describe('Sky Shot: training', () => {
+describe('Whee: training', () => {
   it('Train the aim pairs the phone, explains, and runs the script with the phone told to watch the screen', async () => {
     await renderDemo(MAX, true);
     await userEvent.click(await screen.findByRole('button', { name: /Train the aim/ }));
@@ -290,7 +290,7 @@ describe('Sky Shot: training', () => {
   }, 25_000);
 });
 
-describe('Sky Shot: telemetry', () => {
+describe('Whee: telemetry', () => {
   it('shows a shooter only their own shots, and the owner everyone\'s', async () => {
     window.location.hash = '#/telemetry';
     await renderDemo(MAX);

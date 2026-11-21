@@ -64,7 +64,7 @@ function phone(g: ReturnType<typeof playGame>, who = ANN, device = 'gun') {
 
 const target = (screen: Player) => screen.state!.tg.find((t) => t.s === 0)!;
 
-describe('Sky Shot: seats', () => {
+describe('Whee: seats', () => {
   it('a screen and a gun of one person are two seats; the screen alone gets latency and motion', () => {
     const { g, screen } = setup();
     const gun = phone(g);
@@ -104,7 +104,7 @@ describe('Sky Shot: seats', () => {
   });
 });
 
-describe('Sky Shot: hits, lag compensation and triggers', () => {
+describe('Whee: hits, lag compensation and triggers', () => {
   /** Range with a target sweeping at 0.5 screen heights a second. */
   function sweeping() {
     const t = setup();
@@ -205,7 +205,7 @@ describe('Sky Shot: hits, lag compensation and triggers', () => {
   });
 });
 
-describe('Sky Shot: Rounds', () => {
+describe('Whee: Rounds', () => {
   /** Shoot the first flying target dead centre (a mouse that knows where it is). */
   function hitOne(t: ReturnType<typeof setup>, m: ReturnType<typeof mouse>) {
     const tg = target(t.screen);
@@ -272,7 +272,7 @@ describe('Sky Shot: Rounds', () => {
   });
 });
 
-describe('Sky Shot: results', () => {
+describe('Whee: results', () => {
   it('records games, shots with their motion window and config, capped by count and by size', () => {
     const t = setup();
     t.screen.event({ mode: 'range' });
@@ -304,7 +304,7 @@ describe('Sky Shot: results', () => {
   }, 30_000);
 });
 
-describe('Sky Shot: the look', () => {
+describe('Whee: the look', () => {
   it('tells every seat the screen\'s look, on joining and when it changes; shots and games record it', () => {
     const t = setup();
     expect(t.of(t.screen, 'theme')).toEqual([{ id: 'dusk', palette: 'dusk' }]);
