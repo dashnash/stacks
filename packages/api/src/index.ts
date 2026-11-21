@@ -82,6 +82,8 @@ export {
   registerGameRoutes,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
+  WARM_ADOPT_MARGIN_MS,
+  WARM_LOCK_MS,
   roomChannels,
   roomKeys,
   seatId,

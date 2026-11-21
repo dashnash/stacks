@@ -29,8 +29,9 @@ export const OVERTIME_GRACE_MS = 5 * 60_000;
  */
 export const WARM_ADOPT_MARGIN_MS = 30_000;
 /**
- * A person's warm-up lock younger than this is a server still being started: a second
- * `POST /rooms/warm` meanwhile gets 409 `ALREADY_WARMING` instead of starting another.
+ * Warm-up locks are per person per window of this length: a second `POST /rooms/warm` in the same
+ * window, while the first is still starting its server, gets 409 `ALREADY_WARMING`. A new window
+ * is a new lock, so a lock left behind by a crash never blocks anyone for longer than this.
  */
 export const WARM_LOCK_MS = 60_000;
 /** STUN only: what a join gets when the platform has no TURN key. */
@@ -80,8 +81,8 @@ export const roomKeys = {
   code: (code: string) => ({ PK: codePk(code), SK: 'META' }),
   /** Written once (if absent) by whoever takes a warm room: its creator's `POST /rooms`, or the sweeper retiring it. */
   claim: (id: string) => ({ PK: roomPk(id), SK: 'CLAIM' }),
-  /** One person's warm room (written if absent, so two warm-ups at once start one server). */
-  warmLock: (userId: string) => ({ PK: `ROOMWARM#${userId}`, SK: 'META' }),
+  /** One person's warm-up in one {@link WARM_LOCK_MS} window (written if absent: two at once start one server). */
+  warmLock: (userId: string, window: number) => ({ PK: `ROOMWARM#${userId}`, SK: `W#${window}` }),
 };
 
 export type RoomStatus = 'starting' | 'open' | 'ended';
@@ -375,9 +376,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
 
   /** Free a person's warm-up lock if it is still this room's. */
   async function unlock(userId: string, roomId: string): Promise<void> {
-    const key = roomKeys.warmLock(userId);
-    const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
-    if (lock?.roomId === roomId) await store.delete(key.PK, key.SK);
+    for (const lock of await store.query<Item & { roomId?: string }>(roomKeys.warmLock(userId, 0).PK)) if (lock.roomId === roomId) await store.delete(lock.PK, lock.SK);
   }
 
   /** End a warm room nobody took (expired, or making space under `maxRooms`). */
@@ -473,8 +472,14 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     async create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
       let going = await active();
       const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
-      // Claimed by a request a moment ago: it's that request's game now, and still counts below.
-      if (mine && (await claim(mine.meta))) {
+      // Claimed by a request a moment ago: another Play's game now (it counts below), or being
+      // retired by a sweep (it doesn't, once ended).
+      const won = mine ? await claim(mine.meta) : false;
+      if (mine && !won) {
+        const again = await meta(mine.meta.id);
+        if (!again || again.status === 'ended') going = going.filter((r) => r !== mine);
+      }
+      if (mine && won) {
         // Re-read it: it may have ended since the list was read (ended by its creator, or its server stopped).
         const now = await meta(mine.meta.id);
         const room = now && (await view(store, now, warmMs));
@@ -513,35 +518,31 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
       if (mine) return { room: mine.room, started: false };
       if (going.length >= settings.maxRooms) throw tooMany();
-      // One at a time per person: a lock naming the room, written only if absent.
+      // One at a time per person: a lock naming the room, written only if absent. It never needs
+      // replacing (no delete-then-write race): the next window has a lock of its own.
       const id = deps.newId();
-      const key = roomKeys.warmLock(creator.id);
-      const lock = async () => {
-        const now = deps.now();
-        await store.put({ ...key, roomId: id, at: now.toISOString(), expiresAt: Math.floor(now.getTime() / 1000) + settings.warmMinutes * 60 + 3600 }, { ifNotExists: true });
-      };
+      const now = deps.now().getTime();
       try {
-        await lock();
+        await store.put({ ...roomKeys.warmLock(creator.id, Math.floor(now / WARM_LOCK_MS)), roomId: id, expiresAt: Math.floor(now / 1000) + 3600 }, { ifNotExists: true });
       } catch (err) {
-        if (!(err instanceof ConditionFailedError)) throw err;
-        const held = await store.get<Item & { at?: string }>(key.PK, key.SK);
-        const busy = () => new HttpError(409, 'Already warming a game for you', 'ALREADY_WARMING');
-        if (held?.at && deps.now().getTime() - Date.parse(held.at) < WARM_LOCK_MS) throw busy();
-        // Left over (its room was taken, ended or crashed without freeing it): replace it.
-        await store.delete(key.PK, key.SK);
-        try {
-          await lock();
-        } catch (again) {
-          if (again instanceof ConditionFailedError) throw busy();
-          throw again;
-        }
+        if (err instanceof ConditionFailedError) throw new HttpError(409, 'Already warming a game for you', 'ALREADY_WARMING');
+        throw err;
       }
+      let room: Room;
       try {
-        return { room: await start(creator, { warm: true, id }), started: true };
+        room = await start(creator, { warm: true, id });
       } catch (err) {
         await unlock(creator.id, id);
         throw err;
       }
+      // Someone else started a room meanwhile and the app is over its cap: this one gives way.
+      const after = await active();
+      const self = after.find((r) => r.meta.id === id);
+      if (self && after.length > settings.maxRooms && (await claim(self.meta))) {
+        await retire(self.meta);
+        throw tooMany();
+      }
+      return { room, started: true };
     },
 
     /** Open and starting rooms, oldest first (dead ones are closed on the way). */
@@ -613,8 +614,11 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
 
     /** End a room now: marked ended, its server stopped (it says "game over" on its way out), watchers told. */
     async end(id: string, reason = 'ended'): Promise<Room> {
-      const m = await meta(id);
+      let m = await meta(id);
       if (!m) throw notFound('No such room');
+      // A warm room: take it first, so a Play adopting it at this moment starts a fresh one instead;
+      // if that Play got there first, end the room as it now is.
+      if (m.warm && !(await claim(m))) m = (await meta(id)) ?? m;
       await finish(m, reason);
       await deps.games.stop(id).catch((err) => log.error('Game server not stopped', { roomId: id, error: err }));
       await announceEnd(id);

@@ -180,7 +180,8 @@ module on, these member routes exist (you write none of them):
   screen), so Play doesn't wait for the cold start. A warm room (`warm: true`, `warmUntil`) isn't listed,
   found by code or joinable. The creator's next `POST /rooms` takes it over (named, listed, joinable, audited,
   already on its way up), unless it is within 30 s of `warmUntil`. Untaken, it ends `unused` after the
-  manifest's `warmMinutes` (5). One per person; at `maxRooms` a real `POST /rooms` retires the oldest warm room.
+  manifest's `warmMinutes` (5). One per person; at `maxRooms` a real `POST /rooms` retires the oldest warm room. A taken room's
+  `createdAt` (and so its `maxHours`) counts from the warm-up.
 - `useGameRoom(roomId, { device? })` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
   `GET /rooms` and `by-code` themselves.
 - Channels `room/*`, `room/*/to-server`, `room/*/to/*` are declared for you (members listen to a

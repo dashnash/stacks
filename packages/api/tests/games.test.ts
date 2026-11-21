@@ -17,6 +17,7 @@ import {
   STUN_ONLY,
   verifyGameTicket,
   verifyRealtimeToken,
+  WARM_LOCK_MS,
   type AppDeps,
   type AppRoutes,
 } from '../src/index';
@@ -229,7 +230,7 @@ describe('pre-warming', () => {
     expect(t.games.started).toHaveLength(1);
     // A lock that another request just wrote: 409, nothing started.
     const other = harness();
-    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev'), roomId: 'r-in-flight', at: other.deps.now().toISOString() });
+    await other.store.put({ ...roomKeys.warmLock('u_ann_test_dev', Math.floor(other.deps.now().getTime() / WARM_LOCK_MS)), roomId: 'r-in-flight' });
     const busy = await warm(other);
     expect([busy.status, busy.body.code]).toEqual([409, 'ALREADY_WARMING']);
     expect(other.games.started).toEqual([]);
@@ -246,6 +247,15 @@ describe('pre-warming', () => {
     t.games.crash(id);
     t.advance(61_000);
     expect((await warm(t)).status).toBe(201);
+  });
+
+  it('lets its creator end a warm room; their next Play starts a fresh one', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    expect((await t.call('POST', `/rooms/${id}/end`, { as: ann, role: 'EDITOR' })).body.room.status).toBe('ended');
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.status).toBe('ended');
   });
 
   it("doesn't go over maxRooms when two POST /rooms race for one warm room", async () => {

@@ -101,8 +101,8 @@ export interface GameServerSettings {
   /** A room ends after this many hours whatever happens, 0.25-4. */
   maxHours: number;
   /**
-   * A room nobody has joined ends after this many minutes, 1-15. It is also how long a pre-warmed
-   * room (`POST /rooms/warm`) waits to be picked up by its creator's next `POST /rooms`.
+   * How long a pre-warmed room (`POST /rooms/warm`) waits for its creator's next `POST /rooms` to
+   * take it, 1-15 and at most `idleMinutes`; untaken, it ends as `unused`. Other rooms aren't affected.
    */
   warmMinutes: number;
   /** Fargate CPU units per room: 256 (0.25 vCPU), 512 or 1024. */

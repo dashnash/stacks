@@ -85,6 +85,9 @@ describe('validateManifest', () => {
       expect(gameServerSettings({})).toEqual({ maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, warmMinutes: 5, cpu: 256, memory: 512 });
       expect(gameServerSettings({ gameServer: { maxPlayers: 4 } })).toMatchObject({ maxPlayers: 4, maxRooms: 4 });
       expect(gameServerSettings({ gameServer: { idleMinutes: 2 } })).toMatchObject({ idleMinutes: 2, warmMinutes: 2 });
+      // The lowest idle limit alone is fine: the default warm limit comes down to it.
+      expect(errorsFor({ modules: ['realtime', 'gameServer'], gameServer: { idleMinutes: 1 } })).toEqual([]);
+      expect(gameServerSettings({ gameServer: { idleMinutes: 1 } }).warmMinutes).toBe(1);
       // A bigger CPU brings the least memory Fargate pairs with it.
       expect(gameServerSettings({ gameServer: { cpu: 1024 } })).toMatchObject({ cpu: 1024, memory: 2048 });
     });
