@@ -287,15 +287,28 @@ describe('pre-warming', () => {
     expect((await t.call('GET', '/rooms', { as: ann })).body.rooms.map((r: { id: string }) => r.id)).toEqual([res.body.room.id]);
   });
 
-  it('swaps a warm room too close to its end for a new one, so Play still finds one it can take', async () => {
+  it('starts the next warm room near the end of the last, and Play takes the readier one', async () => {
     const t = harness();
+    // A clock that stays put between requests (the harness's moves 1 s per read).
+    let at = Date.parse('2026-11-21T10:00:00Z');
+    vi.spyOn(t.deps, 'now').mockImplementation(() => new Date(at));
     const old = (await warm(t)).body.room.id;
-    // 50 s before its end: Play could still take it, but not for long. (The hook re-warms 45 s before.)
-    t.advance(5 * 60_000 - 50_000);
-    const res = await warm(t);
-    expect(res.status).toBe(201);
-    expect(res.body.room.id).not.toBe(old);
-    expect(t.games.stopped).toEqual([old]);
+    await t.games.open(old);
+    // 50 s before its end: a warm-up starts a replacement but leaves the open one running.
+    at += 5 * 60_000 - 50_000;
+    const next = await warm(t);
+    expect(next.status).toBe(201);
+    expect(next.body.room.id).not.toBe(old);
+    expect(t.games.stopped).toEqual([]);
+    // Another warm-up now finds the fresh one.
+    expect((await warm(t)).body.room.id).toBe(next.body.room.id);
+    // Play (still before the old one's cutoff) takes the open old room, not the starting new one.
+    const play = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(play.body.room).toMatchObject({ id: old, status: 'open' });
+    // Past the old one's cutoff, the next Play takes the new one.
+    at += 30_000;
+    const play2 = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(play2.body.room.id).toBe(next.body.room.id);
   });
 
   it('finds the warm room by its lock when the room index lags behind', async () => {

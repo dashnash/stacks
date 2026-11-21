@@ -477,25 +477,34 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
   const tooMany = () => new HttpError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
 
   /**
-   * The caller's live warm room among `going`; or, when the room index hasn't caught up with one
-   * started a moment ago, the one their warm-up lock names (read by key), added to `going`.
+   * The caller's live warm rooms (usually one; two while a replacement starts near the end of the
+   * last), oldest first: from `going`, confirmed against each record (the index can lag a takeover),
+   * plus the one their warm-up lock names if the index doesn't list it yet (added to `going`).
    */
-  // (A Play in the moment between a warm-up's lock and its record starts a second server, which ends
-  // `unused`: the store can't write both at once.)
-  async function warmOf(creatorId: string, going: { meta: RoomMeta; room: Room }[]) {
-    const listed = going.find((r) => r.meta.warm && r.meta.createdBy === creatorId);
-    // The index may lag a takeover: trust it only once the record itself still says warm (and it
-    // hasn't outlived its time, e.g. stuck after a crash between claiming and taking it).
-    if (listed && (await meta(listed.meta.id))?.warm && ageOf(listed.meta) < warmMs) return listed;
+  async function warmRooms(creatorId: string, going: { meta: RoomMeta; room: Room }[]) {
+    const out: { meta: RoomMeta; room: Room }[] = [];
+    for (const r of going)
+      if (r.meta.warm && r.meta.createdBy === creatorId && ageOf(r.meta) < warmMs && (await meta(r.meta.id))?.warm) out.push(r);
     const key = roomKeys.warmLock(creatorId);
     const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
-    const m = lock?.roomId ? await meta(lock.roomId) : undefined;
-    if (!m?.warm || m.status === 'ended' || m.createdBy !== creatorId) return undefined;
-    const room = await view(store, m, warmMs);
-    if (room.status === 'ended' || ageOf(m) >= warmMs) return undefined;
-    const r = { meta: m, room };
-    going.push(r);
-    return r;
+    if (lock?.roomId && !out.some((r) => r.meta.id === lock.roomId)) {
+      const m = await meta(lock.roomId);
+      if (m?.warm && m.status !== 'ended' && m.createdBy === creatorId && ageOf(m) < warmMs) {
+        const room = await view(store, m, warmMs);
+        if (room.status !== 'ended') {
+          const r = { meta: m, room };
+          going.push(r);
+          out.push(r);
+        }
+      }
+    }
+    return out.sort((x, y) => x.meta.createdAt.localeCompare(y.meta.createdAt));
+  }
+
+  /** Which warm room Play takes: an open one it still may (the newest), else the newest. */
+  function forPlay(rooms: { meta: RoomMeta; room: Room }[]) {
+    const takeable = rooms.filter((r) => ageOf(r.meta) < warmMs - WARM_ADOPT_MARGIN_MS);
+    return takeable.filter((r) => r.room.status === 'open').at(-1) ?? takeable.at(-1) ?? rooms.at(-1);
   }
 
   /**
@@ -505,7 +514,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
    */
   async function create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
     let going = await active();
-    const mine = await warmOf(creator.id, going);
+    const mine = forPlay(await warmRooms(creator.id, going));
     // Claimed by a request a moment ago: another Play's game now (it counts below), or being
     // retired by a sweep (it doesn't, once ended).
     const won = mine ? await claim(mine.meta) : false;
@@ -561,14 +570,12 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
      * app's `maxRooms` (warm rooms never push out real ones).
      */
     async warm(creator: { id: string; name: string }): Promise<{ room: Room; started: boolean }> {
-      let going = await active();
-      const mine = await warmOf(creator.id, going);
-      if (mine) {
-        // Close to its end (Play stops taking it 30 s before): start the next one now instead.
-        if (ageOf(mine.meta) < warmMs - WARM_SWAP_MS || !(await claim(mine.meta))) return { room: mine.room, started: false };
-        await retire(mine.meta);
-        going = going.filter((r) => r !== mine);
-      }
+      const going = await active();
+      // One with time to spare: that's it. All close to their end (Play stops taking one 30 s
+      // before): start the next now, and leave the old one open for a Play meanwhile; it ends
+      // `unused` by itself.
+      const fresh = (await warmRooms(creator.id, going)).filter((r) => ageOf(r.meta) < warmMs - WARM_SWAP_MS).at(-1);
+      if (fresh) return { room: fresh.room, started: false };
       if (going.length >= settings.maxRooms) throw tooMany();
       // One at a time per person: a lock naming the room, written only if absent, or swapped for an
       // expired one only if nobody swapped it first.
