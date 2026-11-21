@@ -206,6 +206,8 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       })
       .catch((err) => {
         this.nextWarmCheck = age + WARM_POLL_MS;
+        // Can't tell whether it was taken: past its warm time, let the idle limit end it in the end.
+        if (age >= this.opts.unusedMs!) host.holdIdle(false);
         this.log('warm room not checked', err);
       })
       .finally(() => (this.checkingWarm = false));

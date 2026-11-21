@@ -3,8 +3,11 @@ import { useOptionalStacks } from './auth';
 
 /** After a refused or failed warm-up (429 at `maxRooms`, offline), try again this much later. */
 export const PREWARM_RETRY_MS = 60_000;
-/** Warm the next room this long before the last one runs out (Play stops taking one 30 s before). */
-const REWARM_LEAD_MS = 40_000;
+/**
+ * Warm the next room this long before the last one runs out: after the API starts swapping it for a
+ * new one (60 s before), before Play stops taking it (30 s before).
+ */
+const REWARM_LEAD_MS = 45_000;
 
 /**
  * Start a game server early (`POST /rooms/warm`) while `enabled`, so the player's next
@@ -40,7 +43,7 @@ export function usePrewarmRoom(enabled: boolean): void {
             const at = room.warmUntil ? Date.parse(room.warmUntil) : NaN;
             until = Number.isFinite(at) ? at : Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
-            // Shortly before Play would stop taking it (30 s before it ends), warm the next one if the
+            // Shortly before Play would stop taking it (45 s before it ends), warm the next one if the
             // player is still about. At least a minute apart, whatever the clocks say.
             const next = Math.max(PREWARM_RETRY_MS, until - Date.now() - REWARM_LEAD_MS);
             until = Date.now() + next;

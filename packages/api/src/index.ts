@@ -84,6 +84,7 @@ export {
   ROOM_CODE_LENGTH,
   WARM_ADOPT_MARGIN_MS,
   WARM_LOCK_MS,
+  WARM_SWAP_MS,
   roomChannels,
   roomKeys,
   seatId,

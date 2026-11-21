@@ -29,6 +29,12 @@ export const OVERTIME_GRACE_MS = 5 * 60_000;
  */
 export const WARM_ADOPT_MARGIN_MS = 30_000;
 /**
+ * A warm-up finding the caller's warm room this close to its end swaps it for a new one (Play could
+ * take it only a little longer). Wider than {@link WARM_ADOPT_MARGIN_MS}, so a re-warm a little before
+ * that cutoff (the web hook's, 45 s before) always gets a room Play can take.
+ */
+export const WARM_SWAP_MS = 60_000;
+/**
  * A person's warm-up lock holds this long: a second `POST /rooms/warm` meanwhile, while the first is
  * still starting its server, gets 409 `ALREADY_WARMING`. After it, the lock is replaced (by a
  * compare-and-swap), so one left behind by a crash never blocks anyone for longer.
@@ -376,6 +382,10 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
   }
 
   /** Free a person's warm-up lock if it is still this room's. */
+  /**
+   * The delete isn't conditional (the store has no conditional delete): a lock swapped in between
+   * the read and the delete can be lost, which at worst lets one extra warm-up through.
+   */
   async function unlock(userId: string, roomId: string): Promise<void> {
     const key = roomKeys.warmLock(userId);
     const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
@@ -481,59 +491,61 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     return r;
   }
 
+  /**
+   * Create a room. If the creator has a warm room (`warm`), it takes that one over: named,
+   * listed and joinable, its server already on its way up. Otherwise it starts a server; at the
+   * app's `maxRooms` it first retires the oldest warm room, and answers 429 if there is none.
+   */
+  async function create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
+    let going = await active();
+    const mine = await warmOf(creator.id, going);
+    // Claimed by a request a moment ago: another Play's game now (it counts below), or being
+    // retired by a sweep (it doesn't, once ended).
+    const won = mine ? await claim(mine.meta) : false;
+    if (mine && !won) {
+      const again = await meta(mine.meta.id);
+      if (!again || again.status === 'ended') going = going.filter((r) => r !== mine);
+    }
+    if (mine && won) {
+      // Re-read it: it may have ended since the list was read (ended by its creator, or its server stopped).
+      const now = await meta(mine.meta.id);
+      const room = now && (await view(store, now, warmMs));
+      if (now?.warm && room?.status !== 'ended' && ageOf(now) < warmMs - WARM_ADOPT_MARGIN_MS) {
+        const { warm: _warm, ...rest } = now;
+        const taken: RoomMeta = { ...rest, name: opts.name?.trim() || `${creator.name}'s game` };
+        try {
+          // Only over the record as it was read: ended meanwhile (its creator, a sweep), it stays ended.
+          await store.put(taken, { ifMatch: { status: 'starting', warm: true } });
+          await unlock(creator.id, taken.id);
+          return view(store, taken, warmMs);
+        } catch (err) {
+          if (!(err instanceof ConditionFailedError)) throw err;
+          // Gone from under us: start over, which now starts a fresh room.
+          return create(creator, opts);
+        }
+      }
+      // About to expire, or already over: retire it and start a fresh one.
+      if (now) await retire(now);
+      going = going.filter((r) => r !== mine);
+    }
+    if (going.length >= settings.maxRooms) {
+      const spares = going.filter((r) => r.meta.warm).sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
+      let made = false;
+      for (const spare of spares)
+        if (await claim(spare.meta)) {
+          await retire(spare.meta);
+          made = true;
+          break;
+        }
+      if (!made) throw tooMany();
+    }
+    return start(creator, opts);
+  }
+
   return {
     settings,
 
-    /**
-     * Create a room. If the creator has a warm room (`warm`), it takes that one over: named,
-     * listed and joinable, its server already on its way up. Otherwise it starts a server; at the
-     * app's `maxRooms` it first retires the oldest warm room, and answers 429 if there is none.
-     */
-    async create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
-      let going = await active();
-      const mine = await warmOf(creator.id, going);
-      // Claimed by a request a moment ago: another Play's game now (it counts below), or being
-      // retired by a sweep (it doesn't, once ended).
-      const won = mine ? await claim(mine.meta) : false;
-      if (mine && !won) {
-        const again = await meta(mine.meta.id);
-        if (!again || again.status === 'ended') going = going.filter((r) => r !== mine);
-      }
-      if (mine && won) {
-        // Re-read it: it may have ended since the list was read (ended by its creator, or its server stopped).
-        const now = await meta(mine.meta.id);
-        const room = now && (await view(store, now, warmMs));
-        if (now?.warm && room?.status !== 'ended' && ageOf(now) < warmMs - WARM_ADOPT_MARGIN_MS) {
-          const { warm: _warm, ...rest } = now;
-          const taken: RoomMeta = { ...rest, name: opts.name?.trim() || `${creator.name}'s game` };
-          try {
-            // Only over the record as it was read: ended meanwhile (its creator, a sweep), it stays ended.
-            await store.put(taken, { ifMatch: { status: 'starting', warm: true } });
-            await unlock(creator.id, taken.id);
-            return view(store, taken, warmMs);
-          } catch (err) {
-            if (!(err instanceof ConditionFailedError)) throw err;
-            // Gone from under us: start over, which now starts a fresh room.
-            return this.create(creator, opts);
-          }
-        }
-        // About to expire, or already over: retire it and start a fresh one.
-        if (now) await retire(now);
-        going = going.filter((r) => r !== mine);
-      }
-      if (going.length >= settings.maxRooms) {
-        const spares = going.filter((r) => r.meta.warm).sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
-        let made = false;
-        for (const spare of spares)
-          if (await claim(spare.meta)) {
-            await retire(spare.meta);
-            made = true;
-            break;
-          }
-        if (!made) throw tooMany();
-      }
-      return start(creator, opts);
-    },
+    create,
 
     /**
      * Pre-warm a room for `creator`: start a server now, so their next `create` finds it running.
@@ -544,8 +556,8 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       let going = await active();
       const mine = await warmOf(creator.id, going);
       if (mine) {
-        // Too close to its end for a Play to take it: start the next one now instead.
-        if (ageOf(mine.meta) < warmMs - WARM_ADOPT_MARGIN_MS || !(await claim(mine.meta))) return { room: mine.room, started: false };
+        // Close to its end (Play stops taking it 30 s before): start the next one now instead.
+        if (ageOf(mine.meta) < warmMs - WARM_SWAP_MS || !(await claim(mine.meta))) return { room: mine.room, started: false };
         await retire(mine.meta);
         going = going.filter((r) => r !== mine);
       }

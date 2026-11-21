@@ -288,7 +288,8 @@ describe('pre-warming', () => {
   it('swaps a warm room too close to its end for a new one, so Play still finds one it can take', async () => {
     const t = harness();
     const old = (await warm(t)).body.room.id;
-    t.advance(5 * 60_000 - 20_000);
+    // 50 s before its end: Play could still take it, but not for long. (The hook re-warms 45 s before.)
+    t.advance(5 * 60_000 - 50_000);
     const res = await warm(t);
     expect(res.status).toBe(201);
     expect(res.body.room.id).not.toBe(old);
