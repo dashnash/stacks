@@ -4,6 +4,7 @@ import { manifest } from '../../api/manifest';
 import type { LeaderEntry } from '../../api/leaderboard';
 import type { GameMode } from '../../game/protocol';
 import { Gun } from './Gun';
+import { LookPicker, LookProvider } from './Look';
 import { Screen } from './Screen';
 import { Telemetry } from './Telemetry';
 
@@ -148,6 +149,7 @@ function Title() {
         )}
       </section>
       <Leaderboard />
+      <LookPicker />
     </div>
   );
 }
@@ -177,7 +179,9 @@ export function App() {
         <AccountMenu className="account" />
       </header>
       <main>
-        <Routed />
+        <LookProvider>
+          <Routed />
+        </LookProvider>
       </main>
       <footer className="foot">
         {manifest.name} · built on Stacks · <BuildVersion className="build" />

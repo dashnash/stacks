@@ -212,14 +212,16 @@ describe('hosted zone lookup', () => {
     expect(write({ legacyRedirects: [{ ...legacy, hosts: Array.from({ length: 11 }, (_, n) => `h${n}`) }] })).toThrow(/more than 10/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['mofobookklub'] }] })).not.toThrow();
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['x'.repeat(50)] }] })).toThrow(/longer than 64/);
-    const prodRoot = repoConfig.environments.production.legacyRedirects?.[0]?.rootDomain ?? '';
-    const stagingRoot = repoConfig.environments.staging.legacyRedirects?.[0]?.rootDomain ?? '';
-    if (prodRoot && stagingRoot.endsWith(`.${prodRoot}`)) {
-      const file = path.join(dir, 'p.json');
-      const prod = { ...repoConfig.environments.production, legacyRedirects: [{ ...repoConfig.environments.production.legacyRedirects![0]!, hosts: [stagingRoot.slice(0, -prodRoot.length - 1)] }] };
-      fs.writeFileSync(file, JSON.stringify({ ...repoConfig, environments: { ...repoConfig.environments, production: prod } }));
-      expect(() => loadStacksConfig(file)).toThrow(/overlaps staging/);
-    }
+    const overlap = path.join(dir, 'overlap.json');
+    const zone = { hostedZoneId: 'Z1', hostedZoneName: 'old.example' };
+    fs.writeFileSync(overlap, JSON.stringify({
+      ...repoConfig,
+      environments: {
+        production: { ...repoConfig.environments.production, legacyRedirects: [{ rootDomain: 'old.example', ...zone, hosts: ['test'] }] },
+        staging: { ...repoConfig.environments.staging, legacyRedirects: [{ rootDomain: 'test.old.example', ...zone }] },
+      },
+    }));
+    expect(() => loadStacksConfig(overlap)).toThrow(/test\.old\.example overlaps staging/);
     expect(write({})).not.toThrow();
   });
 });

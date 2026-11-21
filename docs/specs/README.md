@@ -31,3 +31,4 @@ A desktop-screen + iPhone light-gun game, built on game rooms and the Game kit.
 | 1 | [#131 Seats keyed per device](131-device-seats.md) | `packages/api`, `game-server`, `web`, `testing`, `demo` | no |
 | 2 | [#132 Sky Shot](132-sky-shot.md) | `apps/sky-shot/` (app task; `motion` needs code-owner review) | no |
 | 3 | [#133 Volume buttons (draft)](133-volume-buttons.md) | `native/ios`, `native/protocol`, `packages/native` | open questions first |
+| 4 | [#144 Themes](144-sky-shot-themes.md) | `apps/sky-shot/` (app task) | no |

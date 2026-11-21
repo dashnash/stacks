@@ -30,6 +30,8 @@ Mobile Safari at ~60 Hz). No phone: the mouse plays too.
   fit or "Save as my default"; the screen sends it to every new room.
 - **Training run** (90-day TTL): the fit report (before/after, both tunings), the trials, and the raw
   motion at 25 Hz, so runs can be refitted when the fitter improves.
+- **Your look**: one per person (by user id), the theme and palette you picked; signed out, kept in
+  the browser. The screen tells the room, the phone follows it, and each shot records it.
 
 ## What signed-out visitors see
 
@@ -38,7 +40,11 @@ way to see it move.
 
 ## Look and feel
 
-Flat vector arcade: bold shapes and colours on a dusk-sky gradient, chunky type, no pixel art.
+Switchable looks (spec `docs/specs/144-sky-shot-themes.md`); the game is the same in every one.
+**Dusk** (the default): flat vector arcade, bold shapes and colours on a dusk-sky gradient, chunky
+type, no pixel art. **Ink Koi**: sumi-e brush painting on rice paper (or a moonlit pond).
+**Neon Courier**: synthwave wireframe over a scrolling grid (midnight or amber). **Stargazer**:
+a cut-paper night sky (dusk or indigo).
 
 ## User stories
 
@@ -52,6 +58,7 @@ Flat vector arcade: bold shapes and colours on a dusk-sky gradient, chunky type,
   deadzone to how I move, shows before/after, lets me compare blind (A/B), and saves the winner as my
   default for every new room.
 - As a shooter without a phone I use the mouse.
+- As a shooter I pick a look on the title screen (or press L while playing); it sticks to my account.
 - As a shooter I see the leaderboard and my own shot telemetry, and download it.
 - As the owner I see everyone's telemetry and remove bad leaderboard rows.
 

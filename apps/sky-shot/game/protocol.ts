@@ -4,6 +4,7 @@
  */
 import type { FitReport } from './fit';
 import type { RecSample, TrialKind } from './training';
+import type { ThemeChoice } from './themes';
 import type { Tuning } from './tuning';
 
 export type Vec3 = [number, number, number];
@@ -68,7 +69,9 @@ export type ScreenEvent =
   /** The screen's shape (width / height): hit distances are measured in screen space. */
   | { view: { aspect: number } }
   /** Done playing: end the room so the session can be saved. */
-  | { finish: true };
+  | { finish: true }
+  /** The look the screen draws (the phones follow it; shots record it). */
+  | { theme: ThemeChoice };
 
 export interface Latency {
   /** Gun → server round trip, ms. */
@@ -106,7 +109,9 @@ export type ServerEvent =
   /** A training run finished and was fitted. */
   | { trained: FitReport }
   /** A training run couldn't be fitted (no gun, or too little motion). */
-  | { trainFailed: { reason: string } };
+  | { trainFailed: { reason: string } }
+  /** The screen's look, on joining and whenever it changes. */
+  | { theme: ThemeChoice };
 
 /** A 5-point calibration in progress, in the snapshot: the dots and which one to point at. */
 export interface CalibrationView {
@@ -198,6 +203,8 @@ export interface GameSummary {
   shooterName: string | null;
   /** Ms since the room started. */
   endedAt: number;
+  /** The look when the game ended (`themeTag`); absent in games saved before themes. */
+  theme?: string;
 }
 
 /** A motion sample in a shot's window: `[t, qx, qy, qz, qw, rx, ry, rz, ax, ay, az]`, t in ms relative to the shot. */
@@ -217,6 +224,8 @@ export interface ShotRecord {
   latency: { gunRtt: number; screenRtt: number; shotToPixel: number };
   /** −300 ms … +100 ms around the shot, 25 Hz. */
   window: WindowSample[];
+  /** The look the screen drew (`themeTag`); absent in shots saved before themes. */
+  theme?: string;
 }
 
 /** What the room records when it ends (and the app API copies). */

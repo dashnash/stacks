@@ -4,8 +4,10 @@ import { createDemo, DemoApp } from '@stacks/demo';
 import { fakeGameKit, fakeMotion, installFakeNative } from '@stacks/native';
 import { useApi, useHashRoute, useStacks } from '@stacks/web';
 import type { Vec3 } from '../../game/protocol';
+import { isThemeChoice, THEME_PALETTES, type ThemeChoice } from '../../game/themes';
 import { App, demoOptions } from './demo/setup';
 import { Gun } from './Gun';
+import { STORAGE_KEY } from './Look';
 import './styles.css';
 
 /**
@@ -23,6 +25,26 @@ const aim = (change: Partial<typeof pose>) => {
   pose.pitch = Math.max(-0.5, Math.min(0.5, pose.pitch));
   motion.set({ ...pose });
 };
+
+/**
+ * `#/autoplay/look/<theme>[/<palette>]` (also after `#/autoplay/tuning`): start in that look, for a
+ * screenshot per theme. Written to this browser's saved look before the app reads it.
+ */
+function lookFromHash(hash: string): ThemeChoice | null {
+  const seg = hash.replace(/^#\/?/, '').split('/');
+  const i = seg.indexOf('look');
+  if (seg[0] !== 'autoplay' || i < 0) return null;
+  const id = seg[i + 1] ?? '';
+  const c = { id, palette: seg[i + 2] ?? (Object.hasOwn(THEME_PALETTES, id) ? THEME_PALETTES[id as keyof typeof THEME_PALETTES][0] : '') };
+  return isThemeChoice(c) ? c : null;
+}
+const startLook = lookFromHash(window.location.hash);
+if (startLook)
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(startLook));
+  } catch {
+    // Storage blocked: the demo starts in the saved or default look.
+  }
 
 function DemoPhone({ roomId }: { roomId: string }) {
   const flickUntil = useRef(0);

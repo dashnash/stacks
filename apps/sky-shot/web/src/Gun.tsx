@@ -9,7 +9,9 @@ import { useGameRoom } from '@stacks/web';
 import { native, type MotionSample } from '@stacks/native';
 import { fromEuler } from '../../game/aim';
 import { DEVICE, MAX_SAMPLES_PER_INPUT, sig4, type GunInput, type ServerEvent, type Snapshot, type Vec3, type WireSample } from '../../game/protocol';
+import { DEFAULT_THEME, isThemeChoice, type ThemeChoice } from '../../game/themes';
 import { DEFAULT_TUNING, type Tuning } from '../../game/tuning';
+import { lookStyle, themeOf } from './themes';
 
 /** How often the phone sends its latest samples. */
 export const SEND_MS = 16;
@@ -45,6 +47,8 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const [enabled, setEnabled] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING);
+  // The phone wears the screen's look.
+  const [look, setLook] = useState<ThemeChoice>(DEFAULT_THEME);
   const [hud, setHud] = useState<{ sl: number; rd: number; mode: string; ph: string; cal: string | null } | null>(null);
   const [flash, setFlash] = useState<'hit' | 'miss' | null>(null);
   const latest = useRef<Snapshot | null>(null);
@@ -58,6 +62,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const onEvent = useCallback((e: ServerEvent) => {
     const mine = (seat: string) => seat === you.current;
     if ('tuning' in e) setTuning(e.tuning.tuning);
+    else if ('theme' in e && isThemeChoice(e.theme)) setLook(e.theme);
     else if ('hit' in e && mine(e.hit.seat)) {
       buzz(() => native.haptics.notification('success'));
       setFlash('hit');
@@ -174,9 +179,11 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
     return () => window.removeEventListener('keydown', onKey);
   }, [keyboard, fire]);
 
+  const { theme } = themeOf(look);
+  const dressed = { 'data-theme': look.id, 'data-palette': look.palette, style: lookStyle(look) };
   if (!enabled)
     return (
-      <div className="gun gun-setup">
+      <div className="gun gun-setup" {...dressed}>
         <h2>Sky Shot gun</h2>
         <p>Hold your phone like a light gun: top edge at the screen.</p>
         <button type="button" className="primary big" onClick={() => void enable()}>
@@ -194,7 +201,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   if (hud?.cal)
     // 5-point calibration: the whole screen marks "I'm on the dot" (in flick mode too).
     return (
-      <div className="gun">
+      <div className="gun" {...dressed}>
         <div className="gun-top">
           <span className={`chip ${live ? 'ok' : ''}`}>{live ? `Live · ${room.rttMs ?? '-'} ms` : 'Connecting…'}</span>
         </div>
@@ -217,13 +224,13 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
       </div>
     );
   return (
-    <div className={`gun${flash ? ` gun-${flash}` : ''}`}>
+    <div className={`gun${flash ? ` gun-${flash}` : ''}`} {...dressed}>
       <div className="gun-top">
         <span className={`chip ${live ? 'ok' : ''}`}>{live ? `Live · ${room.rttMs ?? '-'} ms` : room.status === 'offline' ? `Offline${room.error ? ` (${room.error})` : ''}` : 'Connecting…'}</span>
         {hud && hud.mode === 'rounds' && hud.ph === 'playing' && (
           <span className="chip" aria-label={`Round ${hud.rd}, ${hud.sl} shots left`}>
-            R{hud.rd} · {'●'.repeat(Math.max(0, hud.sl))}
-            {'○'.repeat(Math.max(0, 3 - hud.sl))}
+            R{hud.rd} · {theme.shells[0].repeat(Math.max(0, hud.sl))}
+            {theme.shells[1].repeat(Math.max(0, 3 - hud.sl))}
           </span>
         )}
         <button type="button" className="calibrate-btn" onClick={calibrate} disabled={!live}>
@@ -231,7 +238,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
         </button>
       </div>
       <button type="button" className="trigger" onPointerDown={flick ? undefined : fire} disabled={!live} aria-label={flick ? 'Flick to fire' : 'Fire'}>
-        {flick ? 'Flick to fire' : 'FIRE'}
+        {flick ? theme.verb.flick : theme.verb.tap}
       </button>
       {problem && (
         <p className="error" role="alert">

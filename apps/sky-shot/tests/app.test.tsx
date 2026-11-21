@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemo, DemoApp, type Demo } from '@stacks/demo';
@@ -139,6 +139,67 @@ describe('Sky Shot: playing', () => {
   }, 15_000);
 });
 
+describe('Sky Shot: the look', () => {
+  it('the title screen offers the looks, Dusk by default, signed in and out', async () => {
+    await renderDemo();
+    const looks = await screen.findByRole('radiogroup', { name: 'Look' });
+    expect(within(looks).getByRole('radio', { name: 'Dusk' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('the screen and the phone wear the look; the tuning panel can change it and show hitboxes', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
+    const phone = await screen.findByTestId('phone');
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const play = screen.getByLabelText('Sky Shot play area').closest('.screen') as HTMLElement;
+    expect(play).toHaveAttribute('data-theme', 'dusk');
+    expect(play.style.getPropertyValue('--hud-accent')).toBe('#ffd23f');
+    await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'dusk'), T);
+    expect(within(phone).getByRole('button', { name: 'Fire' })).toHaveTextContent('FIRE');
+    await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
+    const panel = screen.getByRole('complementary', { name: 'Tuning' });
+    expect(within(panel).getByLabelText('Look (L)')).toHaveValue('dusk/dusk');
+    await userEvent.click(within(panel).getByLabelText('Show hitboxes'));
+    expect(within(panel).getByLabelText('Show hitboxes')).toBeChecked();
+  }, 20_000);
+
+  it('picking Ink Koi saves it to your account; the screen wears it and the phone says catch', async () => {
+    const demo = await renderDemo(MAX, true);
+    const looks = await screen.findByRole('radiogroup', { name: 'Look' });
+    await userEvent.click(within(looks).getByRole('radio', { name: 'Ink Koi' }));
+    expect(within(looks).getByRole('radio', { name: 'Ink Koi' })).toHaveAttribute('aria-checked', 'true');
+    // Its palettes, Rice paper first.
+    const palettes = screen.getByRole('radiogroup', { name: 'Ink Koi palette' });
+    expect(within(palettes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Rice paper', 'Moon pond']);
+    expect(within(palettes).getByRole('radio', { name: 'Rice paper' })).toHaveAttribute('aria-checked', 'true');
+
+    // Saved by PUT /prefs: a fresh page with nothing in this browser comes back in Ink Koi.
+    cleanup();
+    localStorage.clear();
+    render(<DemoApp demo={demo}><Page /></DemoApp>);
+    const again = await screen.findByRole('radiogroup', { name: 'Look' });
+    await waitFor(() => expect(within(again).getByRole('radio', { name: 'Ink Koi' })).toHaveAttribute('aria-checked', 'true'), T);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Range' }));
+    const phone = await screen.findByTestId('phone');
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const play = screen.getByLabelText('Sky Shot play area').closest('.screen') as HTMLElement;
+    expect(play).toHaveAttribute('data-theme', 'koi');
+    expect(play).toHaveAttribute('data-palette', 'rice');
+    expect(play.style.getPropertyValue('--gun-bg')).toBe('#ede4cf');
+    // The room's theme event reaches the phone.
+    await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'koi'), T);
+    expect(within(phone).getByRole('button', { name: 'Fire' })).toHaveTextContent('Tap to catch');
+  }, 20_000);
+
+  it('ignores a look in this browser that does not exist', async () => {
+    localStorage.setItem('sky-shot:theme', JSON.stringify({ id: 'gone', palette: 'x' }));
+    await renderDemo();
+    const looks = await screen.findByRole('radiogroup', { name: 'Look' });
+    expect(within(looks).getByRole('radio', { name: 'Dusk' })).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
 describe('Sky Shot: 5-point calibration', () => {
   it('walks five dots with the phone, applies the fit and saves it; the next room starts with it', async () => {
     await renderDemo(MAX, true);
@@ -251,9 +312,15 @@ describe('Sky Shot: telemetry', () => {
 
   it('downloads as CSV with one row per shot', () => {
     const csv = toCsv([
-      { t: 1, at: '2026-11-20T12:00:00.000Z', shooterId: 'u_1', roomId: 'r', mode: 'range', configId: 'abc', trigger: 'tap', hit: true, missDist: 0, rewindMs: 120, latency: { gunRtt: 40, screenRtt: 30, shotToPixel: 170 }, window: [], cursor: 'x' },
+      { t: 1, at: '2026-11-20T12:00:00.000Z', shooterId: 'u_1', roomId: 'r', mode: 'range', configId: 'abc', trigger: 'tap', hit: true, missDist: 0, rewindMs: 120, latency: { gunRtt: 40, screenRtt: 30, shotToPixel: 170 }, window: [], cursor: 'x', theme: 'dusk/dusk' },
+      { t: 2, at: '2026-11-20T12:00:01.000Z', shooterId: 'u_1', roomId: 'r', mode: 'range', configId: 'abc', trigger: 'tap', hit: false, missDist: 0.1, rewindMs: 120, latency: { gunRtt: 40, screenRtt: 30, shotToPixel: 170 }, window: [], cursor: 'y' },
     ]);
-    expect(csv.split('\n')).toEqual(['at,shooterId,roomId,mode,configId,trigger,hit,missDist,rewindMs,gunRtt,screenRtt,shotToPixel,windowSamples', '2026-11-20T12:00:00.000Z,u_1,r,range,abc,tap,true,0,120,40,30,170,0']);
+    expect(csv.split('\n')).toEqual([
+      'at,shooterId,roomId,mode,configId,trigger,hit,missDist,rewindMs,gunRtt,screenRtt,shotToPixel,windowSamples,theme',
+      '2026-11-20T12:00:00.000Z,u_1,r,range,abc,tap,true,0,120,40,30,170,0,dusk/dusk',
+      // A shot from before themes: an empty theme.
+      '2026-11-20T12:00:01.000Z,u_1,r,range,abc,tap,false,0.1,120,40,30,170,0,',
+    ]);
   });
 });
 

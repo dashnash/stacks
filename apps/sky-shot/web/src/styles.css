@@ -1,3 +1,6 @@
+/* Theme fonts (Ink Koi, Neon Courier, Stargazer), one request; each theme lists its faces in `theme.fonts`. */
+@import url('https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@600;700&family=Chakra+Petch:wght@500;700&family=Tilt+Neon&family=Sniglet:wght@400;800&display=swap');
+
 :root {
   --ink: #fdf6ff;
   --muted: #c9b8e8;
@@ -239,7 +242,7 @@ main {
   display: block;
   touch-action: none;
   cursor: crosshair;
-  background: linear-gradient(#21134d, #7b2d8b 60%, #ff8a5b);
+  background: var(--sky-bg, linear-gradient(#21134d, #7b2d8b 60%, #ff8a5b));
 }
 .hud {
   position: absolute;
@@ -250,11 +253,13 @@ main {
   gap: 1.2rem;
   align-items: center;
   font-weight: 800;
+  color: var(--hud-fg, var(--ink));
+  font-family: var(--hud-font, inherit);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
 .hud .score {
   font-size: 1.8rem;
-  color: var(--sun);
+  color: var(--hud-accent, var(--sun));
 }
 .shells {
   display: inline-flex;
@@ -264,7 +269,7 @@ main {
   width: 0.55rem;
   height: 1.2rem;
   border-radius: 0.3rem 0.3rem 0.1rem 0.1rem;
-  background: var(--pink);
+  background: var(--hud-shell, var(--pink));
   display: inline-block;
 }
 .shell.spent {
@@ -275,8 +280,8 @@ main {
   left: 50%;
   top: 22%;
   transform: translateX(-50%);
-  background: rgba(23, 13, 51, 0.8);
-  border: 2px solid var(--sun);
+  background: var(--banner-bg, rgba(23, 13, 51, 0.8));
+  border: 2px solid var(--hud-accent, var(--sun));
   padding: 0.6rem 1.4rem;
   border-radius: 999px;
   font-weight: 900;
@@ -451,7 +456,8 @@ tr.current td {
   flex-direction: column;
   padding: 3.2rem 0.8rem 1.6rem;
   gap: 0.8rem;
-  background: var(--night);
+  background: var(--gun-bg, var(--night));
+  color: var(--gun-fg, var(--ink));
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -486,9 +492,10 @@ tr.current td {
   font-size: 2.4rem;
   font-weight: 900;
   letter-spacing: 0.1em;
-  background: radial-gradient(circle at 50% 40%, #ff6f88, var(--pink) 60%, #b8233f);
+  background: var(--trigger-bg, radial-gradient(circle at 50% 40%, #ff6f88, var(--pink) 60%, #b8233f));
   border: none;
-  color: #fff;
+  color: var(--trigger-fg, #fff);
+  font-family: var(--trigger-font, inherit);
 }
 .trigger:active {
   filter: brightness(1.25);
@@ -498,6 +505,44 @@ tr.current td {
 }
 .gun-miss .trigger {
   filter: brightness(0.8);
+}
+
+/* Look picker (title screen) */
+.look {
+  grid-column: 1 / -1;
+}
+.look-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.7rem;
+}
+.look-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.4rem 0.4rem 0.55rem;
+  border-radius: var(--radius);
+  text-align: center;
+}
+.look-card[aria-checked='true'] {
+  border-color: var(--sun);
+  box-shadow: 0 0 0 2px var(--sun);
+}
+.look-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 9px;
+  display: block;
+  background: var(--night);
+}
+.look-palettes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.look-palettes [aria-checked='true'] {
+  background: var(--pink);
+  border-color: var(--pink);
 }
 
 /* Demo: screen + pretend phone */
@@ -609,4 +654,168 @@ tr.current td {
   margin: auto;
   text-align: center;
   padding: 1rem;
+}
+
+/* Ink Koi: brush type on rice paper, the round in a red seal, ink-dot shells. */
+.screen[data-theme='koi'] .hud {
+  text-shadow: none;
+  font-weight: 700;
+}
+.screen[data-theme='koi'] .hud .score {
+  font-family: var(--koi-brush);
+  font-weight: 400;
+  font-size: 2.4rem;
+}
+.screen[data-theme='koi'] .hud .round {
+  background: var(--koi-seal);
+  color: var(--koi-paper);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.2rem;
+  transform: rotate(-3deg);
+  font-family: var(--koi-brush);
+  font-weight: 400;
+}
+.screen[data-theme='koi'] .shell {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+}
+.screen[data-theme='koi'] .shell.spent {
+  background: none;
+  box-shadow: inset 0 0 0 2px var(--hud-shell);
+  opacity: 0.5;
+}
+.screen[data-theme='koi'] .gun-chip {
+  font-weight: 700;
+}
+.screen[data-theme='koi'] .hud-tune {
+  color: var(--hud-fg);
+}
+.screen[data-theme='koi'] .banner {
+  color: var(--hud-fg);
+  border-color: var(--koi-seal);
+  border-radius: 0.3rem;
+  font-family: var(--hud-font);
+}
+.gun[data-theme='koi'] {
+  font-family: var(--trigger-font);
+}
+.gun[data-theme='koi'] .trigger {
+  border: 2px solid var(--koi-seal);
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+}
+.gun[data-theme='koi'] .chip,
+.gun[data-theme='koi'] button:not(.trigger) {
+  border-color: var(--koi-seal);
+  background: transparent;
+  color: var(--gun-fg);
+}
+/* The brand and build line sit over the play area: ink on rice paper, so they stay readable. */
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .brand,
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .foot,
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .foot .build {
+  color: #1c1b19;
+}
+
+/* Neon Courier: glowing HUD text, bar-shaped shells, a neon-tube trigger */
+.screen[data-theme='neon'] .hud {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  text-shadow: 0 0 0.6em var(--hud-glow);
+}
+.screen[data-theme='neon'] .hud .score {
+  color: var(--hud-fg);
+  font-variant-numeric: tabular-nums;
+}
+.screen[data-theme='neon'] .shell {
+  width: 1.5rem;
+  height: 0.6rem;
+  border-radius: 0;
+  box-shadow: 0 0 0.5em var(--hud-shell);
+}
+.screen[data-theme='neon'] .shell.spent {
+  background: transparent;
+  border: 1.5px solid var(--hud-shell-spent);
+  box-shadow: none;
+}
+.screen[data-theme='neon'] .banner,
+.screen[data-theme='neon'] .overlay h2 {
+  font-family: var(--title-font);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.screen[data-theme='neon'] .banner {
+  border-radius: 4px;
+  color: var(--hud-fg);
+  text-shadow: 0 0 0.5em var(--hud-glow);
+  box-shadow: 0 0 1em var(--hud-accent);
+}
+.gun[data-theme='neon'] {
+  font-family: var(--trigger-font);
+}
+.gun[data-theme='neon'] .trigger {
+  font-size: 2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 2px solid var(--gun-accent);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0.6em var(--gun-accent),
+    0 0 0.6em var(--gun-accent) inset;
+  text-shadow: 0 0 0.5em var(--gun-accent);
+}
+.gun-hit[data-theme='neon'] .trigger {
+  box-shadow:
+    0 0 0 6px var(--teal) inset,
+    0 0 0.6em var(--gun-accent);
+}
+.gun[data-theme='neon'] .chip {
+  border-color: var(--gun-accent);
+  border-width: 1px;
+}
+
+/* Stargazer: Sniglet on paper tags, star-shaped shells (themes/stars.ts sets the variables). */
+.screen[data-theme='stars'] .hud {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);
+}
+.screen[data-theme='stars'] .hud > span:not(.shells):not(.gun-chip) {
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+  text-shadow: none;
+  padding: 0.2rem 0.75rem;
+  border-radius: 0.6rem;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.38);
+  transform: rotate(1.2deg);
+}
+.screen[data-theme='stars'] .hud > .score {
+  padding: 0.25rem 0.9rem;
+  transform: rotate(-2deg);
+}
+.screen[data-theme='stars'] .shell {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.screen[data-theme='stars'] .shell.spent {
+  background: var(--star-unlit);
+}
+.screen[data-theme='stars'] .banner {
+  color: var(--tag-ink);
+  font-family: var(--hud-font);
+  font-weight: 800;
+  border: none;
+  border-radius: 0.7rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  transform: translateX(-50%) rotate(-1.5deg);
+}
+.gun[data-theme='stars'] {
+  font-family: var(--hud-font);
+}
+.gun[data-theme='stars'] .trigger {
+  border: 3px solid var(--hud-accent);
+  font-weight: 800;
+  letter-spacing: 0.03em;
 }

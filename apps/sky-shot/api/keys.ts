@@ -2,6 +2,7 @@
 import type { Item } from '@stacks/api';
 import type { FitReport } from '../game/fit';
 import type { GameSummary, ShotRecord, TrainingRecord } from '../game/protocol';
+import type { ThemeChoice } from '../game/themes';
 import type { Tuning } from '../game/tuning';
 
 /** Shots (and the configs they used) are kept 30 days. */
@@ -32,7 +33,15 @@ export const keys = {
     GSI1PK: 'TRAINING',
     GSI1SK: `${at}#${userId}#${roomId}#${n}`,
   }),
+  /** A person's preferences: the look they picked. */
+  prefs: (userId: string) => ({ PK: `PREFS#${userId}`, SK: 'CURRENT' }),
 };
+
+export interface PrefsItem extends Item {
+  userId: string;
+  theme: ThemeChoice;
+  at: string;
+}
 
 export interface TuningItem extends Item {
   userId: string;
