@@ -1,5 +1,9 @@
 # Domain move: `iamdashnash.com` → `dashnash.ninja` (#42)
 
+> **Since #140** the redirects hold only `mofobookklub.iamdashnash.com` and `mofobookklub.test.iamdashnash.com`.
+> The steps and checks below describe the move as it was run (the whole old root); after #140 only the
+> `mofobookklub.` checks still apply, and the bare `iamdashnash.com` and its other subdomains belong to the homelab.
+
 Moves Stacks to `dashnash.ninja` (staging `test.dashnash.ninja`) and the iOS app to the bundle IDs
 `ninja.dashnash.stacks` / `ninja.dashnash.stacks.test`. The old domain stays up **only as 301
 redirects**: every old host (`auth.`, `<slug>.`, the bare domain, and `test.*`) goes to the same host

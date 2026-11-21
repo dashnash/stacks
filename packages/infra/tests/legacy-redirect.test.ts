@@ -197,6 +197,7 @@ describe('hosted zone lookup', () => {
     expect(write({ legacyRedirects: [{ ...legacy, hosts: [] }] })).toThrow(/non-empty list/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a.b'] }] })).toThrow(/not a host label/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['*'] }] })).toThrow(/not a host label/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a', 'a'] }] })).toThrow(/twice/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['mofobookklub'] }] })).not.toThrow();
     expect(write({})).not.toThrow();
   });

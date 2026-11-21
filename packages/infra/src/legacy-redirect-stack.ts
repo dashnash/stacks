@@ -14,6 +14,8 @@ import { bootstrapQualifier, envTag, stackName, STAGING_BOUNDARY_NAME, type EnvC
  * the bare new root would send it anyway). Any other host (several labels, odd characters, a
  * lookalike such as `<oldRoot>.evil.example`) goes to the portal's front page, never to a host
  * built from it. Nothing else is served: no content, no API, no apple-app-site-association.
+ * With `hosts` set, only those names are aliases, so only they ever reach it (the bare-root case
+ * does not arise).
  */
 export const legacyRedirectCode = (oldRoot: string, newRoot: string) => `
 function handler(event) {
@@ -64,7 +66,8 @@ export class LegacyRedirectStack extends cdk.Stack {
       const id = `Legacy${i}`;
       const zone = route53.HostedZone.fromHostedZoneAttributes(this, `${id}Zone`, { hostedZoneId: old.hostedZoneId, zoneName: old.hostedZoneName ?? old.rootDomain });
       const records: Array<readonly [string, string]> = old.hosts?.length
-        ? old.hosts.map((h, j) => [`Host${j}`, `${h}.${old.rootDomain}`] as const)
+        ? // Ids from the label, not its position, so removing one never renames another's record.
+          old.hosts.map((h) => [`Host${h.replace(/-/g, '')}`, `${h}.${old.rootDomain}`] as const)
         : [['Apex', old.rootDomain], ['Wildcard', `*.${old.rootDomain}`]];
       const names = records.map(([, name]) => name);
       const certificate = new acm.Certificate(this, `${id}Certificate`, {
