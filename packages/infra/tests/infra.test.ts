@@ -779,11 +779,21 @@ describe('CiStack', () => {
       expect(arn(statements('stacks-test-boundary'))).not.toContain('route53');
     });
 
+    it('narrows a legacy root with hosts to those names, so the rest of the old root is out of reach', () => {
+      const env = { rootDomain: 'test.new.example', legacyRedirects: [{ rootDomain: 'test.old.example', hosts: ['b', 'a'] }, { rootDomain: 'test.other.example' }] };
+      expect(stagingRootDomains(env)).toEqual(['test.new.example', 'b.test.old.example', 'a.test.old.example', 'test.other.example']);
+      const recordNames = stagingRecordNames(stagingRootDomains(env));
+      expect(recordNames).toEqual(expect.arrayContaining(['a.test.old.example', '*.a.test.old.example']));
+      expect(recordNames).not.toContain('test.old.example');
+      expect(recordNames).not.toContain('*.test.old.example');
+    });
+
     it('takes the staging roots, legacy ones included, from the real stacks.config.json', () => {
       const config = JSON.parse(fs.readFileSync(path.join(repoRoot, 'stacks.config.json'), 'utf8'));
       const roots = stagingRootDomains(config.environments.staging);
       expect(roots[0]).toBe(config.environments.staging.rootDomain);
-      expect(roots).toHaveLength(1 + (config.environments.staging.legacyRedirects ?? []).length);
+      const legacy: Array<{ hosts?: string[] }> = config.environments.staging.legacyRedirects ?? [];
+      expect(roots).toHaveLength(1 + legacy.reduce((n, r) => n + (r.hosts?.length || 1), 0));
       for (const root of roots) expect(stagingRecordNames(roots)).toEqual(expect.arrayContaining([root, `*.${root}`]));
       expect(roots).not.toContain(config.environments.production.rootDomain);
     });
