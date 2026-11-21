@@ -149,6 +149,8 @@ export interface State {
   calPaused: boolean;
   /** The choice the screen has put to the controller. */
   prompt: Prompt | null;
+  /** Training starts once the calibration before it (both passes) is done or skipped. */
+  trainAfterCal: boolean;
   guns: Map<string, Gun>;
   targets: Target[];
   history: TargetHistory;
@@ -456,6 +458,28 @@ function nextCalibration(state: State): void {
     state.calPaused = false;
     state.paused = false;
   }
+  if (!state.cal && state.trainAfterCal) {
+    state.trainAfterCal = false;
+    if (state.mode === 'training') startTraining(state);
+  }
+}
+
+/**
+ * A training run starts with the game's calibration, both passes (step 1 blind, step 2 with the
+ * crosshair), then the script: the fit then starts from a gain that is already about right.
+ */
+function beginTraining(state: State): void {
+  const gun = trainGun(state);
+  if (!gun) {
+    startTraining(state); // says it needs a phone
+    return;
+  }
+  newGame(state);
+  state.train = null;
+  state.calQueue = state.calQueue.filter((c) => c.gun !== gun.seat.id);
+  if (state.cal?.gun === gun.seat.id) state.cal = null;
+  state.trainAfterCal = true;
+  queueCalibration(state, gun.seat.id, 'init');
 }
 
 /** Queue a calibration step for `gun` (once: a step already waiting or on is not added again). */
@@ -615,7 +639,7 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
       newGame(state);
       if (wasPlaying) {
         state.paused = false;
-        if (state.mode === 'training') startTraining(state);
+        if (state.mode === 'training') beginTraining(state);
         else startGame(state);
       }
     }
@@ -629,7 +653,7 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
   } else if ('start' in event) {
     if (state.cal) return;
     state.paused = false;
-    if (state.mode === 'training') startTraining(state);
+    if (state.mode === 'training') beginTraining(state);
     else startGame(state);
   } else if ('pause' in event) {
     state.paused = event.pause === true;
@@ -881,6 +905,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         calQueue: [],
         calPaused: false,
         prompt: null,
+        trainAfterCal: false,
         guns: new Map(),
         targets: [],
         history: new TargetHistory(),

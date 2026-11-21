@@ -360,13 +360,16 @@ describe('Whee: the controller', () => {
 });
 
 describe('Whee: training', () => {
-  it('Train the aim pairs the phone, explains, and runs the script with the phone told to watch the screen', async () => {
+  it('Training explains, calibrates (both passes), then runs the script with the phone told to watch the screen', async () => {
     await renderDemo(MAX, true);
     const phone = await playOn('Training');
     expect(await screen.findByRole('dialog', { name: 'Training' }, T)).toHaveTextContent('When the crosshair vanishes');
     expect(screen.queryByRole('button', { name: 'Start training' })).toBeNull();
     await userEvent.click(await within(phone).findByRole('button', { name: 'Start training' }, T));
-    expect(await screen.findByText(/^[12] \/ 31$/, {}, T)).toBeInTheDocument();
+    // The game's calibration first, both passes (skipped here), then the script.
+    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Step 1 of 2 · Initialize');
+    await skipCalibration(phone);
+    expect(await screen.findByText(/^[12] \/ 16$/, {}, T)).toBeInTheDocument();
     expect(await within(phone).findByText(/follow the dot/, {}, T)).toBeInTheDocument();
     expect(within(phone).queryByRole('button', { name: 'Fire' })).toBeNull();
   }, 20_000);
