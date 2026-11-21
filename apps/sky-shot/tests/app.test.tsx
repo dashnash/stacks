@@ -61,6 +61,43 @@ async function renderDemo(as?: string, withPhone = false) {
 
 const T = { timeout: 8000 };
 
+describe('Whee: pre-warming', () => {
+  // jsdom has no matchMedia: a desktop has a fine pointer, a phone doesn't.
+  const pointer = (fine: boolean) =>
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: (q: string) => ({ matches: fine && q === '(pointer: fine)', media: q }) as MediaQueryList });
+  afterEach(() => Reflect.deleteProperty(window, 'matchMedia'));
+
+  it('starts a server on the title screen (desktop), and Play takes it instead of starting another', async () => {
+    pointer(true);
+    const demo = createDemo({ ...demoOptions(), storageKey: false, gameStartDelayMs: 300 });
+    demos.push(demo);
+    const start = vi.spyOn(demo.games!, 'start');
+    await demo.signInAs(MAX);
+    render(<DemoApp demo={demo}><App /></DemoApp>);
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1), T);
+    const warmId = start.mock.calls[0]![0];
+    // The server comes up while the player reads the title.
+    await new Promise((r) => setTimeout(r, 500));
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    await waitFor(() => expect(window.location.hash).toBe(`#/play/${warmId}/rounds`), T);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Use mouse instead', {}, T)).toBeInTheDocument();
+    expect(screen.queryByText('Starting the game server…')).toBeNull();
+  });
+
+  it("doesn't warm on a phone (it joins by code)", async () => {
+    pointer(false);
+    const demo = createDemo({ ...demoOptions(), storageKey: false, gameStartDelayMs: 30 });
+    demos.push(demo);
+    const start = vi.spyOn(demo.games!, 'start');
+    await demo.signInAs(MAX);
+    render(<DemoApp demo={demo}><App /></DemoApp>);
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(start).not.toHaveBeenCalled();
+  });
+});
+
 describe('Whee: title and leaderboard', () => {
   it('signed out: the title, the leaderboard with first names, and Sign in to play', async () => {
     await renderDemo();
