@@ -87,6 +87,10 @@ on them: use placeholders and keep coding.
 Grouped by area. Concrete files, config keys, values, behaviour, and the tests to add (cases
 listed). Point out risks and say which way to handle them, or that the agent picks and writes it down.
 
+## Merge plan   (only when there's more than one PR)
+The order the PRs merge in, which wait for a green deploy (all, by default), and the owner steps
+between them as their own lines. Sessions follow it with `.claude/skills/merge-train/SKILL.md`.
+
 ## Acceptance (agent-verifiable in a session)
 Commands that must pass (for Stacks: `npm test`, `npm run typecheck`, `npm run lint`,
 `npm run build`, `cdk synth` for both envs without credentials, a grep that must come back empty,

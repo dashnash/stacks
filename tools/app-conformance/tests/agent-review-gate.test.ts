@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { decide, findReview, gatedFiles, hasMarker, marker } from '../../../scripts/agent-review-gate.mjs';
+import { decide, findReview, gatedFiles, hasMarker, HOLD_LABEL, marker } from '../../../scripts/agent-review-gate.mjs';
 
 const head = 'a'.repeat(40);
 const old = 'b'.repeat(40);
@@ -50,5 +50,14 @@ describe('agent review gate (#111)', () => {
     expect(stale).toEqual({ state: 'pending', description: 'Needs an agent code review of aaaaaaa (1 gated file)' });
     const done = decide({ files, entries: [{ user: agent, body: `/code-review: no findings\n${marker(head)}` }], headSha: head });
     expect(done).toEqual({ state: 'success', description: 'Agent code review of aaaaaaa by dashnash-agent' });
+  });
+
+  it('fails while the PR has the hold label, whatever else is true', () => {
+    const reviewed = { files: [{ filename: '.github/x.yml' }], entries: [{ user: agent, body: marker(head) }], headSha: head };
+    const held = { state: 'failure', description: `On hold: remove the "${HOLD_LABEL}" label to merge` };
+    expect(decide({ ...reviewed, labels: [{ name: 'hold' }] })).toEqual(held);
+    expect(decide({ ...reviewed, labels: [{ name: 'Hold' }] })).toEqual(held);
+    expect(decide({ files: [{ filename: 'apps/hello/a.ts' }], entries: [], headSha: head, labels: ['hold'] })).toEqual(held);
+    expect(decide({ ...reviewed, labels: [{ name: 'holding-pattern' }] }).state).toBe('success');
   });
 });

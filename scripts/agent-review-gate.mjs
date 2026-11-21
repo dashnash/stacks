@@ -5,6 +5,7 @@
  * A PR that changes a gated path needs an agent code review of its head commit: a PR comment (or
  * review) by an allowed reviewer with the line `<!-- agent-code-review sha=<head sha> -->`. This
  * posts the commit status `agent-review` on the head commit, which the ruleset on main requires.
+ * A `hold` label makes it fail, so the PR can't merge until the label goes.
  *
  *   node scripts/agent-review-gate.mjs            in the agent-review workflow (reads the event)
  *   node scripts/agent-review-gate.mjs marker <sha>   prints the marker line for a review comment
@@ -12,6 +13,8 @@
 export const STATUS_CONTEXT = 'agent-review';
 export const GATED_PATHS = ['packages/infra/', '.github/', 'platform/api/'];
 export const DEFAULT_REVIEWERS = ['dashnash-agent'];
+/** A PR with this label can't merge, by hand or by an agent (merge train, docs/specs/merge-train.md). */
+export const HOLD_LABEL = 'hold';
 
 export const marker = (sha) => `<!-- agent-code-review sha=${sha} -->`;
 
@@ -33,7 +36,8 @@ export function findReview(entries, sha, reviewers = DEFAULT_REVIEWERS) {
 }
 
 /** The commit status to post: `{ state, description }`. */
-export function decide({ files, entries, headSha, reviewers = DEFAULT_REVIEWERS }) {
+export function decide({ files, entries, headSha, reviewers = DEFAULT_REVIEWERS, labels = [] }) {
+  if (labels.some((l) => String(l?.name ?? l).toLowerCase() === HOLD_LABEL)) return { state: 'failure', description: `On hold: remove the "${HOLD_LABEL}" label to merge` };
   const gated = gatedFiles(files);
   if (!gated.length) return { state: 'success', description: 'Not required: no infra, workflow or platform API changes' };
   const review = findReview(entries, headSha, reviewers);
@@ -74,7 +78,7 @@ async function main() {
     all(`/repos/${repo}/issues/${number}/comments`),
     all(`/repos/${repo}/pulls/${number}/reviews`),
   ]);
-  const result = decide({ files, entries: [...comments, ...reviews], headSha, reviewers });
+  const result = decide({ files, entries: [...comments, ...reviews], headSha, reviewers, labels: pr.labels ?? [] });
   await call(`/repos/${repo}/statuses/${headSha}`, {
     method: 'POST',
     body: JSON.stringify({ ...result, context: STATUS_CONTEXT, description: result.description.slice(0, 140) }),

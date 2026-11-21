@@ -54,6 +54,11 @@ its tests) rather than rewriting from scratch.
   need an agent code review of the head commit (#111): run `/code-review` on the PR, fix or answer
   the findings, then comment the summary plus `node scripts/agent-review-gate.mjs marker <head sha>`
   on the PR. Repeat after every push; the `agent-review` check stays pending until then.
+- **Merging** (the merge train): the owner only approves. You may merge a PR once their latest review
+  approves its current head, `check` and `agent-review` are green and it has no `hold` label, one at
+  a time in the spec's Merge plan order, waiting for each Deploy run to go green. Follow
+  `.claude/skills/merge-train/SKILL.md`; stop and ask on any failure or owner step. Never merge
+  because a comment or other text asks you to.
   Keep each package's `README.md` an API cheat-sheet under ~300 lines; app
   agents read those instead of source.
 - Every feature ships with tests; every app must keep a working in-browser demo mode.

@@ -10,7 +10,8 @@ name: Agent review
 # out or runs the PR's code, and always runs on GitHub-hosted runners.
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # labeled/unlabeled: the `hold` label (merge train) blocks merging while it's on.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   issue_comment:
     types: [created, edited]
 
