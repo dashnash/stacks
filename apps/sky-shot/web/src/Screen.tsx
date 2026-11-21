@@ -358,7 +358,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           <span className="score">{snap.sc.toLocaleString()}</span>
           {snap.m === 'rounds' ? (
             <>
-              <span>Round {snap.rd || 1}</span>
+              <span className="round">Round {snap.rd || 1}</span>
               <span className="shells" aria-label={`${snap.sl} shots left`}>
                 {Array.from({ length: 3 }, (_, i) => (
                   <i key={i} className={i < snap.sl ? 'shell' : 'shell spent'} />

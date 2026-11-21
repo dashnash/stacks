@@ -189,3 +189,39 @@ describe('drawing a frame', () => {
     expect(dashed).toHaveLength(1);
   });
 });
+
+describe('Ink Koi', () => {
+  const koi = THEMES.koi;
+  it('Rice paper is its default, catches sink for a second, and the phone says catch', () => {
+    expect(THEME_PALETTES.koi[0]).toBe('rice');
+    expect(themeOf({ id: 'koi', palette: 'rice' }).palette.name).toBe('Rice paper');
+    expect(themeOf({ id: 'koi', palette: 'moon' }).palette.name).toBe('Moon pond');
+    expect(koi.hitMotion).toBe('sink');
+    expect(koi.hitMs).toBe(1000);
+    expect(koi.verb).toEqual({ tap: 'Tap to catch', flick: 'Flick to catch' });
+    expect(koi.fonts.join()).toMatch(/Yuji Syuku.*Shippori Mincho/);
+  });
+
+  it('a caught target shrinks and fades out over its second (times in ms)', () => {
+    const p = koi.palettes.rice!;
+    const scaleAt = (hitAge: number) => {
+      const { ctx } = fakeCtx();
+      ctx.globalAlpha = 1;
+      // The first scale is the sink's; note the alpha it set just before.
+      let seen: { alpha: number; scale: number } | undefined;
+      ctx.scale = (x: number) => void (seen ??= { alpha: ctx.globalAlpha, scale: x });
+      koi.target(ctx, target({ s: 1 }), 20, 5_000, p, hitAge);
+      return seen!;
+    };
+    expect(scaleAt(0)).toEqual({ alpha: 1, scale: 1 });
+    expect(scaleAt(500).scale).toBeCloseTo(1 - 0.5 * 0.45);
+    expect(scaleAt(1000).alpha).toBe(0);
+  });
+
+  it('draws its own calibration dots (Dusk\'s white and lime vanish on rice paper)', () => {
+    expect(koi.calibration).toBeDefined();
+    const { ctx, calls } = fakeCtx();
+    koi.calibration!(ctx, 800, 450, 0, koi.palettes.rice!, { centre: true, cal: { i: 1, pts: [[0.5, 0.5], [0.2, 0.2]] } });
+    expect(calls.filter((c) => c.name === 'arc').length).toBeGreaterThan(50);
+  });
+});

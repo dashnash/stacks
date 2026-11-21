@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@600;700&display=swap');
+
 :root {
   --ink: #fdf6ff;
   --muted: #c9b8e8;
@@ -592,4 +594,66 @@ tr.current td {
   font-size: 1rem;
   font-weight: 600;
   opacity: 0.8;
+}
+
+/* Ink Koi: brush type on rice paper, the round in a red seal, ink-dot shells. */
+.screen[data-theme='koi'] .hud {
+  text-shadow: none;
+  font-weight: 700;
+}
+.screen[data-theme='koi'] .hud .score {
+  font-family: var(--koi-brush);
+  font-weight: 400;
+  font-size: 2.4rem;
+}
+.screen[data-theme='koi'] .hud .round {
+  background: var(--koi-seal);
+  color: var(--koi-paper);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.2rem;
+  transform: rotate(-3deg);
+  font-family: var(--koi-brush);
+  font-weight: 400;
+}
+.screen[data-theme='koi'] .shell {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+}
+.screen[data-theme='koi'] .shell.spent {
+  background: none;
+  box-shadow: inset 0 0 0 2px var(--hud-shell);
+  opacity: 0.5;
+}
+.screen[data-theme='koi'] .gun-chip {
+  font-weight: 700;
+}
+.screen[data-theme='koi'] .hud-tune {
+  color: var(--hud-fg);
+}
+.screen[data-theme='koi'] .banner {
+  color: var(--hud-fg);
+  border-color: var(--koi-seal);
+  border-radius: 0.3rem;
+  font-family: var(--hud-font);
+}
+.gun[data-theme='koi'] {
+  font-family: var(--trigger-font);
+}
+.gun[data-theme='koi'] .trigger {
+  border: 2px solid var(--koi-seal);
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+}
+.gun[data-theme='koi'] .chip,
+.gun[data-theme='koi'] button:not(.trigger) {
+  border-color: var(--koi-seal);
+  background: transparent;
+  color: var(--gun-fg);
+}
+/* The brand and build line sit over the play area: ink on rice paper, so they stay readable. */
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .brand,
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .foot,
+.app.playing:has(.screen[data-theme='koi'][data-palette='rice']) .foot .build {
+  color: #1c1b19;
 }

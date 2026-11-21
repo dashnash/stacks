@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemo, DemoApp, type Demo } from '@stacks/demo';
@@ -158,6 +158,35 @@ describe('Sky Shot: the look', () => {
     expect(within(panel).getByLabelText('Look (L)')).toHaveValue('dusk/dusk');
     await userEvent.click(within(panel).getByLabelText('Show hitboxes'));
     expect(within(panel).getByLabelText('Show hitboxes')).toBeChecked();
+  }, 20_000);
+
+  it('picking Ink Koi saves it to your account; the screen wears it and the phone says catch', async () => {
+    const demo = await renderDemo(MAX, true);
+    const looks = await screen.findByRole('radiogroup', { name: 'Look' });
+    await userEvent.click(within(looks).getByRole('radio', { name: 'Ink Koi' }));
+    expect(within(looks).getByRole('radio', { name: 'Ink Koi' })).toHaveAttribute('aria-checked', 'true');
+    // Its palettes, Rice paper first.
+    const palettes = screen.getByRole('radiogroup', { name: 'Ink Koi palette' });
+    expect(within(palettes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Rice paper', 'Moon pond']);
+    expect(within(palettes).getByRole('radio', { name: 'Rice paper' })).toHaveAttribute('aria-checked', 'true');
+
+    // Saved by PUT /prefs: a fresh page with nothing in this browser comes back in Ink Koi.
+    cleanup();
+    localStorage.clear();
+    render(<DemoApp demo={demo}><Page /></DemoApp>);
+    const again = await screen.findByRole('radiogroup', { name: 'Look' });
+    await waitFor(() => expect(within(again).getByRole('radio', { name: 'Ink Koi' })).toHaveAttribute('aria-checked', 'true'), T);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Range' }));
+    const phone = await screen.findByTestId('phone');
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    const play = screen.getByLabelText('Sky Shot play area').closest('.screen') as HTMLElement;
+    expect(play).toHaveAttribute('data-theme', 'koi');
+    expect(play).toHaveAttribute('data-palette', 'rice');
+    expect(play.style.getPropertyValue('--gun-bg')).toBe('#ede4cf');
+    // The room's theme event reaches the phone.
+    await waitFor(() => expect(phone.querySelector('.gun')).toHaveAttribute('data-theme', 'koi'), T);
+    expect(within(phone).getByRole('button', { name: 'Fire' })).toHaveTextContent('Tap to catch');
   }, 20_000);
 
   it('ignores a look in this browser that does not exist', async () => {
