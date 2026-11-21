@@ -9,7 +9,7 @@ describe('the protocol file', () => {
   it('matches what this package speaks', () => {
     expect(protocol.protocol).toBe(PROTOCOL);
     const names: (keyof Calls)[] = [
-      'app.info', 'auth.apple', 'auth.google', 'auth.signedOut', 'badge.set', 'push.register', 'push.saveDevice', 'push.status', 'share',
+      'app.info', 'auth.apple', 'auth.google', 'auth.signedOut', 'badge.set', 'push.register', 'push.saveDevice', 'push.status', 'share', 'share.page',
       'haptics.impact', 'haptics.notification', 'haptics.pattern', 'motion.start', 'motion.stop', 'screen.immersive', 'screen.keepAwake', 'screen.lockOrientation',
     ];
     expect(Object.keys(protocol.calls).sort()).toEqual([...names].sort());
@@ -77,6 +77,35 @@ describe('getNative', () => {
     const cancelled = { navigator: { share: async () => Promise.reject(Object.assign(new Error('no'), { name: 'AbortError' })) } };
     await expect(getNative(cancelled as never).share({})).resolves.toEqual({ completed: false });
     await expect(getNative({ navigator: {} } as never).share({})).rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('can share in the app or with navigator.share, not on a desktop without it', () => {
+    const app: Record<string, any> = {};
+    installFakeNative({ share: () => ({ completed: true }) }, app);
+    expect(getNative(app).canShare).toBe(true);
+    expect(getNative({ navigator: { share: async () => {} } } as never).canShare).toBe(true);
+    expect(getNative({ navigator: {} } as never).canShare).toBe(false);
+    expect(getNative({} as never).canShare).toBe(false);
+  });
+
+  it('sets the page share for the current URL, and does nothing in an older app or a browser', async () => {
+    const g: Record<string, any> = { location: { href: 'https://hello.dashnash.ninja/#/notes/7' } };
+    const fake = installFakeNative({ share: () => ({ completed: true }), 'share.page': () => ({}) }, g);
+    const n = getNative(g);
+    await n.setPageShare({ url: 'https://hello.dashnash.ninja/#/notes/7', title: 'Note 7', text: undefined });
+    await n.setPageShare({ hidden: true });
+    await n.setPageShare(null);
+    expect(fake.log).toEqual([
+      { name: 'share.page', args: { page: 'https://hello.dashnash.ninja/#/notes/7', url: 'https://hello.dashnash.ninja/#/notes/7', title: 'Note 7' } },
+      { name: 'share.page', args: { page: 'https://hello.dashnash.ninja/#/notes/7', hidden: true } },
+      { name: 'share.page', args: { page: 'https://hello.dashnash.ninja/#/notes/7' } },
+    ]);
+
+    const old: Record<string, any> = { location: { href: 'https://x/' } };
+    const oldFake = installFakeNative({ share: () => ({ completed: true }) }, old);
+    await getNative(old).setPageShare({ hidden: true });
+    expect(oldFake.log).toEqual([]);
+    await expect(getNative({ location: { href: 'https://x/' } } as never).setPageShare({ hidden: true })).resolves.toBeUndefined();
   });
 });
 

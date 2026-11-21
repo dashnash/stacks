@@ -24,7 +24,8 @@
         "screen.immersive",
         "screen.keepAwake",
         "screen.lockOrientation",
-        "share"
+        "share",
+        "share.page"
       ]
     }
   },
@@ -268,6 +269,18 @@
       "result": {
         "completed": true
       }
+    },
+    "share.page": {
+      "doc": "What the app's own Share button (bottom right) shares on this page. `page` is location.href when the page set it: the setting applies only while the main frame is on that URL and lapses when it changes or a new document loads. `url` (https only) and `title` default to the page's own; `hidden` takes the button away on that page. Send it again with only `page` to go back to the default.",
+      "origins": "any",
+      "args": {
+        "page": "https://mofobookklub.dashnash.ninja/#/book/9780316769488",
+        "url": "https://mofobookklub.dashnash.ninja/#/book/9780316769488",
+        "title": "The Catcher in the Rye",
+        "text": "We're reading this next",
+        "hidden": false
+      },
+      "result": {}
     }
   }
 }

@@ -55,6 +55,11 @@ export interface Calls {
   'auth.apple': { args: Record<string, never>; result: { credential: string; name: string } };
   'auth.signedOut': { args: Record<string, never>; result: Record<string, never> };
   share: { args: ShareData; result: { completed: boolean } };
+  /**
+   * What the app's own Share button shares on this page: `page` is `location.href` when set (the
+   * setting lapses once the URL changes); `hidden` takes the button away. Use `native.setPageShare`.
+   */
+  'share.page': { args: PageShareArgs; result: Record<string, never> };
   /** Portal only: may this device show notifications, and its platform device id (null until registered). */
   'push.status': { args: Record<string, never>; result: { permission: PushPermission; deviceId: string | null } };
   /** Portal only: asks for permission (once) and returns the APNs token to register with `POST /devices`. */
@@ -126,8 +131,25 @@ export interface ShareData {
   title?: string;
 }
 
+/** What the app's Share button shares on the current page (`setPageShare`). */
+export interface PageShareTarget {
+  /** Absolute https URL (default: the page's own URL). */
+  url?: string;
+  /** Default: the page's title. */
+  title?: string;
+  text?: string;
+  /** Take the Share button away on this page. */
+  hidden?: boolean;
+}
+
+export interface PageShareArgs extends PageShareTarget {
+  /** The page this applies to (`location.href` when it was set). */
+  page: string;
+}
+
 type Global = MotionGlobal & {
   stacksNative?: NativeHost;
+  location?: { href: string };
   navigator?: Navigator & { vibrate?: (p: number | number[]) => boolean; wakeLock?: { request(type: 'screen'): Promise<{ release(): Promise<void> }> } };
   screen?: { orientation?: { lock?: (o: string) => Promise<void>; unlock?: () => void } };
 };
@@ -142,6 +164,14 @@ export interface Native {
   call<K extends keyof Calls>(name: K, args?: Calls[K]['args']): Promise<Calls[K]['result']>;
   /** The system share sheet; in a browser, `navigator.share`. */
   share(data: ShareData): Promise<{ completed: boolean }>;
+  /** Is there a share sheet here: the app, or a browser with `navigator.share` (not most desktops)? */
+  readonly canShare: boolean;
+  /**
+   * Change what the app's own Share button shares on this page, or hide it (`{ hidden: true }`);
+   * `null` goes back to the default (the page's URL and title). Lapses when the URL changes.
+   * Nothing happens outside the app or in an app version without the button.
+   */
+  setPageShare(target: PageShareTarget | null): Promise<void>;
   motion: {
     /** Where `start` would read from: the app (`native`), the browser (`web`) or nowhere. */
     readonly source: MotionSource;
@@ -214,6 +244,22 @@ export function getNative(g: Global = globalThis as Global): Native {
         if ((err as Error)?.name === 'AbortError') return { completed: false };
         throw new NativeError('failed', (err as Error)?.message ?? String(err));
       }
+    },
+    get canShare() {
+      return native.has('share') || typeof g.navigator?.share === 'function';
+    },
+    async setPageShare(target) {
+      if (!native.has('share.page')) return;
+      const page = g.location?.href;
+      if (!page) return;
+      const args: PageShareArgs = { page };
+      if (target) {
+        if (target.url !== undefined) args.url = target.url;
+        if (target.title !== undefined) args.title = target.title;
+        if (target.text !== undefined) args.text = target.text;
+        if (target.hidden) args.hidden = true;
+      }
+      await native.call('share.page', args);
     },
     motion: {
       get source(): MotionSource {

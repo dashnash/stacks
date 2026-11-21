@@ -78,7 +78,7 @@ export function SignedOutLayout({ children }: { children: ReactNode }) {
 export function SignedOutSite() {
   const route = useRoute();
   return (
-    <SignedOutLayout>{route.name === 'book' ? <PublicBookView isbn={route.isbn} /> : <SignInView />}</SignedOutLayout>
+    <SignedOutLayout>{route.name === 'book' ? <PublicBookView isbn={route.isbn} commentId={route.commentId} /> : <SignInView />}</SignedOutLayout>
   );
 }
 

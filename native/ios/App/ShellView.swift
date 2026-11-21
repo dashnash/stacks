@@ -6,18 +6,33 @@ struct ShellView: View {
     @ObservedObject var shell: Shell
 
     var body: some View {
-        WebViewContainer(webView: shell.webView)
-            .overlay {
-                if let error = shell.loadError {
-                    OfflineView(message: error, url: shell.failedURL, retry: shell.retry)
+        ZStack(alignment: .bottomTrailing) {
+            WebViewContainer(webView: shell.webView)
+                .overlay {
+                    if let error = shell.loadError {
+                        OfflineView(message: error, url: shell.failedURL, retry: shell.retry)
+                    }
                 }
+                .safeAreaInset(edge: .top) {
+                    if shell.needsUpdate { UpdateBanner() }
+                }
+                // The page runs under the home indicator; the Share button stays above it.
+                .ignoresSafeArea(.container, edges: .bottom)
+            if showsShare {
+                ShareButton(dimmed: shell.scrolling, action: shell.sharePage)
+                    .transition(.opacity)
             }
-            .safeAreaInset(edge: .top) {
-                if shell.needsUpdate { UpdateBanner() }
-            }
-            // A game asked for the whole screen (screen.immersive).
-            .statusBarHidden(shell.immersive)
-            .persistentSystemOverlays(shell.immersive ? .hidden : .automatic)
+        }
+        .animation(.easeInOut(duration: 0.2), value: showsShare)
+        // A game asked for the whole screen (screen.immersive).
+        .statusBarHidden(shell.immersive)
+        .persistentSystemOverlays(shell.immersive ? .hidden : .automatic)
+    }
+
+    /// Every page of ours can be shared, unless it hid the button (`share.page`), a game took the
+    /// whole screen, the page didn't load or the keyboard is up.
+    private var showsShare: Bool {
+        shell.shareAvailable && !shell.immersive && shell.loadError == nil && !shell.keyboardUp
     }
 }
 

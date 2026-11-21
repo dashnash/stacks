@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useShareTarget } from '@stacks/web';
 import { BookEditor } from '../components/BookEditor';
 import { Thread } from '../components/Discussion';
 import { VoteButton } from '../components/LineupPanel';
@@ -6,6 +7,7 @@ import { BackToKlub, BookPageLoading, BookSpread } from '../components/BookSprea
 import { ErrorNote, PanelHeading } from '../components/ui';
 import { useApi } from '../lib/auth';
 import { formatShortDate, monthStamp } from '../lib/format';
+import { bookCommentHref } from '../lib/route';
 import type { BookDetails } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
@@ -24,7 +26,7 @@ function status(details: BookDetails): string | null {
  * Lineup), the meetings that read it and its discussion. Admins and whoever nominated it can fix its details,
  * cover and Amazon link.
  */
-export function BookView({ isbn, onChanged }: { isbn: string; onChanged?: () => void }) {
+export function BookView({ isbn, commentId, onChanged }: { isbn: string; commentId?: string; onChanged?: () => void }) {
   const api = useApi();
   const details = useAsync(() => api.bookDetails(isbn), [isbn]);
   const [voting, setVoting] = useState(false);
@@ -36,6 +38,8 @@ export function BookView({ isbn, onChanged }: { isbn: string; onChanged?: () => 
   }, [isbn]);
 
   const data = details.data;
+  // The app's Share button: this page, titled with the book.
+  useShareTarget({ title: data ? `${data.book.title} · MOFO Book Klub` : undefined });
   if (!data) {
     return (
       <main>
@@ -124,7 +128,12 @@ export function BookView({ isbn, onChanged }: { isbn: string; onChanged?: () => 
         <p className="kicker">Spoilers welcome</p>
         <PanelHeading id="book-talk-heading" word="The" voice="conversation" />
         <div className="max-w-3xl">
-          <Thread thread={{ kind: 'book', id: book.isbn, label: 'The book' }} onChanged={() => void details.reload()} />
+          <Thread
+            thread={{ kind: 'book', id: book.isbn, label: 'The book' }}
+            links={{ href: (id) => bookCommentHref(book.isbn, id), title: book.title }}
+            focus={commentId}
+            onChanged={() => void details.reload()}
+          />
         </div>
       </section>
 

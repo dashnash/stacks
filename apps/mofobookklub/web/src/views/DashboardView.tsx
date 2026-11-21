@@ -57,7 +57,7 @@ export function DashboardView({ user }: { user: User }) {
         }
       />
 
-      {route.name === 'book' && <BookView isbn={route.isbn} onChanged={() => void refresh()} />}
+      {route.name === 'book' && <BookView isbn={route.isbn} commentId={route.commentId} onChanged={() => void refresh()} />}
       {route.name === 'admin' && (
         <AdminView
           user={user}

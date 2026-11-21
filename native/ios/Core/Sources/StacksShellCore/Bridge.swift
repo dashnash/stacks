@@ -23,6 +23,7 @@ public enum BridgeProtocol {
         "push.saveDevice": .auth,
         "push.status": .auth,
         "share": .any,
+        "share.page": .any,
         "haptics.impact": .app,
         "haptics.notification": .app,
         "haptics.pattern": .app,

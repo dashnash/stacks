@@ -58,6 +58,7 @@ From the brainstorm on 2026-11-09.
 | Push | Every inbox notification is pushed; badge = inbox count; per-app mute; Approve/Deny on access requests |
 | Push transport | APNs directly from the Platform API Lambda (HTTP/2, token auth with a `.p8` key in SSM); no SNS |
 | Native extras v1 | Universal links, native share sheet, offline/error screen with pull-to-refresh |
+| Page sharing (#61, 2026-11-21) | A floating native Share button on every page of ours (portal and apps) shares the page's URL and title; a page may change that or hide the button (`share.page`, scoped to the URL it was set on). Apps share their own things (a comment) with `useShare`. No share UI where there's no share sheet (most desktop browsers). Link previews are one static card per app (`stacksLinkPreview`), never per-page content |
 | Hardware | Game kit, Camera kit, AR, Game Center, location, microphone/audio, Home Screen widgets |
 | Capability gating | Declared in the app's manifest; adding a sensitive one needs `CODEOWNERS` review; the shell refuses undeclared calls; iOS still prompts the user |
 | Bridge principle | Web standards first; a native bridge call only where WebKit on iOS falls short |
@@ -129,12 +130,13 @@ import only `@stacks/native`, never `native/`.
 | In-app hosts | `auth.<domain>`, the bare domain and any `*.<domain>`, except another environment's root under it (production skips `*.test.<domain>`). A new app works in the app the moment it deploys. `/native/config` is fetched at launch for the update check |
 | Other links | Open in `SFSafariViewController` (Google, GitHub, external sites); `mailto:`/`tel:`/`sms:` go to the system |
 | Identity | User agent gains `DashyHQ/<version> StacksNative/<protocol>` so pages can tell they're in the shell; `window.stacksNative` is injected at document start |
-| Chrome | Full-bleed web view, safe-area aware, no native tab bar. The account menu stays the only navigation (the platform's rule), so iPad Split View, Stage Manager and rotation just work |
+| Chrome | Full-bleed web view, safe-area aware, no native tab bar, plus one round Share button at the bottom right (#61). The account menu stays the only navigation (the platform's rule), so iPad Split View, Stage Manager and rotation just work |
 | Back | Edge-swipe back on; apps can turn it off during a game (Game kit) |
 | Offline / errors | A native screen ("Can't reach Stacks", retry, last-tried URL) for network failures and 5xx on the main frame; pull-to-refresh on every page |
 | Downloads and files | `<input type=file>` uses the system picker and camera; downloads go to the share sheet |
 | Universal links | `applinks:auth.<domain>` and `applinks:*.<domain>`; opening any link to these hosts lands on that page in the app |
 | Share | `stacksNative.share({ url, text, title })` opens the share sheet; the web fallback is `navigator.share` |
+| Share button (#61) | 44 pt, bottom right above the home indicator; hidden in immersive mode, on the offline screen, with the keyboard up and where the page hid it; fades while scrolling. Shares the main frame's URL (a sign-in page shares the app it signs in to) and title, or what the page set with `share.page` while it is still on that URL. Pages get `--stacks-native-share-inset` (64px) to keep their own bottom-right controls clear of it |
 | Updates | Content is always live. The shell checks a `minShellVersion` in the Platform API's `/native/config` and shows "Update DashyHQ" when the shell is too old for the current bridge |
 
 **Universal links on the web side.** The portal's and every app's CloudFront router answer
@@ -366,7 +368,7 @@ await native.gameCenter.submitScore('flips', 4200);
 | AR | Step 1: `ar.quickLook(usdzUrl)` (AR Quick Look). Step 2: `ar.session({ mode: 'world' \| 'face' })`, a native ARKit view under a transparent web view, anchors and face blend shapes streamed to the page | — | camera | A "place it in your room" demo |
 | Game Center | `gameCenter.signIn`, `submitScore`, `showLeaderboard`, `reportAchievement` | — | no | `flippy-work-table` best flips |
 | Widgets | WidgetKit extension: an **Inbox** widget (count + latest) and a **Glance** widget (an item apps publish with a new `deps.platform.glance(userId, { title, subtitle, at, url })`, e.g. "Next meeting Thu 7pm"). Data from `GET /native/glance`, refreshed by background refresh and a silent push | — | no | Book Club's next meeting |
-| Share | `share` | `navigator.share` | no | — |
+| Share | `share`, `share.page` (#61) | `navigator.share` | no | Book Club comments |
 
 **Declaring and gating**
 
@@ -521,6 +523,7 @@ Gate: a new person with a hidden email signs in with Apple on iPhone and on a la
 **N5 — Game kit, Camera kit, audio, location**
 - [x] **N5a** Game kit (#45): manifest `native`, sensitive-capability review in `pr-paths.mjs`, `origins: "app"` and the event channel in `v1.json`, `native.motion` / `haptics` / `screen` in `@stacks/native` with web fallbacks and fakes (`fakeMotion`, `fakeGameKit`), CoreMotion/Core Haptics/screen handlers in the shell, motion purpose string
 - [x] `gyro-gym` Game kit pilot (an app task): sensor lab, Kit panel, tilt maze
+- [x] **#61** Page sharing: the Share button (shell 1.1.0), `share.page`, `useShare`/`useShareTarget`, `stacksLinkPreview`; Book Club shares book comments (`docs/specs/61-sharing-flows.md`)
 - [ ] Camera kit, audio, location; a camera/scan demo once `uploads` lands; `flippy-work-table` flick-to-flip (an app task)
 
 Gate (Game kit): Gyro Gym's lab at ~100 Hz from CoreMotion on a real iPhone, every Kit call felt or seen, keyboard/drag emulation in demo mode, and an undeclared call refused (passed 2026-11-15 on a real iPhone, DashyHQ Test).

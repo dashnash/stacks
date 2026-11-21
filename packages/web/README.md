@@ -89,3 +89,19 @@ function App() {
   (on tab return, or with the player active since: a forgotten tab doesn't keep a server), and a minute after a
   refusal; quiet on errors, nothing signed out.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.
+- **Sharing** (#61). In the iOS app every page has a Share button that shares its URL and title;
+  nothing to do for that. To change it, or to share your own things:
+  ```tsx
+  useShareTarget({ title: `${book.title} · Book Club` }); // the Share button on this page; also url, text
+  useShareTarget(null);                                   // hide it here (a game, a page with a bottom-right control)
+  const { available, share } = useShare();                // available: the app, or a browser with navigator.share
+  {available && <button onClick={() => void share({ url: `#/books/${id}/comment/${c.id}`, title })}>Share</button>}
+  ```
+  `share` resolves relative URLs against the page, returns false when the person backs out, and
+  throws `NativeError` otherwise (show it with `<ErrorNote>`). No share buttons on most desktops
+  (no share sheet there). A shared link must open the thing: give it a hash route. Fixed controls
+  at the bottom right can pad with `var(--stacks-native-share-inset, 0px)` (64px in the app).
+- **Link previews**: `plugins: [react(), stacksLinkPreview()]` from `@stacks/web/vite` in
+  `web/vite.config.ts` (the template has it) adds Open Graph tags from `app.manifest.json`: name,
+  tagline, `web/public/og-image.png` (1200×630) if present, the app's production URL. One card for
+  every page, so nothing private leaks; tags already in `index.html` win.
