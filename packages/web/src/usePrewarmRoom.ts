@@ -63,7 +63,8 @@ export function usePrewarmRoom(enabled: boolean): void {
             // Shortly before Play would stop taking it (45 s before it ends), warm the next one if the
             // player is still about. At least a minute apart.
             const next = Math.max(PREWARM_RETRY_MS, left - REWARM_LEAD_MS);
-            until = Date.now() + next;
+            // (A timer may fire a moment early: `until` is a second sooner, so it isn't a no-op.)
+            until = Date.now() + next - 1000;
             retry = setTimeout(() => activeAt > warmedAt && warm(), next);
           },
           () => {

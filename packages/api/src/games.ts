@@ -484,8 +484,9 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
   // `unused`: the store can't write both at once.)
   async function warmOf(creatorId: string, going: { meta: RoomMeta; room: Room }[]) {
     const listed = going.find((r) => r.meta.warm && r.meta.createdBy === creatorId);
-    // The index may lag a takeover: trust it only once the record itself still says warm.
-    if (listed && (await meta(listed.meta.id))?.warm) return listed;
+    // The index may lag a takeover: trust it only once the record itself still says warm (and it
+    // hasn't outlived its time, e.g. stuck after a crash between claiming and taking it).
+    if (listed && (await meta(listed.meta.id))?.warm && ageOf(listed.meta) < warmMs) return listed;
     const key = roomKeys.warmLock(creatorId);
     const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
     const m = lock?.roomId ? await meta(lock.roomId) : undefined;
@@ -530,8 +531,9 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
           return create(creator, opts);
         }
       }
-      // About to expire, or already over: retire it and start a fresh one.
-      if (now) await retire(now);
+      // About to expire: retire it. Already over (its server failed): close it with that reason.
+      if (now && room?.status === 'ended') await finish(now, room.endedReason ?? 'ended');
+      else if (now) await retire(now);
       going = going.filter((r) => r !== mine);
     }
     if (going.length >= settings.maxRooms) {

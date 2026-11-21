@@ -20,5 +20,5 @@ without `realtime` is an error.
 
 `gameServer` (optional, only with the module) sets its limits; `gameServerSettings(manifest)` fills in
 the defaults (`GAME_SERVER_DEFAULTS`): `maxRooms` 1-10 (4), `maxPlayers` 2-16 (8), `idleMinutes` 1-60
-(10), `maxHours` 0.25-4 (2), `warmMinutes` 1-15 (5, at most `idleMinutes`: how long a pre-warmed room waits to be taken), `cpu` 256/512/1024 (256), `memory` 512/1024/2048 MiB (512; at least
+(10), `maxHours` 0.25-4 (2), `warmMinutes` 2-15 (5: how long a pre-warmed room waits to be taken; the idle limit doesn't apply meanwhile), `cpu` 256/512/1024 (256), `memory` 512/1024/2048 MiB (512; at least
 1024 with cpu 512 and 2048 with cpu 1024, Fargate's pairs).

@@ -80,14 +80,13 @@ describe('validateManifest', () => {
     });
 
     it('takes limits within range and fills in the defaults', () => {
-      const m = { modules: ['realtime', 'gameServer'], gameServer: { maxRooms: 2, maxPlayers: 16, idleMinutes: 15, maxHours: 0.25, warmMinutes: 15, cpu: 512, memory: 1024 } };
+      const m = { modules: ['realtime', 'gameServer'], gameServer: { maxRooms: 2, maxPlayers: 16, idleMinutes: 1, maxHours: 0.25, warmMinutes: 15, cpu: 512, memory: 1024 } };
       expect(errorsFor(m)).toEqual([]);
       expect(gameServerSettings({})).toEqual({ maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, warmMinutes: 5, cpu: 256, memory: 512 });
       expect(gameServerSettings({ gameServer: { maxPlayers: 4 } })).toMatchObject({ maxPlayers: 4, maxRooms: 4 });
-      expect(gameServerSettings({ gameServer: { idleMinutes: 2 } })).toMatchObject({ idleMinutes: 2, warmMinutes: 2 });
-      // The lowest idle limit alone is fine: the default warm limit comes down to it.
+      // The lowest idle limit is fine with the default warm limit: a warm room holds the idle limit.
       expect(errorsFor({ modules: ['realtime', 'gameServer'], gameServer: { idleMinutes: 1 } })).toEqual([]);
-      expect(gameServerSettings({ gameServer: { idleMinutes: 1 } }).warmMinutes).toBe(1);
+      expect(gameServerSettings({ gameServer: { idleMinutes: 1 } })).toMatchObject({ idleMinutes: 1, warmMinutes: 5 });
       // A bigger CPU brings the least memory Fargate pairs with it.
       expect(gameServerSettings({ gameServer: { cpu: 1024 } })).toMatchObject({ cpu: 1024, memory: 2048 });
     });
@@ -102,9 +101,8 @@ describe('validateManifest', () => {
       [{ idleMinutes: 61 }, /idleMinutes/],
       [{ maxHours: 0.1 }, /maxHours must be a number from 0.25 to 4/],
       [{ maxHours: 5 }, /maxHours/],
-      [{ warmMinutes: 0 }, /warmMinutes must be a whole number from 1 to 15/],
-      [{ warmMinutes: 16, idleMinutes: 30 }, /warmMinutes must be a whole number from 1 to 15/],
-      [{ idleMinutes: 3, warmMinutes: 4 }, /warmMinutes must be at most idleMinutes \(3\)/],
+      [{ warmMinutes: 1 }, /warmMinutes must be a whole number from 2 to 15/],
+      [{ warmMinutes: 16 }, /warmMinutes must be a whole number from 2 to 15/],
       [{ cpu: 128 }, /cpu must be one of 256, 512, 1024/],
       [{ memory: 256 }, /memory must be one of 512, 1024, 2048/],
       [{ memory: 4096 }, /memory/],
