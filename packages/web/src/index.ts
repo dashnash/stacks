@@ -17,5 +17,6 @@ export { encodeEvent, MAX_EVENT_BYTES, RealtimeHub, realtimeHub } from './realti
 export type { ChannelStatus, Subscription } from './realtime';
 export { useGameRoom } from './useGameRoom';
 export type { GameRoomHandle, UseGameRoomOptions } from './useGameRoom';
+export { PREWARM_RETRY_MS, usePrewarmRoom } from './usePrewarmRoom';
 export { createStateBuffer, GAME_DEVICE_LABEL, GameRoomClient, hubSignaling, interpolate } from './gameRoom';
 export type { ChannelLike, GamePlayerInfo, GameRoomClientOptions, GameRoomSnapshot, GameRoomStatus, GameSignaling, PeerLike, StateMeta } from './gameRoom';

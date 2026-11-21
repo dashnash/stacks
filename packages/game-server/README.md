@@ -54,17 +54,18 @@ export default defineGame<State, Event>({
 | Tick loop | Fixed timestep (`dt` is always `1 / tickHz`). After a stall it runs at most 5 catch-up ticks and skips the rest. |
 | Rate limits | Per seat: 60 inputs/s and 20 events/s by default (`inputsPerSecond`, `eventsPerSecond`); the excess is dropped. Messages over 4 KB are ignored. |
 | Reconnects | A dropped seat is kept for 20 s: rejoining restores it with no `onLeave`/`onJoin`. A second connection for the same seat (same person, same device) takes it over; the person's other devices are untouched. |
-| Limits | The room ends after `idleMinutes` with no input from anyone (default 10) or `maxHours` in total (default 2); everyone gets "game over" first. |
+| Limits | The room ends after `idleMinutes` with no input from anyone (default 10) or `maxHours` in total (default 2); everyone gets "game over" first. A pre-warmed room (`POST /rooms/warm`) that nobody takes ends as `unused` after `warmMinutes` from when its server opened (the API's sweep may end it sooner, counting from the warm-up) (default 5; the idle limit is held meanwhile); the server checks the room record every 15 s, and once the room is taken its idle clock starts again, so a late Play isn't cut short. |
 | Shutdown | On end it writes `ended` and the results to the room record, tells the lobby, closes connections and exits. The API stopping the task (room ended by its creator) does the same. |
 | Tickets | Every WebRTC offer carries a 60 s HMAC join ticket from `POST /api/rooms/:id/join`; forged ones get no answer, expired ones a "get a new one". |
 
 ## Limits and cost (manifest `gameServer`)
 
-`{ maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, cpu: 256, memory: 512 }` are the
+`{ maxRooms: 4, maxPlayers: 8, idleMinutes: 10, maxHours: 2, warmMinutes: 5, cpu: 256, memory: 512 }` are the
 defaults; see `@stacks/manifest` for the ranges. Over `maxRooms`, creating a room answers 429.
 
 - **Zero idle cost**: no warm pool, load balancer or NAT gateway. A room costs about $0.01 per hour
-  (0.25 vCPU / 0.5 GB arm64 Fargate) while it runs, plus cents of logs.
+  (0.25 vCPU / 0.5 GB arm64 Fargate) while it runs, plus cents of logs. A pre-warmed room nobody
+  takes (`usePrewarmRoom`) costs at most `warmMinutes` of that: about $0.001.
 - TURN (only for players whose network blocks UDP; most connect directly): Cloudflare Realtime TURN,
   about $0.05/GB after 1 TB/month free.
 - A CloudWatch alarm per app fires if a server's heartbeat reports over 3 hours of uptime.
