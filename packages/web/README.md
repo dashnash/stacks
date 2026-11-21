@@ -83,9 +83,12 @@ function App() {
   when the connection drops. It interpolates nothing itself: `interpolate(a, b, t)` blends two states
   (numbers lerp, list items match by `id`), `createStateBuffer({ delayMs })` does it over time. Works
   in Safari and the iOS app's web view with no extra bridge.
-- **Pre-warming**: `usePrewarmRoom(enabled)` starts a game server early (`POST /rooms/warm`) so the next
-  `POST /rooms` finds it up instead of waiting 30-60 s. Call it where a game is likely (a title screen with
+- **Pre-warming**: `const warm = usePrewarmRoom(enabled)` starts a game server early (`POST /rooms/warm`) so the
+  next `POST /rooms` finds it up instead of waiting 30-60 s. Call it where a game is likely (a title screen with
   Play; not on a phone that only joins). Warms each time `enabled` turns true, again when the warm room expires
   (on tab return, or with the player active since: a forgotten tab doesn't keep a server), and a minute after a
-  refusal; quiet on errors, nothing signed out.
+  refusal while the tab is visible; quiet on errors, nothing signed out. `warm.status`: `off` (disabled or signed
+  out), `idle` (none yet, or it ran out), `warming` (its server is starting; polled every `PREWARM_POLL_MS`),
+  `ready` (open: the next `POST /rooms` takes it), `busy` (refused or failed, `warm.error`; retrying). A title can
+  show progress and enable Play on `ready` (with a fallback, e.g. "Play anyway" after a while `busy`).
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

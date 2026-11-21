@@ -1,10 +1,14 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, StacksProvider, usePrewarmRoom, type Client, type SocketLike } from '../src/index';
+import { ApiError, PREWARM_POLL_MS, StacksProvider, usePrewarmRoom, type Client, type SocketLike } from '../src/index';
 
 function Title({ on }: { on: boolean }) {
   usePrewarmRoom(on);
   return <p>title</p>;
+}
+function Status({ on }: { on: boolean }) {
+  const w = usePrewarmRoom(on);
+  return <p data-testid="status">{[w.status, w.roomId].filter(Boolean).join(' ')}</p>;
 }
 
 const session = { user: { id: 'u_ann', name: 'Ann' }, role: 'MEMBER', canManageAccess: false };
@@ -91,36 +95,62 @@ describe('usePrewarmRoom', () => {
     expect(api.post).toHaveBeenCalledTimes(3);
   });
 
-  it('tries again a minute after a refusal, with the tab left open', async () => {
+  it('tries again a minute after a refusal while the tab is visible, and reports busy', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     let refuse = true;
     const api = client(async () => {
       if (refuse) throw new ApiError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
-      return { room: { id: 'r1', warm: true, warmUntil: new Date(Date.now() + 300_000).toISOString() } };
+      return { room: { id: 'r1', status: 'open', warm: true, warmUntil: new Date(Date.now() + 300_000).toISOString() } };
     });
-    render(
+    const view = render(
       <StacksProvider client={api} silentSignIn={false}>
-        <Title on />
+        <Status on />
       </StacksProvider>,
     );
     for (let i = 0; i < 10 && !(api.post as ReturnType<typeof vi.fn>).mock.calls.length; i++) await act(async () => vi.advanceTimersByTimeAsync(10));
     expect(api.post).toHaveBeenCalledTimes(1);
-    refuse = false;
-    // Nobody about: no retry.
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(view.getByTestId('status').textContent).toBe('busy');
+    // Hidden: no retry until it's back.
+    hide('hidden');
     await act(async () => vi.advanceTimersByTimeAsync(61_000));
     expect(api.post).toHaveBeenCalledTimes(1);
-    // A tab return tries at once, is refused, and the player is about this time.
-    refuse = true;
-    hide('hidden');
     await act(async () => hide('visible'));
     expect(api.post).toHaveBeenCalledTimes(2);
+    // Visible and untouched: still retried a minute later; this time it's ready.
     refuse = false;
-    await act(async () => vi.advanceTimersByTimeAsync(1_000));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
-    await act(async () => vi.advanceTimersByTimeAsync(57_000));
-    expect(api.post).toHaveBeenCalledTimes(2);
-    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    await act(async () => vi.advanceTimersByTimeAsync(61_000));
     expect(api.post).toHaveBeenCalledTimes(3);
+    expect(view.getByTestId('status').textContent).toBe('ready r1');
+  });
+
+  it('reports warming while the server starts, ready once it is open, idle once Play would no longer take it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let status = 'starting';
+    const api = client(async () => ({ room: { id: 'r1', status: 'starting', warm: true }, leftMs: 300_000 }));
+    (api.get as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
+      expect(path).toBe('/rooms/r1');
+      return { room: { id: 'r1', status } };
+    });
+    const view = render(
+      <StacksProvider client={api} silentSignIn={false}>
+        <Status on />
+      </StacksProvider>,
+    );
+    const text = () => view.getByTestId('status').textContent;
+    for (let i = 0; i < 10 && text() !== 'warming r1'; i++) await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(text()).toBe('warming r1');
+    await act(async () => vi.advanceTimersByTimeAsync(PREWARM_POLL_MS));
+    expect(text()).toBe('warming r1');
+    status = 'open';
+    await act(async () => vi.advanceTimersByTimeAsync(PREWARM_POLL_MS));
+    expect(text()).toBe('ready r1');
+    // Nobody about: no re-warm, and 30 s before it ends Play would start fresh, so it's not ready any more.
+    await act(async () => vi.advanceTimersByTimeAsync(300_000 - 30_000 - 2 * PREWARM_POLL_MS - 100));
+    expect(text()).toBe('ready r1');
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(text()).toBe('idle');
+    expect(api.post).toHaveBeenCalledTimes(1);
   });
 
   it('is quiet when refused, and does nothing signed out', async () => {

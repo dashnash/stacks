@@ -551,7 +551,7 @@ Phase 3 build notes:
 - [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
 - [x] `gameServer` module (#44): `@stacks/game-server`, rooms API, `useGameRoom`, in-page servers in the demo; `hello`'s Live dots is the reference
 - [x] Game room seats keyed per device (#131): `POST /rooms/:id/join { device? }`, `useGameRoom(id, { device })`, `p.userId`/`p.device`, `maxSeatsPerUser`
-- [x] Game room pre-warming (#152): `POST /rooms/warm`, adopted by the next `POST /rooms`; `usePrewarmRoom(enabled)`; manifest `warmMinutes`; warm rooms nobody takes end `unused`
+- [x] Game room pre-warming (#152): `POST /rooms/warm`, adopted by the next `POST /rooms`; `usePrewarmRoom(enabled)` (returns `off`/`idle`/`warming`/`ready`/`busy`, so a title can wait for `ready`); manifest `warmMinutes`; warm rooms nobody takes end `unused`
 - [ ] Eval run on the 4 reference apps, usage logged
 
 Gate: a non-technical user builds one app end to end in a single Claude Code session and it is live on staging.
