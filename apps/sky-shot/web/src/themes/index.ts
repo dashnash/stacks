@@ -6,11 +6,12 @@ import type { CSSProperties } from 'react';
 import { DEFAULT_THEME, THEME_IDS, THEME_PALETTES, type ThemeChoice, type ThemeId } from '../../../game/themes';
 import { dusk } from './dusk';
 import { koi } from './koi';
+import { neon } from './neon';
 import type { Palette, Theme } from './types';
 
 export type { Effect, HitCopy, Palette, Theme } from './types';
 
-export const THEMES: Record<ThemeId, Theme> = { dusk, koi };
+export const THEMES: Record<ThemeId, Theme> = { dusk, koi, neon };
 
 export function themeOf(choice: ThemeChoice): { theme: Theme; palette: Palette } {
   const theme = THEMES[choice.id] ?? THEMES[DEFAULT_THEME.id];

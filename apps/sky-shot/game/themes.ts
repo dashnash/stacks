@@ -9,6 +9,7 @@
 export const THEME_PALETTES = {
   dusk: ['dusk'],
   koi: ['rice', 'moon'],
+  neon: ['midnight', 'amber'],
 } as const satisfies Record<string, readonly [string, ...string[]]>;
 
 export type ThemeId = keyof typeof THEME_PALETTES;
