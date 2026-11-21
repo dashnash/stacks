@@ -1,6 +1,7 @@
 /** The app's keys in its single table, and what each item holds. */
 import type { Item } from '@stacks/api';
 import type { GameSummary, ShotRecord } from '../game/protocol';
+import type { ThemeChoice } from '../game/themes';
 import type { Tuning } from '../game/tuning';
 
 /** Shots (and the configs they used) are kept 30 days. */
@@ -22,7 +23,15 @@ export const keys = {
   config: (id: string) => ({ PK: `CONFIG#${id}`, SK: 'META' }),
   /** A person's own default tuning (what a new room starts with on their screen). */
   tuning: (userId: string) => ({ PK: `TUNING#${userId}`, SK: 'CURRENT' }),
+  /** A person's preferences: the look they picked. */
+  prefs: (userId: string) => ({ PK: `PREFS#${userId}`, SK: 'CURRENT' }),
 };
+
+export interface PrefsItem extends Item {
+  userId: string;
+  theme: ThemeChoice;
+  at: string;
+}
 
 export interface TuningItem extends Item {
   userId: string;

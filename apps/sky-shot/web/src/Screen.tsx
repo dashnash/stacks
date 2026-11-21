@@ -7,7 +7,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { ErrorNote, createStateBuffer, useApi, useAsync, useGameRoom } from '@stacks/web';
 import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInput, type RangeKind, type ScreenEvent, type ServerEvent, type Snapshot } from '../../game/protocol';
 import { configId, DEFAULT_TUNING, type Tuning } from '../../game/tuning';
-import { drawFrame, EFFECT_MS, GUN_COLORS, type Effect } from './draw';
+import { drawFrame, EFFECT_MS, HIT_COPY_MS, Layers, type Effect, type HitCopy } from './draw';
+import { useLook } from './Look';
+import { lookStyle, nextTheme, themeOf } from './themes';
 import { encodeQr, qrPath } from './qr';
 import { GRAPH_MS, TuningPanel, type MotionPoint } from './Tuning';
 
@@ -21,6 +23,10 @@ interface RoomInfo {
 /** The screen draws this far behind the server (createStateBuffer's default). */
 const DELAY_MS = 100;
 const ACK_MS = 400;
+/** Crosshair positions kept per gun for themes that draw a trail. */
+const TRAIL = 12;
+
+const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** The link the phone opens: the controller page for this room. */
 export const gunLink = (roomId: string, base = `${window.location.origin}${window.location.pathname}`) => `${base}#/gun/${encodeURIComponent(roomId)}`;
@@ -76,6 +82,15 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const latest = useRef<Snapshot | null>(null);
   const offset = useRef<number | null>(null);
   const effects = useRef<Effect[]>([]);
+  const effectId = useRef(0);
+  const hits = useRef<HitCopy[]>([]);
+  const trails = useRef(new Map<string, [number, number][]>());
+  const layers = useMemo(() => new Layers(), []);
+  const { look, setLook } = useLook();
+  const lookNow = useRef(look);
+  lookNow.current = look;
+  const { palette } = themeOf(look);
+  const [hitboxes, setHitboxes] = useState(false);
   const motion = useRef<MotionPoint[]>([]);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -120,10 +135,14 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     (e: ServerEvent) => {
       const now = performance.now();
       if ('hit' in e) {
-        effects.current.push({ kind: 'pop', x: e.hit.x, y: e.hit.y, c: colorOf(e.hit.seat), at: now }, ...(e.hit.pts ? [{ kind: 'score' as const, x: e.hit.x, y: e.hit.y, c: 0, at: now, text: `+${e.hit.pts}` }] : []));
+        // The target as the screen is drawing it now: themes whose hit targets don't fall keep this copy.
+        const shown = buffer.sample()?.tg.find((t) => t.id === e.hit.target);
+        effects.current.push({ kind: 'hit', id: ++effectId.current, x: e.hit.x, y: e.hit.y, c: colorOf(e.hit.seat), at: now, pts: e.hit.pts, r: shown?.r });
+        if (shown) hits.current.push({ id: shown.id, k: shown.k, x: shown.x, y: shown.y, r: shown.r, h: shown.h, at: now });
+        hits.current = hits.current.filter((x) => now - x.at < HIT_COPY_MS);
         setLastShot({ ...e.hit.lat, rw: e.hit.rw });
       } else if ('miss' in e) {
-        effects.current.push({ kind: 'flash', x: e.miss.x, y: e.miss.y, c: colorOf(e.miss.seat), at: now });
+        effects.current.push({ kind: 'miss', id: ++effectId.current, x: e.miss.x, y: e.miss.y, c: colorOf(e.miss.seat), at: now });
         setLastShot({ ...e.miss.lat, rw: e.miss.rw });
       } else if ('tuning' in e) {
         tuningNow.current = e.tuning.tuning;
@@ -144,7 +163,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       else if ('empty' in e) show('Out of shots', 800);
       effects.current = effects.current.filter((x) => now - x.at < EFFECT_MS);
     },
-    [show, saveDefault],
+    [show, saveDefault, buffer],
   );
 
   // Events go both ways on one channel: the screen sends ScreenEvents and receives ServerEvents.
@@ -187,6 +206,24 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     };
   }, [live, sendEvent, startMode]);
 
+  // The room draws nothing itself, but the phones follow the screen's look and shots record it.
+  useEffect(() => {
+    if (live) sendEvent({ theme: look });
+  }, [live, look, sendEvent]);
+  // A theme with its own fonts: draw again once they have loaded.
+  useEffect(() => {
+    const fonts = themeOf(look).theme.fonts;
+    if (!fonts.length || !document.fonts) return;
+    let on = true;
+    void Promise.all(fonts.map((f) => document.fonts.load(f))).then(
+      () => on && layers.clear(),
+      () => undefined,
+    );
+    return () => {
+      on = false;
+    };
+  }, [look, layers]);
+
   // The HUD and overlays at 10 Hz; the canvas every frame.
   useEffect(() => {
     const id = setInterval(() => setSnap(latest.current), 100);
@@ -202,8 +239,10 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const calibrating = !!snap && snap.g.length > 0 && snap.ph === 'ready';
   const pointCal = snap?.cal;
   const phone = !!snap?.g.some((g) => !g.m);
+  const hitboxScale = tuning.tuning.hitboxScale;
   useEffect(() => {
     let frame = 0;
+    const still = reducedMotion();
     const draw = () => {
       const el = canvas.current;
       const ctx = el?.getContext?.('2d');
@@ -216,13 +255,29 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
         }
         ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
         const cal = latest.current?.cal;
-        drawFrame(ctx, w, h, buffer.sample(), effects.current, { now: performance.now(), overlay, calibrate: calibrating && !cal, guns: latest.current?.g, cal });
+        const guns = latest.current?.g;
+        if (!still)
+          for (const g of guns ?? []) {
+            const t = trails.current.get(g.id) ?? [];
+            t.push([g.x, g.y]);
+            if (t.length > TRAIL) t.shift();
+            trails.current.set(g.id, t);
+          }
+        drawFrame(
+          ctx,
+          w,
+          h,
+          buffer.sample(),
+          effects.current,
+          { now: performance.now(), theme: lookNow.current, overlay, calibrate: calibrating && !cal, guns, cal, hits: hits.current, hitboxes: hitboxes ? hitboxScale : undefined, reducedMotion: still, trails: trails.current, dpr: devicePixelRatio },
+          layers,
+        );
       }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [buffer, overlay, calibrating]);
+  }, [buffer, overlay, calibrating, hitboxes, hitboxScale, layers]);
 
   // The panel pauses Rounds (not Range).
   useEffect(() => {
@@ -232,10 +287,11 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === 't' || e.key === 'T') setPanel((p) => !p);
+      if (e.key === 'l' || e.key === 'L') setLook(nextTheme(lookNow.current));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [setLook]);
 
   const start = useCallback(() => {
     setOver(null);
@@ -294,7 +350,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const link = gunLink(roomId);
 
   return (
-    <div className={`screen${panel ? ' with-panel' : ''}`}>
+    <div className={`screen${panel ? ' with-panel' : ''}`} data-theme={look.id} data-palette={look.palette} style={lookStyle(look)}>
       <canvas ref={canvas} className="sky" onPointerMove={point} onPointerDown={click} aria-label="Sky Shot play area" />
 
       {snap && (
@@ -316,7 +372,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             <span>Range · {range.kind}</span>
           )}
           {snap.g.map((g) => (
-            <span key={g.id} className="gun-chip" style={{ color: GUN_COLORS[g.c % GUN_COLORS.length] }}>
+            <span key={g.id} className="gun-chip" style={{ color: palette.seats[g.c % palette.seats.length] }}>
               ● {g.m ? 'mouse' : 'gun'}
             </span>
           ))}
@@ -417,6 +473,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           onTune={tune}
           onRange={changeRange}
           onOverlay={setOverlay}
+          hitboxes={hitboxes}
+          onHitboxes={setHitboxes}
           onClose={() => setPanel(false)}
           onSave={() => void saveDefault(tuning.tuning, 'manual').then((ok) => ok && show('Saved as your default'))}
           onCalibrate={phone ? () => sendEvent({ calibrate: 'points' }) : undefined}

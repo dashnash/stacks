@@ -303,3 +303,29 @@ describe('Sky Shot: results', () => {
     expect(results.games).toEqual([expect.objectContaining({ mode: 'range', shots: MAX_SHOTS + 100 })]);
   }, 30_000);
 });
+
+describe('Sky Shot: the look', () => {
+  it('tells every seat the screen\'s look, on joining and when it changes; shots and games record it', () => {
+    const t = setup();
+    expect(t.of(t.screen, 'theme')).toEqual([{ id: 'dusk', palette: 'dusk' }]);
+    t.screen.event({ mode: 'range' });
+    t.screen.event({ start: true });
+    t.noLag();
+    const gun = phone(t.g);
+    gun.run(100);
+    expect(t.of(gun.seat, 'theme')).toEqual([{ id: 'dusk', palette: 'dusk' }]);
+    t.screen.event({ theme: { id: 'dusk', palette: 'dusk' } });
+    expect(t.of(gun.seat, 'theme')).toHaveLength(2);
+    // Only the screen sets it, and only to a look that exists.
+    gun.seat.event({ theme: { id: 'dusk', palette: 'dusk' } });
+    for (const theme of [{ id: 'nope', palette: 'dusk' }, { id: 'dusk', palette: 'nope' }, 'dusk', null]) t.screen.event({ theme });
+    expect(t.of(gun.seat, 'theme')).toHaveLength(2);
+
+    gun.seat.event({ shot: { t: t.g.now / 1000 } });
+    gun.run(400);
+    t.screen.event({ finish: true });
+    const results = t.g.ended!.results as Results;
+    expect(results.shots.map((s) => s.theme)).toEqual(['dusk/dusk']);
+    expect(results.games.map((g) => g.theme)).toEqual(['dusk/dusk']);
+  });
+});

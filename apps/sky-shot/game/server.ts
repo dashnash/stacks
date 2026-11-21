@@ -31,6 +31,7 @@ import {
   type WireSample,
 } from './protocol';
 import { rng, spawnRangeTarget, spawnRoundTarget, stepTargets, TargetHistory, targetView, type Target } from './targets';
+import { DEFAULT_THEME, isThemeChoice, themeTag, type ThemeChoice } from './themes';
 import { applyTune, configId, DEFAULT_TUNING, type Tuning } from './tuning';
 
 export const TICK_HZ = 60;
@@ -132,6 +133,7 @@ export interface State {
   pending: PendingShot[];
   stats: Record<string, Stat>;
   range: { kind: RangeKind; speed: number };
+  theme: ThemeChoice;
 }
 
 const fin = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
@@ -183,6 +185,7 @@ function summary(state: State): GameSummary | null {
     shooterId: state.shooter?.id ?? null,
     shooterName: state.shooter?.name ?? null,
     endedAt: Math.round(state.room.elapsedMs),
+    theme: themeTag(state.theme),
   };
 }
 
@@ -324,6 +327,7 @@ function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger
       missDist: hit ? 0 : sig4(best ? Math.max(0, best.d) : 1),
       rewindMs: rewind,
       latency: { gunRtt: lat.gun, screenRtt: lat.screen, shotToPixel: lat.pix },
+      theme: themeTag(state.theme),
     },
   });
 }
@@ -498,6 +502,9 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     if (fin(aspect)) state.aspect = Math.min(3, Math.max(0.5, aspect));
   } else if ('finish' in event) {
     state.room.end(buildResults(state));
+  } else if ('theme' in event && isThemeChoice(event.theme)) {
+    state.theme = { id: event.theme.id, palette: event.theme.palette };
+    state.room.broadcast({ theme: state.theme });
   }
 }
 
@@ -594,6 +601,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         pending: [],
         stats: {},
         range: { kind: 'static', speed: 1 },
+        theme: DEFAULT_THEME,
       };
       return state;
     },
@@ -604,6 +612,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
       else if (kind === 'gun' || kind === 'mouse') addGun(state, player, kind === 'mouse');
       state.room.send(player.id, { tuning: { tuning: state.tuning, id: state.cfg } });
       state.room.send(player.id, { stats: publicStats(state) });
+      state.room.send(player.id, { theme: state.theme });
     },
 
     onLeave(state, player) {
