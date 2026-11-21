@@ -189,6 +189,13 @@ export class Aim {
     this.calibrated = true;
   }
 
+  /** Relative mode: put the crosshair at (x, y) now (training starts each jump on its dot). */
+  place(x: number, y: number): void {
+    this.rel = { x: clamp01(x), y: clamp01(y) };
+    this.fx.reset();
+    this.fy.reset();
+  }
+
   /** One motion sample, at server time `t` (ms). `aspect` is the screen's width / height. */
   update(t: number, q: Quat, r: Vec3, tuning: Tuning, aspect: number): AimPoint {
     const dt = this.lastT === null ? 0 : Math.min(0.1, Math.max(0, (t - this.lastT) / 1000));

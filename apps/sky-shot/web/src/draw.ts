@@ -3,7 +3,7 @@
  * short-lived effects, drawn by the chosen theme (`themes/`). The theme's still background and its
  * overlay are cached as layers per size and palette; the rest is drawn every frame.
  */
-import type { CalibrationView, GunView, Snapshot, TargetView } from '../../game/protocol';
+import type { CalibrationView, GunView, Snapshot, TargetView, TrainingView } from '../../game/protocol';
 import type { ThemeChoice } from '../../game/themes';
 import { duskCalibration } from './themes/dusk';
 import { themeOf, type Effect, type HitCopy, type Palette, type Theme } from './themes';
@@ -72,6 +72,8 @@ export interface FrameOpts {
   /** The crosshairs to draw (the newest state; the targets are interpolated about 100 ms back). */
   guns?: GunView[];
   cal?: CalibrationView;
+  /** Training: its dot, and whether to show the crosshair (hidden during a jump). */
+  training?: TrainingView;
   /** Targets as they were when hit (for themes whose hit targets don't fall). */
   hits?: HitCopy[];
   /** Draw each live target's hitbox: its radius times this (the tuning's `hitboxScale`). */
@@ -116,6 +118,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, s
   layer(cached?.bg, () => step(() => theme.background(ctx, w, h, p)));
   if (theme.ambient && !opts.reducedMotion) step(() => theme.ambient!(ctx, w, h, now, p));
   step(() => (theme.calibration ?? duskCalibration)(ctx, w, h, now, p, { centre: opts.calibrate, cal: opts.cal }));
+  if (opts.training) step(() => trainingDot(ctx, opts.training!, w, h, now));
 
   if (snap) {
     // A theme whose hit targets don't fall draws its copy where each was hit, not the falling one.
@@ -134,7 +137,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, w: number, h: number, s
     for (const c of copies) if (now - c.at < theme.hitMs) drawTarget({ id: c.id, k: c.k, x: c.x, y: c.y, r: c.r, s: 1, h: c.h }, now - c.at);
     if (opts.hitboxes) for (const t of snap.tg) if (t.s === 0) hitbox(ctx, t.x * w, t.y * h, t.r * h * opts.hitboxes);
     for (const e of effects) step(() => theme.effect(ctx, e, w, h, now, p));
-    for (const g of opts.guns ?? snap.g) {
+    for (const g of opts.training && !opts.training.show ? [] : (opts.guns ?? snap.g)) {
       const trail = (opts.trails?.get(g.id) ?? []).map(([x, y]) => [x * w, y * h] as [number, number]);
       step(() => theme.crosshair(ctx, g, { x: g.x * w, y: g.y * h, raw: opts.overlay ? [g.rx * w, g.ry * h] : undefined }, h, now, p, trail));
     }
@@ -161,3 +164,30 @@ export function drawThumb(ctx: CanvasRenderingContext2D, w: number, h: number, c
   if (theme.overlay) theme.overlay(ctx, w, h, p);
   ctx.restore();
 }
+
+/** Training's dot: a bright ring; on a jump, the start dot faint behind it; between trials, faint. */
+function trainingDot(ctx: CanvasRenderingContext2D, tr: TrainingView, w: number, h: number, now: number) {
+  if (!['gap', 'jump', 'track', 'hold'].includes(tr.k)) return;
+  const r = Math.max(9, h * 0.018);
+  if (tr.ax !== undefined && tr.ay !== undefined) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(tr.ax * w, tr.ay * h, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const x = tr.x * w;
+  const y = tr.y * h;
+  ctx.globalAlpha = tr.k === 'gap' ? 0.35 : 1;
+  ctx.fillStyle = '#c6ff3d';
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#c6ff3d';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, r + (tr.k === 'hold' ? Math.sin(now / 250) * 2 : 0), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+

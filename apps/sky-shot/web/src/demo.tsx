@@ -87,20 +87,21 @@ function DemoPhone({ roomId }: { roomId: string }) {
   );
 }
 
-/** `#/autoplay` (and `#/autoplay/tuning`): start a room, pair the pretend phone and play, for screenshots. */
-function Autoplay({ tuning }: { tuning: boolean }) {
+/** `#/autoplay` (`/tuning`, `/training`): start a room, pair the pretend phone and play, for screenshots. */
+function Autoplay({ kind }: { kind: string | undefined }) {
   const api = useApi();
   const { status } = useStacks();
   useEffect(() => {
     if (status !== 'signedIn') return;
     let cancelled = false;
     void api.post<{ room: { id: string } }>('/rooms', { name: 'Demo' }).then(({ room }) => {
-      if (!cancelled) window.location.hash = `#/play/${room.id}/${tuning ? 'range' : 'rounds'}/auto${tuning ? '/tuning' : ''}`;
+      const mode = kind === 'tuning' ? 'range' : kind === 'training' ? 'training' : 'rounds';
+      if (!cancelled) window.location.hash = `#/play/${room.id}/${mode}/auto${kind === 'tuning' ? '/tuning' : ''}`;
     });
     return () => {
       cancelled = true;
     };
-  }, [api, status, tuning]);
+  }, [api, status, kind]);
   return null;
 }
 
@@ -116,7 +117,7 @@ function DemoPage() {
   const playing = segments[0] === 'play' && segments[1];
   return (
     <div className={`demo-split${playing && wide ? ' with-phone' : ''}`}>
-      {segments[0] === 'autoplay' && <Autoplay tuning={segments[1] === 'tuning'} />}
+      {segments[0] === 'autoplay' && <Autoplay kind={segments[1]} />}
       <div className="demo-screen">
         <App />
       </div>

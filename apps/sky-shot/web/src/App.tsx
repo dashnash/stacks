@@ -103,7 +103,7 @@ function Title() {
     setBusy(true);
     setError(null);
     try {
-      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: mode === 'range' ? 'Sky Shot range' : 'Sky Shot' });
+      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: mode === 'range' ? 'Sky Shot range' : mode === 'training' ? 'Sky Shot training' : 'Sky Shot' });
       window.location.hash = `#/play/${encodeURIComponent(room.id)}/${mode}`;
     } catch (err) {
       setError(err as Error);
@@ -128,6 +128,9 @@ function Title() {
                 Range
               </button>
             </div>
+            <button type="button" className="link" disabled={busy} onClick={() => void play('training')}>
+              Train the aim (2 minutes, fits the controls to you)
+            </button>
             <p className="muted small">On a desktop: Play shows a QR code for your iPhone. No phone? Pick "Use mouse instead".</p>
             <ErrorNote error={error} className="error" />
             <JoinAsGun />
@@ -157,7 +160,7 @@ function Routed() {
   if (status === 'loading') return <Spinner />;
   const signedIn = status === 'signedIn' && !!session;
   const [page, id, mode, auto, open] = segments;
-  if (signedIn && page === 'play' && id) return <Screen key={id} roomId={id} mode={mode === 'range' ? 'range' : 'rounds'} autostart={auto === 'auto'} openPanel={open === 'tuning'} />;
+  if (signedIn && page === 'play' && id) return <Screen key={id} roomId={id} mode={mode === 'range' || mode === 'training' ? mode : 'rounds'} autostart={auto === 'auto'} openPanel={open === 'tuning'} />;
   if (signedIn && page === 'gun' && id) return <Gun key={id} roomId={id} />;
   if (page === 'autoplay') return <Spinner />;
   if (signedIn && page === 'telemetry') return <Telemetry key={`${session.user.id}:${session.role}`} />;

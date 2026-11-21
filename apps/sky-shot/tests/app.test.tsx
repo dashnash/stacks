@@ -11,6 +11,9 @@ import { gunLink } from '../web/src/Screen';
 import { toCsv } from '../web/src/Telemetry';
 import { App, demoOptions } from '../web/src/demo/setup';
 import { Gun } from '../web/src/Gun';
+import { changedKnobs, TrainingResult } from '../web/src/Training';
+import { DEFAULT_TUNING } from '../game/tuning';
+import type { FitReport } from '../game/fit';
 
 const MAX = 'max@demo.stacks';
 const OLIVE = 'olive@demo.stacks';
@@ -228,6 +231,63 @@ describe('Sky Shot: 5-point calibration', () => {
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     await waitFor(() => expect(within(panel).getByRole('slider', { name: /^Turn gain/ })).not.toHaveValue('1.6'), T);
   }, 30_000);
+});
+
+describe('Sky Shot: training', () => {
+  it('Train the aim pairs the phone, explains, and runs the script with the phone told to watch the screen', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: /Train the aim/ }));
+    const phone = await screen.findByTestId('phone');
+    expect(await screen.findByRole('dialog', { name: 'Training' }, T)).toHaveTextContent('When the crosshair vanishes');
+    await userEvent.click(screen.getByRole('button', { name: 'Start training' }));
+    expect(await screen.findByText(/^[12] \/ 31$/, {}, T)).toBeInTheDocument();
+    expect(await within(phone).findByText(/follow the dot/, {}, T)).toBeInTheDocument();
+    expect(within(phone).queryByRole('button', { name: 'Fire' })).toBeNull();
+  }, 20_000);
+
+  it('shows the fit next to yours: speed, jump miss, lag and shake, and what changed', async () => {
+    const report: FitReport = {
+      v: 1,
+      base: { ...DEFAULT_TUNING },
+      fitted: { ...DEFAULT_TUNING, mode: 'relative', sensitivity: 0.7, accelCurve: 1.45 },
+      before: { jumpErr: 0.12, gain: 1.62, jitter: 0.001, lagMs: 140 },
+      after: { jumpErr: 0.03, gain: 1.01, jitter: 0.0012, lagMs: 55 },
+      usedJumps: 22,
+      totalJumps: 24,
+      latencyMs: 60,
+      jumps: [],
+    };
+    const on = { compare: vi.fn(), use: vi.fn(), keep: vi.fn(), again: vi.fn() };
+    render(<TrainingResult report={report} onCompare={on.compare} onUse={on.use} onKeep={on.keep} onAgain={on.again} />);
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('row', { name: /Speed/ })).toHaveTextContent('1.62×1.01×too fast → about right');
+    expect(within(table).getByRole('row', { name: /Lag/ })).toHaveTextContent('140 ms55 ms');
+    expect(screen.getByText('What changed (3)')).toBeInTheDocument();
+    expect(changedKnobs(report.base, report.fitted).map((c) => `${c.label}: ${c.from} → ${c.to}`)).toEqual([
+      'Aim mapping: absolute → relative',
+      'Sensitivity: 1.2 widths/rad → 0.7 widths/rad',
+      'Accel curve: 1.3 → 1.45',
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: 'Compare blind (A/B)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Use the fit' }));
+    expect([on.compare, on.use].map((f) => f.mock.calls.length)).toEqual([1, 1]);
+  });
+
+  it('"Save as my default" sticks: the next room starts with it', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Range' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the Range' }, T));
+    await userEvent.click(screen.getByRole('button', { name: 'Tuning (T)' }));
+    const panel = screen.getByRole('complementary', { name: 'Tuning' });
+    await userEvent.selectOptions(within(panel).getByLabelText('Trigger'), 'flick');
+    await within(await screen.findByTestId('phone')).findByRole('button', { name: 'Flick to fire' }, T);
+    await userEvent.click(within(panel).getByRole('button', { name: 'Save as my default' }));
+    expect(await screen.findByText('Saved as your default', {}, T)).toBeInTheDocument();
+    // A new room: the screen sends the saved default, and the phone switches to flick.
+    act(() => void (window.location.hash = '#/'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }, T));
+    expect(await within(await screen.findByTestId('phone')).findByRole('button', { name: 'Flick to fire' }, T)).toBeInTheDocument();
+  }, 25_000);
 });
 
 describe('Sky Shot: telemetry', () => {

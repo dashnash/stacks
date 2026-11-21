@@ -1,8 +1,9 @@
 /**
  * Extra demo pages for `npm run verify-app` to screenshot, beyond the title screen (signed out and as
  * every persona). `#/autoplay` starts a room, pairs the demo's pretend phone and starts Round 1;
- * `#/autoplay/tuning` does the same on the Range with the tuning panel open. Add `/look/<theme>`
- * (and optionally `/<palette>`) to start in a look: one `mid-round-<theme>` page per theme.
+ * `#/autoplay/tuning` does the same on the Range with the tuning panel open; `#/autoplay/training`
+ * starts a training run. Add `/look/<theme>` (and optionally `/<palette>`) to start in a look: one
+ * `mid-round-<theme>` page per theme.
  */
 export interface ScreenshotPage {
   name: string;
@@ -17,5 +18,6 @@ export const screenshotPages: ScreenshotPage[] = [
   { name: 'mid-round-neon', hash: '#/autoplay/look/neon', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
   { name: 'mid-round-stars', hash: '#/autoplay/look/stars', as: ['max@demo.stacks'], waitFor: '.hud .shells' },
   { name: 'tuning-panel', hash: '#/autoplay/tuning', as: ['max@demo.stacks'], waitFor: '.hud .score' },
+  { name: 'training', hash: '#/autoplay/training', as: ['max@demo.stacks'], waitFor: '.hud .score' },
   { name: 'telemetry', hash: '#/telemetry', waitFor: '.telemetry table' },
 ];
