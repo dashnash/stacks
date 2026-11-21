@@ -31,7 +31,11 @@ export function usePrewarmRoom(enabled: boolean): void {
     let gone = false;
     let activeAt = Date.now();
     let warmedAt = 0;
-    const active = () => (activeAt = Date.now());
+    const active = () => {
+      activeAt = Date.now();
+      // Back after the last warm room ran out: warm the next one now.
+      if (Date.now() >= until) warm();
+    };
     const warm = () => {
       if (gone || busy || document.visibilityState === 'hidden' || Date.now() < until) return;
       busy = true;
@@ -40,6 +44,7 @@ export function usePrewarmRoom(enabled: boolean): void {
         .post<{ room: { warmUntil?: string } }>('/rooms/warm', {})
         .then(
           ({ room }) => {
+            if (gone) return;
             const at = room.warmUntil ? Date.parse(room.warmUntil) : NaN;
             until = Number.isFinite(at) ? at : Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
@@ -50,6 +55,7 @@ export function usePrewarmRoom(enabled: boolean): void {
             retry = setTimeout(() => activeAt > warmedAt && warm(), next);
           },
           () => {
+            if (gone) return;
             until = Date.now() + PREWARM_RETRY_MS;
             clearTimeout(retry);
             retry = setTimeout(() => activeAt > warmedAt && warm(), PREWARM_RETRY_MS);

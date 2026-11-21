@@ -185,15 +185,15 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
     this.checkingWarm = true;
     const { PK, SK } = roomKeys.meta(this.opts.roomId);
     void this.opts.store
-      .get<Item & { warm?: boolean; status?: string }>(PK, SK)
+      .get<Item & { warm?: boolean; status?: string; endedReason?: string }>(PK, SK)
       .then((m) => {
         if (host.joinedAny || host.ended) {
           this.watchingWarm = false;
           host.holdIdle(false);
         } else if (!m || m.status === 'ended') {
-          // Ended by the API (and its stop didn't reach us): end here too.
+          // Ended by the API (and its stop didn't reach us): end here too, for the same reason.
           this.watchingWarm = false;
-          host.end('stopped');
+          host.end(m?.endedReason ?? 'stopped');
         } else if (!m.warm) {
           // Taken: its players are on their way, so the idle clock starts now.
           this.watchingWarm = false;

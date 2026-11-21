@@ -159,7 +159,8 @@ describe('pre-warming', () => {
     // Hidden: not listed, not found by its code, not joinable, not audited.
     expect((await t.call('GET', '/rooms', { as: bob })).body.rooms).toEqual([]);
     expect((await t.call('GET', `/rooms/by-code/${first.body.room.code}`, { as: bob })).status).toBe(404);
-    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).body.code).toBe('ROOM_STARTING');
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).status).toBe(404);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: ann })).body.code).toBe('ROOM_STARTING');
     expect(t.platform.audit.filter((a) => a.action === 'room.create')).toEqual([]);
 
     // Play: the same room, already open, now named, listed, joinable and audited.

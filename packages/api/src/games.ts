@@ -381,9 +381,8 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     }
   }
 
-  /** Free a person's warm-up lock if it is still this room's. */
   /**
-   * The delete isn't conditional (the store has no conditional delete): a lock swapped in between
+   * Free a person's warm-up lock if it is still this room's. The delete isn't conditional (the store has no conditional delete): a lock swapped in between
    * the read and the delete can be lost, which at worst lets one extra warm-up through.
    */
   async function unlock(userId: string, roomId: string): Promise<void> {
@@ -477,9 +476,12 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
    * The caller's live warm room among `going`; or, when the room index hasn't caught up with one
    * started a moment ago, the one their warm-up lock names (read by key), added to `going`.
    */
+  // (A Play in the moment between a warm-up's lock and its record starts a second server, which ends
+  // `unused`: the store can't write both at once.)
   async function warmOf(creatorId: string, going: { meta: RoomMeta; room: Room }[]) {
     const listed = going.find((r) => r.meta.warm && r.meta.createdBy === creatorId);
-    if (listed) return listed;
+    // The index may lag a takeover: trust it only once the record itself still says warm.
+    if (listed && (await meta(listed.meta.id))?.warm) return listed;
     const key = roomKeys.warmLock(creatorId);
     const lock = await store.get<Item & { roomId?: string }>(key.PK, key.SK);
     const m = lock?.roomId ? await meta(lock.roomId) : undefined;
@@ -636,6 +638,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const room = await this.get(id);
       if (!room) throw notFound('No such room');
       if (room.status === 'ended') throw new HttpError(409, 'This game is over', 'ROOM_ENDED');
+      if (room.warm && room.createdBy.id !== player.id) throw notFound('No such room');
       if (room.warm) throw new HttpError(409, "This game hasn't been started yet", 'ROOM_STARTING');
       if (room.status !== 'open') throw new HttpError(409, 'The game server is still starting', 'ROOM_STARTING');
       const key = roomKeys.player(id, seat.id);
