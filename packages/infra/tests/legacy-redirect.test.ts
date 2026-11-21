@@ -109,6 +109,17 @@ describe('LegacyRedirectStack', () => {
     expect(JSON.stringify(only.toJSON())).not.toMatch(/"\*\.old\.example|"old\.example\.?"/);
   });
 
+  it('keeps hyphenated labels apart and the certificate name independent of the order of hosts', () => {
+    const certName = (hosts: string[]) => {
+      const tpl = Template.fromStack(
+        new LegacyRedirectStack(new cdk.App(), { envName: 'production', env: { ...env, rootDomain: 'new.example', legacyRedirects: [{ rootDomain: 'old.example', hostedZoneId: 'ZOLD', hosts }] }, region: 'us-east-1' }),
+      );
+      tpl.resourceCountIs('AWS::Route53::RecordSet', 2 * hosts.length);
+      return Object.values(tpl.findResources('AWS::CertificateManager::Certificate'))[0]?.Properties.DomainName;
+    };
+    expect(certName(['my-app', 'myapp'])).toBe(certName(['myapp', 'my-app']));
+  });
+
   it('is named per environment', () => {
     const app = new cdk.App();
     expect(new LegacyRedirectStack(app, { envName: 'production', env, region: 'us-east-1' }).stackName).toBe('stacks-prod-legacy-redirect');
@@ -198,6 +209,7 @@ describe('hosted zone lookup', () => {
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a.b'] }] })).toThrow(/not a host label/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['*'] }] })).toThrow(/not a host label/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a', 'a'] }] })).toThrow(/twice/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: Array.from({ length: 11 }, (_, n) => `h${n}`) }] })).toThrow(/more than 10/);
     expect(write({ legacyRedirects: [{ ...legacy, hosts: ['mofobookklub'] }] })).not.toThrow();
     expect(write({})).not.toThrow();
   });

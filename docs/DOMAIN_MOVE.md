@@ -149,7 +149,7 @@ works again too.
 aws acm list-certificates --query "CertificateSummaryList[?contains(DomainName, 'iamdashnash')].[DomainName,CertificateArn,InUse]" --output table
 ```
 
-Only the two redirect certificates (`mofobookklub.iamdashnash.com`, `mofobookklub.test.iamdashnash.com` since #140) should stay, in use.
+Only the two redirect certificates (`mofobookklub.iamdashnash.com`, `mofobookklub.test.iamdashnash.com` since #140) belong to Stacks; any other `iamdashnash` certificate is the homelab's: leave it.
 
 Since #140 the redirects hold only `mofobookklub.iamdashnash.com` and `mofobookklub.test.iamdashnash.com`
 (`hosts` in `stacks.config.json`): the bare `iamdashnash.com` and its other subdomains are free for the

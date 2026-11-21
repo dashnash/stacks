@@ -127,6 +127,8 @@ export function loadStacksConfig(path: string): StacksConfig {
       checkZone(`${where}.legacyRedirects[${i}]`, old);
       if (old.hosts !== undefined) {
         if (!Array.isArray(old.hosts) || old.hosts.length === 0) throw new Error(`${where}.legacyRedirects[${i}].hosts must be a non-empty list`);
+        // One certificate holds them all; ACM's default limit is 10 names.
+        if (old.hosts.length > 10) throw new Error(`${where}.legacyRedirects[${i}].hosts has more than 10 labels (one certificate)`);
         if (new Set(old.hosts).size !== old.hosts.length) throw new Error(`${where}.legacyRedirects[${i}].hosts has a label twice`);
         for (const h of old.hosts) {
           if (typeof h !== 'string' || !HOST_LABEL.test(h)) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${JSON.stringify(h)} is not a host label`);
