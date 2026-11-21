@@ -67,10 +67,12 @@ web/src/themes/
   types.ts          // the Theme and Palette interfaces (the source of truth for the shapes)
   index.ts          // THEMES, themeOf(choice), nextTheme (the L key), lookStyle (CSS variables)
   dusk.ts           // the original look, moved from draw.ts with no visual change
-  koi.ts  neon.ts  stars.ts
-  paint.ts          // shared helpers (rng, rgba, starPath, brush strokes, grain, paper shadow);
-                    // added with the first theme that needs them
+  koi.ts  neon.ts  stars.ts   // each self-contained: its helpers (rng, rgba, brush strokes,
+                              // grain, paper shadow) are private to the file
 ```
+
+The three themes were built in parallel, so they don't share a `paint.ts`. Extract one when a fourth
+theme would duplicate the same helpers.
 
 Adding a theme: its palette keys in `THEME_PALETTES` (the first is its default), its drawing in
 `THEMES`. `themes.test.ts` fails until the two agree.
@@ -106,8 +108,8 @@ Hit targets can't be hit again, so this is purely visual and lag compensation is
   etc. instead of literals. The HUD stays DOM; restyle the score, shells (glyph per theme), gun chips
   and banners per theme. The tuning panel, telemetry page and account menu keep the neutral app
   style in every theme so tuning stays readable.
-- Fonts: one Google Fonts `@import` for the four families (precedent:
-  `apps/mofobookklub/web/src/index.css`), with system fallbacks. Before drawing canvas text in a
+- Fonts: one Google Fonts `@import` at the top of `styles.css` for all the themes' families
+  (precedent: `apps/mofobookklub/web/src/index.css`), with system fallbacks. Before drawing canvas text in a
   theme, `await Promise.all(theme.fonts.map((f) => document.fonts.load(f)))` and drop the layer cache
   once loaded.
 - `Gun.tsx`: the trigger button shows `theme.verb` in tap mode ("Flick to fire" etc. stays in flick
@@ -147,14 +149,19 @@ Hit targets can't be hit again, so this is purely visual and lag compensation is
   least `0.8 r`. Tails, trails, wings, beams, threads and glows may spill outside; they are
   decoration and never count for hits. Check with Show hitboxes.
 - **Contrast:** every seat colour has at least 3:1 contrast against the palette's dominant
-  background colour (`palette.ground`). Each palette declares `ground`.
+  background colour (`palette.ground`): the colour most of the play area actually is, adjusted for
+  washes or gradients that cover much of it (e.g. the middle of a sky gradient). Each palette
+  declares `ground`. Small bands may fall lower (Stargazer *Dusk paper*'s light strip above the
+  hills gives the white seat 2.97:1).
 - **Readability while moving:** at 1920×1080, a target is identifiable at full speed in round 6; the
   crosshair is never hidden behind the overlay (the overlay may tint it, not cover it).
 - **Reduced motion:** `prefers-reduced-motion` stops `ambient` (ripples, grid scroll, twinkles) and
   the crosshair trail. Game motion is unchanged.
 - **Performance:** a frame at 1920×1080, DPR 2, stays under 6 ms of drawing on a mid-range laptop.
   Backgrounds and overlays are cached layers; `shadowBlur` only on targets, effects and crosshairs,
-  never per background element per frame.
+  never per background element per frame. `shadowBlur` ignores the canvas transform, so the themes
+  multiply it by the device pixel ratio to keep the look; at DPR 2 that is the main cost (Neon
+  Courier's glow). Not yet profiled on real hardware: if it is too slow, drop that scaling first.
 - **No real-world IP:** original drawings only, no sprites or fonts lifted from another game.
 
 ## Tests
@@ -174,21 +181,33 @@ Hit targets can't be hit again, so this is purely visual and lag compensation is
   property names); 401 signed out; a removed theme reads as null; telemetry filters by `theme`.
 - `app.test.tsx`: the title screen offers the looks; the screen and phone carry `data-theme` and the
   palette's CSS variables; the tuning panel has the Look select and Show hitboxes; an unknown look in
-  `localStorage` falls back to Dusk. From PR 2 (two themes): picking a look saves it, the screen
-  switches, and the phone shows the new verb.
-- Demo screenshots (`web/src/demo/pages.ts`), from PR 2: `mid-round-koi`, `mid-round-neon`,
-  `mid-round-stars`, so `npm run verify-app -- sky-shot` captures each theme.
+  `localStorage` falls back to Dusk; picking Ink Koi saves it to your account (it survives a reload
+  with `localStorage` cleared), the screen switches, and the phone shows "Tap to catch".
+- Per theme (`themes.test.ts`): Ink Koi's default, sink timing, verb and own calibration dots;
+  Stargazer's thread reaching the top and its pop and fade timing.
+- Demo screenshots (`web/src/demo/pages.ts`): `mid-round-koi`, `mid-round-neon`,
+  `mid-round-stars`, using `#/autoplay/look/<theme>[/<palette>]`, so `npm run verify-app -- sky-shot`
+  captures each theme.
 
 ## Build order (PRs)
 
 | Order | PR | Visible change |
 | --- | --- | --- |
-| 1 | Theme plumbing: registry, `dusk.ts` (moved from `draw.ts`), cached layers, hit-motion recording, CSS variables, picker, `/prefs`, room `theme` event, telemetry column, tests | Only the picker (one choice) and the telemetry column |
-| 2 | Ink Koi | New theme |
-| 3 | Neon Courier | New theme |
-| 4 | Stargazer | New theme |
+| 1 | #145 Theme plumbing: registry, `dusk.ts` (moved from `draw.ts`), cached layers, hit-motion recording, CSS variables, picker, `/prefs`, room `theme` event, telemetry column, tests | Only the picker (one choice) and the telemetry column |
+| 2 | The three themes in one PR (built in parallel, then combined): Ink Koi, Neon Courier, Stargazer | Three new looks |
 
-PRs 2-4 are independent of each other once 1 has merged.
+## Where the build differs from the concept art
+
+- Hit effects (Ink Koi's bloom, Neon's shards, the `+pts` offset) are sized from the target's radius
+  in px (`e.r × h`); the concept used screen heights as pixels, so they collapsed to a dot.
+- Ink Koi has its own calibration dots (ink dots and a moss-green ensō): Dusk's white and lime
+  vanish on rice paper. Its round is a red "Round N" tag (the HUD is DOM), not a square seal. On
+  Rice paper the header brand and footer turn ink so they stay readable.
+- Neon Courier's crosshair trail restarts after a jump of more than 0.15 h (a dropped frame or a
+  recalibration would otherwise draw a streak); its HUD keeps the app's number format.
+- Stargazer's sleeping-star thread is `t.y × r / t.r` px long, so it ends at the top of the play
+  area; gun chips are not on paper tags (the white seat would vanish on cream).
+- Paper grain uses `OffscreenCanvas` and is skipped where it doesn't exist (Safari before 16.4).
 
 ## Docs to update in the same PRs
 
