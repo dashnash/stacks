@@ -456,7 +456,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
 
   return (
     <div className={`screen${panel ? ' with-panel' : ''}`} data-theme={look.id} data-palette={look.palette} style={lookStyle(look)}>
-      <canvas ref={canvas} className="sky" onPointerMove={point} onPointerDown={click} aria-label="Sky Shot play area" />
+      <canvas ref={canvas} className="sky" onPointerMove={point} onPointerDown={click} aria-label="Whee play area" />
 
       {snap && (
         <div className="hud" aria-live="off">
@@ -550,7 +550,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             <QrCode text={link} label="QR code to open the gun on your phone" />
           </a>
           <p className="code-line">
-            Or open Sky Shot on your phone and enter <strong className="code">{code ?? '····'}</strong>
+            Or open Whee on your phone and enter <strong className="code">{code ?? '····'}</strong>
           </p>
           <button type="button" className="link" onClick={() => setUseMouse(true)}>
             Use mouse instead

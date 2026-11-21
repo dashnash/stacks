@@ -1,8 +1,8 @@
 {
   "slug": "sky-shot",
-  "name": "Sky Shot",
-  "tagline": "Your phone is the light gun, your screen is the sky.",
-  "description": "A retro light-gun arcade game for two devices: targets fly across a desktop screen and you aim and fire with your iPhone. Pair by QR code, then shoot in Rounds or tune the aim on the Range. A test bench too: aim mapping and trigger are tunable live, and every shot is logged.",
+  "name": "Whee",
+  "tagline": "Point your phone at the big screen. Tap. Whee.",
+  "description": "A point-and-tap arcade game for two devices: things drift across a desktop screen in the look you pick (Dusk, Ink Koi, Neon Courier or Stargazer), and you aim with your iPhone and tap. Pair by QR code, then play Rounds, train, or tune the aim on the Range. A test bench too: aim mapping and trigger are tunable live, and every shot is logged.",
   "category": "Games",
   "visibility": "public",
   "roles": [

@@ -1,11 +1,14 @@
-# Sky Shot
+# Whee
+
+Formerly Sky Shot. The slug stays `sky-shot` (slugs are immutable: the subdomain and the stack name).
 
 Full spec: `docs/specs/132-sky-shot.md` (owner decisions settled there).
 
 ## What it is for
 
-An original retro light-gun arcade game: targets (flat vector birds, clay discs, balloons) fly
-across a big screen in a desktop browser, and you aim and fire with an iPhone held like a gun. It is
+An original point-and-tap arcade game, a deliberately over-engineered take on motion-controller party
+games: targets fly across a big screen in a desktop browser, in the look you pick, and you aim with
+an iPhone and tap (or flick). It is
 also a test bench: the aim mapping (absolute, relative, hybrid) and the trigger (tap, flick) are
 tunable live, and every shot is logged with its motion so the best approach can be found by playing.
 

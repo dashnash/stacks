@@ -1,5 +1,5 @@
 /**
- * Sky Shot's game server. Seats by device: one `screen` (draws, tunes, starts), up to two guns
+ * Whee's game server (app slug `sky-shot`). Seats by device: one `screen` (draws, tunes, starts), up to two guns
  * (`gun`, `gun-2`: a phone streaming raw motion) or a `mouse` (a gun whose input is already a
  * crosshair). The server maps motion to crosshairs, detects flicks, and decides every hit with lag
  * compensation: a shot is tested against the targets as the screen showed them when it was fired.

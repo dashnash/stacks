@@ -103,7 +103,7 @@ function Title() {
     setBusy(true);
     setError(null);
     try {
-      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: mode === 'range' ? 'Sky Shot range' : mode === 'training' ? 'Sky Shot training' : 'Sky Shot' });
+      const { room } = await api.post<{ room: { id: string } }>('/rooms', { name: mode === 'range' ? 'Whee range' : mode === 'training' ? 'Whee training' : 'Whee' });
       window.location.hash = `#/play/${encodeURIComponent(room.id)}/${mode}`;
     } catch (err) {
       setError(err as Error);
@@ -115,7 +115,7 @@ function Title() {
     <div className="title">
       <section className="hero">
         <h1 className="logo">
-          Sky<span>Shot</span>
+          Wh<span>ee</span>
         </h1>
         <p className="lead">{manifest.tagline}</p>
         {signedIn ? (
@@ -174,7 +174,7 @@ export function App() {
     <div className={`app${playing ? ' playing' : ''}`}>
       <header className="top">
         <a href="#/" className="brand">
-          Sky Shot
+          Whee
         </a>
         <AccountMenu className="account" />
       </header>
