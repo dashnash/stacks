@@ -94,6 +94,32 @@ describe('LegacyRedirectStack', () => {
     t.resourceCountIs('AWS::Lambda::Function', 0);
   });
 
+  it('with hosts, holds only those names and leaves the bare old root and its wildcard free', () => {
+    const only = Template.fromStack(
+      new LegacyRedirectStack(new cdk.App(), {
+        envName: 'production',
+        env: { ...env, rootDomain: 'new.example', legacyRedirects: [{ rootDomain: 'old.example', hostedZoneId: 'ZOLD', hosts: ['mofobookklub'] }] },
+        region: 'us-east-1',
+      }),
+    );
+    only.hasResourceProperties('AWS::CertificateManager::Certificate', { DomainName: 'mofobookklub.old.example', SubjectAlternativeNames: Match.absent() });
+    only.hasResourceProperties('AWS::CloudFront::Distribution', { DistributionConfig: Match.objectLike({ Aliases: ['mofobookklub.old.example'] }) });
+    for (const type of ['A', 'AAAA']) only.hasResourceProperties('AWS::Route53::RecordSet', { Name: 'mofobookklub.old.example.', Type: type, HostedZoneId: 'ZOLD' });
+    only.resourceCountIs('AWS::Route53::RecordSet', 2);
+    expect(JSON.stringify(only.toJSON())).not.toMatch(/"\*\.old\.example|"old\.example\.?"/);
+  });
+
+  it('keeps hyphenated labels apart and the certificate name independent of the order of hosts', () => {
+    const certName = (hosts: string[]) => {
+      const tpl = Template.fromStack(
+        new LegacyRedirectStack(new cdk.App(), { envName: 'production', env: { ...env, rootDomain: 'new.example', legacyRedirects: [{ rootDomain: 'old.example', hostedZoneId: 'ZOLD', hosts }] }, region: 'us-east-1' }),
+      );
+      tpl.resourceCountIs('AWS::Route53::RecordSet', 2 * hosts.length);
+      return Object.values(tpl.findResources('AWS::CertificateManager::Certificate'))[0]?.Properties.DomainName;
+    };
+    expect(certName(['my-app', 'myapp'])).toBe(certName(['myapp', 'my-app']));
+  });
+
   it('is named per environment', () => {
     const app = new cdk.App();
     expect(new LegacyRedirectStack(app, { envName: 'production', env, region: 'us-east-1' }).stackName).toBe('stacks-prod-legacy-redirect');
@@ -178,6 +204,22 @@ describe('hosted zone lookup', () => {
     expect(write({ hostedZoneId: 'nope' })).toThrow(/neither a Route 53 zone ID/);
     expect(write({ legacyRedirects: [{ rootDomain: repoConfig.environments.staging.rootDomain, hostedZoneId: 'Z1' }] })).toThrow(/to itself/);
     expect(write({ legacyRedirects: [{ rootDomain: 'test.old.example', hostedZoneId: 'Z1', hostedZoneName: 'other.example' }] })).toThrow(/not inside the zone/);
+    const legacy = { rootDomain: 'test.old.example', hostedZoneId: 'Z1', hostedZoneName: 'old.example' };
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: [] }] })).toThrow(/non-empty list/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a.b'] }] })).toThrow(/not a host label/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['*'] }] })).toThrow(/not a host label/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['a', 'a'] }] })).toThrow(/twice/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: Array.from({ length: 11 }, (_, n) => `h${n}`) }] })).toThrow(/more than 10/);
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['mofobookklub'] }] })).not.toThrow();
+    expect(write({ legacyRedirects: [{ ...legacy, hosts: ['x'.repeat(50)] }] })).toThrow(/longer than 64/);
+    const prodRoot = repoConfig.environments.production.legacyRedirects?.[0]?.rootDomain ?? '';
+    const stagingRoot = repoConfig.environments.staging.legacyRedirects?.[0]?.rootDomain ?? '';
+    if (prodRoot && stagingRoot.endsWith(`.${prodRoot}`)) {
+      const file = path.join(dir, 'p.json');
+      const prod = { ...repoConfig.environments.production, legacyRedirects: [{ ...repoConfig.environments.production.legacyRedirects![0]!, hosts: [stagingRoot.slice(0, -prodRoot.length - 1)] }] };
+      fs.writeFileSync(file, JSON.stringify({ ...repoConfig, environments: { ...repoConfig.environments, production: prod } }));
+      expect(() => loadStacksConfig(file)).toThrow(/overlaps staging/);
+    }
     expect(write({})).not.toThrow();
   });
 });

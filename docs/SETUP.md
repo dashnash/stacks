@@ -60,6 +60,7 @@ deploy builds pass `-c requireZones=true`.
 
 `legacyRedirects` (optional, per environment) lists old roots kept only as 301 redirects to
 `rootDomain`, e.g. `[{ "rootDomain": "test.old.example", "hostedZoneId": "Z…", "hostedZoneName": "old.example" }]`.
+Add `"hosts": ["<label>", …]` (up to 10) to hold only `<label>.<old>` and leave the rest of the old root free.
 They get their own stack, `stacks-<env>-legacy-redirect` (see `docs/PLATFORM_SPEC.md`).
 
 ## 1b. Google OAuth client (one per environment)

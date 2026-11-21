@@ -47,6 +47,12 @@ export interface LegacyRedirect {
   hostedZoneId: string;
   /** That zone's name (defaults to `rootDomain`). */
   hostedZoneName?: string;
+  /**
+   * Host labels to redirect, e.g. `["mofobookklub"]`: only `<label>.<old>` is held and the rest of
+   * the old root (the bare domain, `*.<old>`) is left free for other uses. Unset: the bare old root
+   * and `*.<old>`.
+   */
+  hosts?: string[];
 }
 
 export interface NativeConfig {
@@ -119,6 +125,32 @@ export function loadStacksConfig(path: string): StacksConfig {
       if (old.rootDomain === env.rootDomain) throw new Error(`${where}.legacyRedirects[${i}] redirects ${old.rootDomain} to itself`);
       if (!old.hostedZoneId) throw new Error(`${where}.legacyRedirects[${i}].hostedZoneId is required`);
       checkZone(`${where}.legacyRedirects[${i}]`, old);
+      if (old.hosts !== undefined) {
+        if (!Array.isArray(old.hosts) || old.hosts.length === 0) throw new Error(`${where}.legacyRedirects[${i}].hosts must be a non-empty list`);
+        // One certificate holds them all; ACM's default limit is 10 names.
+        if (old.hosts.length > 10) throw new Error(`${where}.legacyRedirects[${i}].hosts has more than 10 labels (one certificate)`);
+        if (new Set(old.hosts).size !== old.hosts.length) throw new Error(`${where}.legacyRedirects[${i}].hosts has a label twice`);
+        for (const h of old.hosts) {
+          if (typeof h !== 'string' || !HOST_LABEL.test(h)) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${JSON.stringify(h)} is not a host label`);
+          // ACM caps a certificate's main name at 64 characters, and any of these may be it.
+          if (`${h}.${old.rootDomain}`.length > 64) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${h}.${old.rootDomain} is longer than 64 characters`);
+        }
+      }
+    }
+  }
+  // A listed host must not take over another environment's legacy root (staging's test.<old> sits under production's <old>).
+  for (const name of ['production', 'staging'] as const) {
+    for (const [i, old] of (config.environments[name].legacyRedirects ?? []).entries()) {
+      for (const h of old.hosts ?? []) {
+        const host = `${h}.${old.rootDomain}`;
+        for (const other of ['production', 'staging'] as const) {
+          for (const o of config.environments[other].legacyRedirects ?? []) {
+            if (o !== old && (o.rootDomain === host || o.rootDomain.endsWith(`.${host}`))) {
+              throw new Error(`${path}: environments.${name}.legacyRedirects[${i}].hosts: ${host} overlaps ${other}'s legacy root ${o.rootDomain}`);
+            }
+          }
+        }
+      }
     }
   }
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.githubRepo ?? '')) throw new Error(`${path}: githubRepo must be "owner/repo"`);
@@ -131,6 +163,8 @@ export function loadStacksConfig(path: string): StacksConfig {
   return config;
 }
 
+/** One DNS label, lower case (the same rule the redirect function applies). */
+const HOST_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const ZONE_ID = /^Z[A-Z0-9]{1,31}$/;
 

@@ -40,7 +40,7 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   logs). `PlatformStack` adds `Monitoring`: the one dashboard `stacks-<tag>` and six saved queries
   (`SAVED_QUERIES`) over the log groups of `appSlugs`. No alarms, no SNS.
 - `LegacyRedirectStack` (`stacks-<env>-legacy-redirect`, only with `legacyRedirects`): per old root a
-  CloudFront distribution on `<old>` + `*.<old>` (own certificate and records in the old zone) whose
+  CloudFront distribution on `<old>` + `*.<old>`, or only `<label>.<old>` per label in its `hosts` (max 10) (own certificate and records in the old zone) whose
   function (`legacyRedirectCode(old, new)`) 301s to the same label + path + query on the new root
   (bare old root → `auth.`, anything odd → the portal's front page). `infra/bin/stacks.ts` makes it
   depend on every other stack so it deploys last.

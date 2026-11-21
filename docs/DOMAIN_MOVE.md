@@ -1,5 +1,12 @@
 # Domain move: `iamdashnash.com` → `dashnash.ninja` (#42)
 
+> **Since #140** the redirects hold only `mofobookklub.iamdashnash.com` and `mofobookklub.test.iamdashnash.com`.
+> The steps and checks below describe the move as it was run (the whole old root); after #140 only the
+> `mofobookklub.` checks still apply (the `hello.`, bare-domain and `hello.test.` curls no longer answer 301), and the bare
+> `iamdashnash.com` and its other subdomains belong to the homelab, **once CI has deployed #140 to both
+> `stacks-<env>-legacy-redirect` stacks** (until then their apex and wildcard records still exist; writing
+> over them first breaks that deploy).
+
 Moves Stacks to `dashnash.ninja` (staging `test.dashnash.ninja`) and the iOS app to the bundle IDs
 `ninja.dashnash.stacks` / `ninja.dashnash.stacks.test`. The old domain stays up **only as 301
 redirects**: every old host (`auth.`, `<slug>.`, the bare domain, and `test.*`) goes to the same host
@@ -145,7 +152,7 @@ works again too.
 aws acm list-certificates --query "CertificateSummaryList[?contains(DomainName, 'iamdashnash')].[DomainName,CertificateArn,InUse]" --output table
 ```
 
-Only the two redirect certificates (`iamdashnash.com`, `test.iamdashnash.com`) should stay, in use.
+Only the two redirect certificates (`mofobookklub.iamdashnash.com`, `mofobookklub.test.iamdashnash.com` since #140) belong to Stacks; any other `iamdashnash` certificate is the homelab's: leave it.
 
-The redirects stay up for as long as old links matter. To retire them later, delete
-`legacyRedirects` from `stacks.config.json` and both `stacks-<env>-legacy-redirect` stacks by hand.
+To retire the remaining `mofobookklub.` redirects later, delete `legacyRedirects` from `stacks.config.json` and both
+`stacks-<env>-legacy-redirect` stacks by hand.
