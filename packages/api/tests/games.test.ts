@@ -140,6 +140,96 @@ describe('rooms', () => {
   });
 });
 
+describe('pre-warming', () => {
+  const warm = (t: Harness, as = ann) => t.call('POST', '/rooms/warm', { as, role: 'EDITOR' });
+
+  it('starts one hidden server per person, which their next POST /rooms takes over', async () => {
+    const t = harness();
+    const first = await warm(t);
+    expect(first.status).toBe(201);
+    const id = first.body.room.id;
+    expect(first.body.room).toMatchObject({ status: 'starting', warm: true, warmUntil: expect.any(String) });
+    expect(Date.parse(first.body.room.warmUntil) - Date.parse(first.body.room.createdAt)).toBe(5 * 60_000);
+    // Asking again doesn't start a second.
+    const again = await warm(t);
+    expect([again.status, again.body.room.id]).toEqual([200, id]);
+    expect(t.games.started).toEqual([id]);
+    await t.games.open(id);
+    // Hidden: not listed, not found by its code, not joinable, not audited.
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms).toEqual([]);
+    expect((await t.call('GET', `/rooms/by-code/${first.body.room.code}`, { as: bob })).status).toBe(404);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: bob })).body.code).toBe('ROOM_STARTING');
+    expect(t.platform.audit.filter((a) => a.action === 'room.create')).toEqual([]);
+
+    // Play: the same room, already open, now named, listed, joinable and audited.
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: { name: 'Friday dots' } });
+    expect(res.status).toBe(201);
+    expect(res.body.room).toMatchObject({ id, name: 'Friday dots', status: 'open' });
+    expect(res.body.room).not.toHaveProperty('warm');
+    expect(t.games.started).toEqual([id]);
+    expect(t.platform.audit.at(-1)).toMatchObject({ action: 'room.create' });
+    expect((await t.call('GET', '/rooms', { as: bob })).body.rooms.map((r: { id: string }) => r.id)).toEqual([id]);
+    expect((await t.call('GET', `/rooms/by-code/${res.body.room.code}`, { as: bob })).body.room.id).toBe(id);
+    expect((await t.call('POST', `/rooms/${id}/join`, { as: ann })).status).toBe(200);
+    // Taken once: the next Play starts its own.
+    const next = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(next.body.room.id).not.toBe(id);
+    expect(t.games.started).toHaveLength(2);
+  });
+
+  it("doesn't hand you someone else's warm room", async () => {
+    const t = harness();
+    const bobs = (await warm(t, bob)).body.room.id;
+    const mine = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(mine.body.room.id).not.toBe(bobs);
+    expect(t.games.started).toEqual([bobs, mine.body.room.id]);
+  });
+
+  it('ends a warm room nobody takes after warmMinutes, as unused', async () => {
+    const t = harness({ ...manifest, gameServer: { warmMinutes: 2 } });
+    const id = (await warm(t)).body.room.id;
+    t.advance(2 * 60_000);
+    await t.call('GET', '/rooms', { as: bob });
+    expect(t.games.stopped).toEqual([id]);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room).toMatchObject({ status: 'ended', endedReason: 'unused' });
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room).not.toHaveProperty('warm');
+    // Play then starts a fresh one.
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+  });
+
+  it("doesn't take a warm room about to expire: it retires it and starts a fresh one", async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    t.advance(5 * 60_000 - 20_000);
+    const res = await t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} });
+    expect(res.body.room.id).not.toBe(id);
+    expect(t.games.stopped).toEqual([id]);
+    expect((await t.call('GET', `/rooms/${id}`, { as: ann })).body.room.endedReason).toBe('unused');
+  });
+
+  it('gives way to real games at maxRooms, and is refused there itself', async () => {
+    const t = harness({ ...manifest, gameServer: { maxRooms: 2 } });
+    const bobs = (await warm(t, bob)).body.room.id;
+    await openRoom(t);
+    // Full: Cy's game pushes out Bob's warm room.
+    const cys = await t.call('POST', '/rooms', { as: 'cy@test.dev', body: {} });
+    expect(cys.status).toBe(201);
+    expect(t.games.stopped).toEqual([bobs]);
+    // Full of real games: warming is refused, and nothing is pushed out.
+    expect((await warm(t, bob)).status).toBe(429);
+    expect(t.games.stopped).toEqual([bobs]);
+  });
+
+  it('lets only one of two POST /rooms at once take the warm room', async () => {
+    const t = harness();
+    const id = (await warm(t)).body.room.id;
+    const [a, b] = await Promise.all([0, 1].map(() => t.call('POST', '/rooms', { as: ann, role: 'EDITOR', body: {} })));
+    expect([a!.body.room.id, b!.body.room.id].filter((x) => x === id)).toHaveLength(1);
+    expect(t.games.started).toHaveLength(2);
+  });
+});
+
 describe('joining', () => {
   it('returns a ticket that verifies for this room and user, and expires after 60 s', async () => {
     const t = harness();

@@ -62,6 +62,8 @@ export interface RoomServerOptions<S, E, V> {
   maxPlayers: number;
   idleMs: number;
   maxMs: number;
+  /** End (`unused`) when nobody has joined within this long (the manifest's `warmMinutes`). */
+  unusedMs?: number;
   /** Wall clock in milliseconds (ticket expiry, timestamps). Default `Date.now`. */
   now?: () => number;
   /** Monotonic milliseconds for the simulation. Default `performance.now`. */
@@ -132,6 +134,7 @@ export class RoomServer<S = unknown, E = unknown, V = unknown> {
       maxPlayers: Math.min(this.opts.maxPlayers, meta.maxPlayers ?? this.opts.maxPlayers),
       idleMs: this.opts.idleMs,
       maxMs: this.opts.maxMs,
+      ...(this.opts.unusedMs !== undefined ? { unusedMs: this.opts.unusedMs } : {}),
       onEnd: (end) => void this.shutdown(end),
       onPlayerGone: (player) => void store.delete(roomKeys.player(roomId, player.id).PK, roomKeys.player(roomId, player.id).SK).catch((err) => this.log('player record not removed', err)),
       log: this.log,

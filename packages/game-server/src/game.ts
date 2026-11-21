@@ -117,6 +117,11 @@ export interface GameHostOptions {
   idleMs: number;
   /** End after this long whatever happens. */
   maxMs: number;
+  /**
+   * End (`unused`) after this long if nobody has joined yet: a pre-warmed room its creator never
+   * picked up, or a room whose players never arrived. Default: no such limit (only `idleMs`).
+   */
+  unusedMs?: number;
   rejoinGraceMs?: number;
   /** The room ended: write results, tell watchers, shut down. Called once. */
   onEnd?(end: { reason: string; results?: unknown }): void;
@@ -168,6 +173,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
   private readonly graceMs: number;
   private lastAdvance: number;
   private lastActivity: number;
+  private joinedOnce = false;
   private owed = 0;
   private tickNumber = 0;
   private tickFailures = 0;
@@ -254,6 +260,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
         pings: new Bucket(5, now),
       };
       this.slots.set(player.id, slot);
+      this.joinedOnce = true;
       this.safely('onJoin', () => this.game.onJoin?.(this.state, slot!.player));
     }
     this.lastActivity = now;
@@ -328,6 +335,7 @@ export class GameHost<S = unknown, E = unknown, V = unknown> {
     if (due > 0) this.sendSnapshots(now);
 
     if (now - this.startedAt >= this.opts.maxMs) this.end('time');
+    else if (!this.joinedOnce && this.opts.unusedMs !== undefined && now - this.startedAt >= this.opts.unusedMs) this.end('unused');
     else if (now - this.lastActivity >= this.opts.idleMs) this.end('idle');
   }
 

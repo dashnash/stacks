@@ -38,7 +38,7 @@ Test a game's rules with fake players and a fake clock:
 
 ```ts
 import { playGame } from '@stacks/testing';
-const g = playGame(game, { maxPlayers: 8, idleMinutes: 10, maxHours: 2 });
+const g = playGame(game, { maxPlayers: 8, idleMinutes: 10, maxHours: 2, warmMinutes: 5 }); // warmMinutes: end `unused` if nobody joins (default: off)
 const ann = g.join('ann@test.dev');           // or { id, name }; throws "join refused: full" (or "seats")
 const annsPhone = g.join('ann@test.dev', { device: 'gun' });  // a second seat: id 'u_ann_test_dev~gun'
 ann.input({ x: 1 }); ann.event('bump'); ann.ping(1);

@@ -23,6 +23,11 @@ export const ROOM_CODE_LENGTH = 4;
 export const ENDED_ROOM_TTL_DAYS = 7;
 /** A server still running this long past the room's time limit is stopped by the sweeper. */
 export const OVERTIME_GRACE_MS = 5 * 60_000;
+/**
+ * A warm room this close to its `warmMinutes` isn't picked up by `POST /rooms` (its server would end
+ * as `unused` before anyone joined): it is retired and a fresh one starts.
+ */
+export const WARM_ADOPT_MARGIN_MS = 30_000;
 /** STUN only: what a join gets when the platform has no TURN key. */
 export const STUN_ONLY: IceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478'] }];
 /** The platform's TURN key (SSM names under `/stacks/<env>/secrets/platform/`). */
@@ -68,6 +73,8 @@ export const roomKeys = {
   /** Where a `Games` implementation keeps what it needs to stop the room's server. */
   task: (id: string) => ({ PK: roomPk(id), SK: 'TASK' }),
   code: (code: string) => ({ PK: codePk(code), SK: 'META' }),
+  /** Written once (if absent) by whoever takes a warm room: its creator's `POST /rooms`, or the sweeper retiring it. */
+  claim: (id: string) => ({ PK: roomPk(id), SK: 'CLAIM' }),
 };
 
 export type RoomStatus = 'starting' | 'open' | 'ended';
@@ -89,6 +96,12 @@ export interface Room {
   endedReason?: string;
   /** What the game reported when it ended (`room.end(results)` or the game's `results`). */
   results?: unknown;
+  /**
+   * A pre-warmed room (`POST /rooms/warm`): not listed, not found by code, not joinable. Its
+   * creator's next `POST /rooms` takes it over; otherwise it ends as `unused` at `warmUntil`.
+   */
+  warm?: true;
+  warmUntil?: string;
 }
 
 interface RoomMeta extends Item {
@@ -101,6 +114,8 @@ interface RoomMeta extends Item {
   maxPlayers: number;
   /** The API's view; the server's is on {@link RoomServerRecord}. */
   status: 'starting' | 'ended';
+  /** Pre-warmed and not taken yet. */
+  warm?: boolean;
   endedAt?: string;
   endedReason?: string;
   expiresAt?: number;
@@ -281,7 +296,7 @@ export const normalizeRoomCode = (text: string): string => text.trim().toUpperCa
 
 const ROOM_ID = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?$/;
 
-async function view(store: Store, meta: RoomMeta): Promise<Room> {
+async function view(store: Store, meta: RoomMeta, warmMs: number): Promise<Room> {
   const items = await store.query<Item>(roomPk(meta.id));
   const server = items.find((i) => i.SK === 'SERVER') as (Item & RoomServerRecord) | undefined;
   const ended = meta.status === 'ended' || server?.status === 'ended';
@@ -300,6 +315,7 @@ async function view(store: Store, meta: RoomMeta): Promise<Room> {
     ...(ended && endedAt ? { endedAt } : {}),
     ...(ended && endedReason ? { endedReason } : {}),
     ...(server?.results !== undefined ? { results: server.results } : {}),
+    ...(meta.warm && !ended ? { warm: true as const, warmUntil: new Date(Date.parse(meta.createdAt) + warmMs).toISOString() } : {}),
   };
 }
 
@@ -309,15 +325,17 @@ async function view(store: Store, meta: RoomMeta): Promise<Room> {
  */
 export function gameRooms(deps: AppDeps, manifest: AppManifest) {
   const settings: GameServerSettings = gameServerSettings(manifest);
+  const warmMs = settings.warmMinutes * 60_000;
   const { store } = deps;
 
   const meta = (id: string) => (ROOM_ID.test(id) ? store.get<RoomMeta>(roomPk(id), 'META') : Promise.resolve(undefined));
+  const ageOf = (m: RoomMeta) => deps.now().getTime() - Date.parse(m.createdAt);
 
   /** Close the API's side of a room: out of the index, its code freed, kept for a week. */
   async function finish(m: RoomMeta, reason: string): Promise<void> {
     if (m.status === 'ended') return;
     const now = deps.now();
-    const { GSI1PK: _pk, GSI1SK: _sk, ...rest } = m;
+    const { GSI1PK: _pk, GSI1SK: _sk, warm: _warm, ...rest } = m;
     await store.put({
       ...rest,
       status: 'ended',
@@ -334,18 +352,41 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
     deps.realtime.publish(roomChannels.room(id), { status: 'ended' }).catch((err) => log.warn('Room end not announced', { roomId: id, error: err }));
 
   /**
+   * Take a warm room, once: true for the first caller (its creator adopting it, or the API retiring
+   * it), false for anyone after. Two `POST /rooms` at once can't both get it.
+   */
+  async function claim(m: RoomMeta): Promise<boolean> {
+    try {
+      const expiresAt = Math.floor(deps.now().getTime() / 1000) + Math.ceil(settings.maxHours * 3600) + ENDED_ROOM_TTL_DAYS * 86_400;
+      await store.put({ ...roomKeys.claim(m.id), expiresAt }, { ifNotExists: true });
+      return true;
+    } catch (err) {
+      if (err instanceof ConditionFailedError) return false;
+      throw err;
+    }
+  }
+
+  /** End a warm room nobody took (expired, or making space under `maxRooms`). */
+  async function retire(m: RoomMeta): Promise<void> {
+    await deps.games.stop(m.id).catch((err) => log.error('Warm game server not stopped', { roomId: m.id, error: err }));
+    await finish(m, 'unused');
+    await announceEnd(m.id);
+  }
+
+  /**
    * The rooms still going, after closing the ones that are not: the server said it ended, its task
-   * is gone (crashed, failed to start), or it ran past the time limit (stopped here).
+   * is gone (crashed, failed to start), it ran past the time limit (stopped here), or it was warm
+   * and nobody took it within `warmMinutes`.
    */
   async function active(): Promise<{ meta: RoomMeta; room: Room }[]> {
     const metas = await store.queryGsi1<RoomMeta>(ROOMS_INDEX);
     if (!metas.length) return [];
-    const rooms = await Promise.all(metas.map(async (m) => ({ meta: m, room: await view(store, m) })));
+    const rooms = await Promise.all(metas.map(async (m) => ({ meta: m, room: await view(store, m, warmMs) })));
     const alive = await deps.games.running(rooms.filter((r) => r.room.status !== 'ended').map((r) => r.meta.id));
     const limit = settings.maxHours * 3_600_000 + OVERTIME_GRACE_MS;
     const going: { meta: RoomMeta; room: Room }[] = [];
     for (const r of rooms) {
-      const age = deps.now().getTime() - Date.parse(r.meta.createdAt);
+      const age = ageOf(r.meta);
       if (r.room.status === 'ended') {
         await finish(r.meta, r.room.endedReason ?? 'ended');
         // The server is normally gone by now; make sure of it.
@@ -357,73 +398,127 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
         await deps.games.stop(r.meta.id).catch((err) => log.error('Overtime game server not stopped', { roomId: r.meta.id, error: err }));
         await finish(r.meta, 'time');
         await announceEnd(r.meta.id);
+      } else if (r.meta.warm && age >= warmMs && (await claim(r.meta))) {
+        await retire(r.meta);
       } else going.push(r);
     }
     return going;
   }
 
+  /** Start a room's server and record it (`warm`: pre-warmed, hidden until its creator takes it). */
+  async function start(creator: { id: string; name: string }, opts: { name?: string; warm?: boolean }): Promise<Room> {
+    const id = deps.newId();
+    if (!ROOM_ID.test(id)) throw new Error(`Room id "${id}" can't be a channel segment (letters, digits and "-")`);
+    let code = '';
+    for (let attempt = 0; ; attempt++) {
+      code = newRoomCode();
+      try {
+        await store.put({ ...roomKeys.code(code), roomId: id }, { ifNotExists: true });
+        break;
+      } catch (err) {
+        if (!(err instanceof ConditionFailedError) || attempt >= 8) throw err;
+      }
+    }
+    const createdAt = deps.now().toISOString();
+    const m: RoomMeta = {
+      ...roomKeys.meta(id),
+      GSI1PK: ROOMS_INDEX,
+      GSI1SK: `${createdAt}#${id}`,
+      id,
+      code,
+      name: opts.name?.trim() || `${creator.name}'s game`,
+      createdBy: creator.id,
+      createdByName: creator.name,
+      createdAt,
+      maxPlayers: settings.maxPlayers,
+      status: 'starting',
+      ...(opts.warm ? { warm: true } : {}),
+    };
+    await store.put(m);
+    try {
+      await deps.games.start(id);
+    } catch (err) {
+      log.error('Game server not started', { roomId: id, error: err });
+      await finish(m, 'error');
+      throw new HttpError(503, "Couldn't start a game server. Try again in a minute.", 'GAME_START_FAILED');
+    }
+    return view(store, m, warmMs);
+  }
+
+  const tooMany = () => new HttpError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
+
   return {
     settings,
 
-    /** Create a room and start its game server. 429 when the app is at its `maxRooms`. */
+    /**
+     * Create a room. If the creator has a warm room (`warm`), it takes that one over: named,
+     * listed and joinable, its server already on its way up. Otherwise it starts a server; at the
+     * app's `maxRooms` it first retires the oldest warm room, and answers 429 if there is none.
+     */
     async create(creator: { id: string; name: string }, opts: { name?: string } = {}): Promise<Room> {
-      const going = await active();
-      if (going.length >= settings.maxRooms) throw new HttpError(429, 'Too many games running, try again soon', 'TOO_MANY_GAMES');
-      const id = deps.newId();
-      if (!ROOM_ID.test(id)) throw new Error(`Room id "${id}" can't be a channel segment (letters, digits and "-")`);
-      let code = '';
-      for (let attempt = 0; ; attempt++) {
-        code = newRoomCode();
-        try {
-          await store.put({ ...roomKeys.code(code), roomId: id }, { ifNotExists: true });
-          break;
-        } catch (err) {
-          if (!(err instanceof ConditionFailedError) || attempt >= 8) throw err;
+      let going = await active();
+      const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
+      if (mine) {
+        const fresh = ageOf(mine.meta) < warmMs - WARM_ADOPT_MARGIN_MS;
+        if (await claim(mine.meta)) {
+          if (fresh) {
+            const { warm: _warm, ...rest } = mine.meta;
+            const taken: RoomMeta = { ...rest, name: opts.name?.trim() || `${creator.name}'s game` };
+            await store.put(taken);
+            return view(store, taken, warmMs);
+          }
+          await retire(mine.meta);
         }
+        // Taken by a request a moment ago, or about to expire: start a fresh one.
+        going = going.filter((r) => r !== mine);
       }
-      const createdAt = deps.now().toISOString();
-      const m: RoomMeta = {
-        ...roomKeys.meta(id),
-        GSI1PK: ROOMS_INDEX,
-        GSI1SK: `${createdAt}#${id}`,
-        id,
-        code,
-        name: opts.name?.trim() || `${creator.name}'s game`,
-        createdBy: creator.id,
-        createdByName: creator.name,
-        createdAt,
-        maxPlayers: settings.maxPlayers,
-        status: 'starting',
-      };
-      await store.put(m);
-      try {
-        await deps.games.start(id);
-      } catch (err) {
-        log.error('Game server not started', { roomId: id, error: err });
-        await finish(m, 'error');
-        throw new HttpError(503, "Couldn't start a game server. Try again in a minute.", 'GAME_START_FAILED');
+      if (going.length >= settings.maxRooms) {
+        const spares = going.filter((r) => r.meta.warm).sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
+        let made = false;
+        for (const spare of spares)
+          if (await claim(spare.meta)) {
+            await retire(spare.meta);
+            made = true;
+            break;
+          }
+        if (!made) throw tooMany();
       }
-      return view(store, m);
+      return start(creator, opts);
+    },
+
+    /**
+     * Pre-warm a room for `creator`: start a server now, so their next `create` finds it running.
+     * One per person: with a warm room already going, returns it (`started: false`). 429 at the
+     * app's `maxRooms` (warm rooms never push out real ones).
+     */
+    async warm(creator: { id: string; name: string }): Promise<{ room: Room; started: boolean }> {
+      const going = await active();
+      const mine = going.find((r) => r.meta.warm && r.meta.createdBy === creator.id);
+      if (mine) return { room: mine.room, started: false };
+      if (going.length >= settings.maxRooms) throw tooMany();
+      return { room: await start(creator, { warm: true }), started: true };
     },
 
     /** Open and starting rooms, oldest first (dead ones are closed on the way). */
     async list(): Promise<Room[]> {
-      return (await active()).map((r) => r.room);
+      return (await active()).filter((r) => !r.meta.warm).map((r) => r.room);
     },
 
     /** One room (ended ones too, for a week), or undefined. */
     async get(id: string): Promise<Room | undefined> {
       const m = await meta(id);
       if (!m) return undefined;
-      const room = await view(store, m);
+      const room = await view(store, m, warmMs);
       if (room.status === 'ended' || m.status === 'ended') return room;
       // Still listed as going: check it really is (same rules as the list).
-      return (await active()).find((r) => r.meta.id === id)?.room ?? view(store, (await meta(id)) ?? m);
+      return (await active()).find((r) => r.meta.id === id)?.room ?? view(store, (await meta(id)) ?? m, warmMs);
     },
 
     async byCode(code: string): Promise<Room | undefined> {
       const hit = await store.get<Item & { roomId: string }>(codePk(normalizeRoomCode(code)), 'META');
-      return hit ? this.get(hit.roomId) : undefined;
+      const room = hit ? await this.get(hit.roomId) : undefined;
+      // A warm room's code isn't shared yet.
+      return room?.warm ? undefined : room;
     },
 
     /**
@@ -437,6 +532,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       const room = await this.get(id);
       if (!room) throw notFound('No such room');
       if (room.status === 'ended') throw new HttpError(409, 'This game is over', 'ROOM_ENDED');
+      if (room.warm) throw new HttpError(409, "This game hasn't been started yet", 'ROOM_STARTING');
       if (room.status !== 'open') throw new HttpError(409, 'The game server is still starting', 'ROOM_STARTING');
       const key = roomKeys.player(id, seat.id);
       const already = await store.get(key.PK, key.SK);
@@ -477,7 +573,7 @@ export function gameRooms(deps: AppDeps, manifest: AppManifest) {
       await finish(m, reason);
       await deps.games.stop(id).catch((err) => log.error('Game server not stopped', { roomId: id, error: err }));
       await announceEnd(id);
-      return view(store, (await meta(id)) ?? m);
+      return view(store, (await meta(id)) ?? m, warmMs);
     },
 
     /** The room's creator id (for "may they end it?"), or undefined. */
@@ -502,6 +598,11 @@ export function registerGameRoutes<D extends AppDeps>(api: AppRoutes<D>): void {
     },
     { audit: 'room.create' },
   );
+  // Pre-warm: start a server for the caller's next `POST /rooms`. Speculative, so not audited.
+  api.member('POST', '/rooms/warm', async (_req, v) => {
+    const { room, started } = await rooms(v).warm(player(v));
+    return { status: started ? 201 : 200, body: { room } };
+  });
   api.member('GET', '/rooms', async (_req, v) => ({ body: { rooms: await rooms(v).list() } }));
   api.member('GET', '/rooms/by-code/:code', async (req, v) => {
     const room = await rooms(v).byCode(req.params.code!);

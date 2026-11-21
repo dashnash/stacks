@@ -260,7 +260,7 @@ The platform ships in three tiers, almost all of it extracted from Book Club cod
 | `scheduledJobs` | EventBridge schedules declared in the manifest invoke named handlers | new |
 | `email` | SES sending from `no-reply@<domain>` with templates; off by default, needs SES production access | new |
 | `realtime` | Live events to open browsers (and the iOS app's web view): the API publishes (`deps.realtime.publish`), pages listen with `useChannel` and may publish on channels whose guards allow it. Every channel pattern is declared with guards in the API; `POST /api/realtime/token` mints a 15-minute HMAC token for exactly the channels asked for, which the Event API's Lambda authorizer checks on every connect, subscribe and publish. At most once, 4 KB per event, resync on every reconnect. Signaling and lobby for WebRTC games (#44), not their data | new (#51): one AppSync Events API per app |
-| `gameServer` | Real-time action games: rooms (code, join, list, leave, end) in the app's table, and per room a server-authoritative game server running the app's `game/server.ts` (`defineGame`) as an on-demand arm64 Fargate task. Players connect over WebRTC data channels (unreliable state, reliable events), signaled over `realtime` (required) with HMAC join tickets; Cloudflare TURN as fallback. Seats are per (user, device) (#131): one person can hold several, e.g. a desktop screen and a phone controller. Limits in the manifest (4 rooms, 8 players, 10 min idle, 2 h); zero idle cost | new (#44): `@stacks/game-server` |
+| `gameServer` | Real-time action games: rooms (code, join, list, leave, end) in the app's table, and per room a server-authoritative game server running the app's `game/server.ts` (`defineGame`) as an on-demand arm64 Fargate task. Players connect over WebRTC data channels (unreliable state, reliable events), signaled over `realtime` (required) with HMAC join tickets; Cloudflare TURN as fallback. Seats are per (user, device) (#131): one person can hold several, e.g. a desktop screen and a phone controller. Pre-warming (#152): `POST /rooms/warm` starts a hidden room that the person's next `POST /rooms` takes over, so Play doesn't wait for the cold start; one per person, `warmMinutes` (5) to be taken, gives way to real games at `maxRooms`. Limits in the manifest (4 rooms, 8 players, 10 min idle, 5 min unjoined, 2 h); zero idle cost | new (#44): `@stacks/game-server` |
 
 Runtime AI inference is deliberately out of v1; it can be added later as a platform-proxied module with per-app budgets.
 
@@ -551,6 +551,7 @@ Phase 3 build notes:
 - [x] `realtime` module (#51): AppSync Event API per app, `useChannel`, the demo bus; `hello`'s Live panel is the reference
 - [x] `gameServer` module (#44): `@stacks/game-server`, rooms API, `useGameRoom`, in-page servers in the demo; `hello`'s Live dots is the reference
 - [x] Game room seats keyed per device (#131): `POST /rooms/:id/join { device? }`, `useGameRoom(id, { device })`, `p.userId`/`p.device`, `maxSeatsPerUser`
+- [x] Game room pre-warming (#152): `POST /rooms/warm`, adopted by the next `POST /rooms`; `usePrewarmRoom(enabled)`; manifest `warmMinutes`; rooms nobody joins end `unused`
 - [ ] Eval run on the 4 reference apps, usage logged
 
 Gate: a non-technical user builds one app end to end in a single Claude Code session and it is live on staging.

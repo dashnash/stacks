@@ -159,7 +159,8 @@ module on, these member routes exist (you write none of them):
 
 | Route | Does |
 |---|---|
-| `POST /rooms { name? }` | Creates a room (`{ room }`, 201) and starts its server (30-60 s to `open`). 429 `TOO_MANY_GAMES` at the manifest's `maxRooms`. |
+| `POST /rooms { name? }` | Creates a room (`{ room }`, 201) and starts its server (30-60 s to `open`), or takes over the caller's warm room (below). 429 `TOO_MANY_GAMES` at the manifest's `maxRooms`. |
+| `POST /rooms/warm` | Pre-warms: starts a hidden room for the caller (201), or returns their warm room (200). Not audited; 429 at `maxRooms`. |
 | `GET /rooms` | Open and starting rooms with player counts. Also sweeps: rooms whose server is gone or over time are closed. |
 | `GET /rooms/:id`, `GET /rooms/by-code/:code` | One room (ended ones stay readable for 7 days, with `results`). |
 | `POST /rooms/:id/join { device? }` | `{ ticket, iceServers, channels, player, room }`: a 60 s join ticket for the caller's seat on `device`. 409 `ROOM_FULL` / `ROOM_ENDED` / `ROOM_STARTING`; 400 for a bad label. |
@@ -175,13 +176,18 @@ module on, these member routes exist (you write none of them):
   `<userId>~<device>`. `player` is `{ id: seatId, userId, device, name }`; `players` and `maxPlayers`
   count seats; joining again from the same device is the same seat (a reconnect or takeover). One
   person holds at most `MAX_SEATS_PER_USER` (4) seats: 409 `TOO_MANY_SEATS` past it.
+- **Pre-warming** (#152): call `usePrewarmRoom(enabled)` from `@stacks/web` where a game is likely (a title
+  screen), so Play doesn't wait for the cold start. A warm room (`warm: true`, `warmUntil`) isn't listed,
+  found by code or joinable. The creator's next `POST /rooms` takes it over (named, listed, joinable, audited,
+  already on its way up), unless it is within 30 s of `warmUntil`. Untaken, it ends `unused` after the
+  manifest's `warmMinutes` (5). One per person; at `maxRooms` a real `POST /rooms` retires the oldest warm room.
 - `useGameRoom(roomId, { device? })` in `@stacks/web` does the joining and connecting; apps call `POST /rooms`,
   `GET /rooms` and `by-code` themselves.
 - Channels `room/*`, `room/*/to-server`, `room/*/to/*` are declared for you (members listen to a
   room and to their own answers, one channel per user shared by their devices, and publish offers; only servers publish room status). **Apps can't
   declare channels under `room/`** with the module on: use another prefix.
 - `v.deps.games.start(roomId)` / `.stop(roomId)` for apps that create rooms their own way;
-  `gameRooms(v.deps, v.manifest)` is what the routes use (`create`, `list`, `get`, `byCode`, `join`,
+  `gameRooms(v.deps, v.manifest)` is what the routes use (`create`, `warm`, `list`, `get`, `byCode`, `join`,
   `leave`, `end`). Without the module every `deps.games` call rejects with "add gameServer".
 - TURN (for networks that block UDP) comes from one platform key per environment; without it joins
   return STUN only and `GET /health` lists `missingPlatformKeys`. See `docs/SETUP.md`.

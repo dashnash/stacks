@@ -222,8 +222,9 @@ describe('readEnvironment', () => {
     STACKS_GAME_KEY_ARN: 'arn:key',
   };
   it('reads the task environment with the default limits', () => {
-    expect(readEnvironment(env)).toMatchObject({ roomId: 'r1', namespace: 'app', maxPlayers: 8, idleMs: 600_000, maxMs: 7_200_000, portRange: [40000, 40019] });
-    expect(readEnvironment({ ...env, STACKS_GAME_MAX_PLAYERS: '4', STACKS_GAME_IDLE_MINUTES: '1', STACKS_GAME_MAX_HOURS: '0.25' })).toMatchObject({ maxPlayers: 4, idleMs: 60_000, maxMs: 900_000 });
+    expect(readEnvironment(env)).toMatchObject({ roomId: 'r1', namespace: 'app', maxPlayers: 8, idleMs: 600_000, unusedMs: 600_000, maxMs: 7_200_000, portRange: [40000, 40019] });
+    expect(readEnvironment({ ...env, STACKS_GAME_MAX_PLAYERS: '4', STACKS_GAME_IDLE_MINUTES: '1', STACKS_GAME_MAX_HOURS: '0.25' })).toMatchObject({ maxPlayers: 4, idleMs: 60_000, unusedMs: 60_000, maxMs: 900_000 });
+    expect(readEnvironment({ ...env, STACKS_GAME_WARM_MINUTES: '3' })).toMatchObject({ idleMs: 600_000, unusedMs: 180_000 });
   });
   it('names what is missing or wrong', () => {
     expect(() => readEnvironment({ ...env, STACKS_ROOM_ID: '' })).toThrow(/STACKS_ROOM_ID/);

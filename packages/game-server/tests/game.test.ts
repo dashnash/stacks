@@ -329,6 +329,23 @@ describe('ending', () => {
     expect(g.ended).toMatchObject({ reason: 'idle' });
   });
 
+  it('ends a room nobody joins within warmMinutes as unused, and a joined one only when idle', () => {
+    const unused = playGame(recorder(), { warmMinutes: 5 });
+    unused.advance(5 * 60_000 - 100);
+    expect(unused.ended).toBeUndefined();
+    unused.advance(200);
+    expect(unused.ended).toMatchObject({ reason: 'unused' });
+
+    // Joined at minute 4, gone again: from then on only the idle limit applies.
+    const used = playGame(recorder(), { warmMinutes: 5 });
+    used.advance(4 * 60_000);
+    used.join('ann@test.dev').leave();
+    used.advance(9 * 60_000);
+    expect(used.ended).toBeUndefined();
+    used.advance(2 * 60_000);
+    expect(used.ended).toMatchObject({ reason: 'idle' });
+  });
+
   it('ends at the total time limit however busy it is', () => {
     const g = playGame(recorder(), { maxHours: 0.25 });
     const ann = g.join('ann@test.dev');

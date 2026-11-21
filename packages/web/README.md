@@ -83,4 +83,8 @@ function App() {
   when the connection drops. It interpolates nothing itself: `interpolate(a, b, t)` blends two states
   (numbers lerp, list items match by `id`), `createStateBuffer({ delayMs })` does it over time. Works
   in Safari and the iOS app's web view with no extra bridge.
+- **Pre-warming**: `usePrewarmRoom(enabled)` starts a game server early (`POST /rooms/warm`) so the next
+  `POST /rooms` finds it up instead of waiting 30-60 s. Call it where a game is likely (a title screen with
+  Play; not on a phone that only joins). Warms once when `enabled` turns true, again when the tab returns after
+  the warm room expired; quiet on errors, nothing signed out.
 - Remount views that load per-user data when the user changes: `<Board key={session.user.id + session.role} />`.

@@ -9,6 +9,8 @@ export interface PlayGameOptions {
   idleMinutes?: number;
   /** Default 2. */
   maxHours?: number;
+  /** The manifest's `warmMinutes`: end `unused` when nobody joins within it. Default: no such limit. */
+  warmMinutes?: number;
 }
 
 /** A fake player in a {@link playGame} room: what the server sent them, and ways to act. */
@@ -71,6 +73,7 @@ export function playGame<S, E, V>(game: GameDefinition<S, E, V>, opts: PlayGameO
     maxPlayers: opts.maxPlayers ?? 8,
     idleMs: (opts.idleMinutes ?? 10) * 60_000,
     maxMs: (opts.maxHours ?? 2) * 3_600_000,
+    ...(opts.warmMinutes !== undefined ? { unusedMs: opts.warmMinutes * 60_000 } : {}),
     onEnd: (end) => (ended = end),
     onPlayerGone: (p) => gone.push(p),
     log: (message, detail) => logs.push(detail === undefined ? message : `${message}: ${String(detail)}`),
