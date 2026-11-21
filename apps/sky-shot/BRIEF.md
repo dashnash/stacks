@@ -71,8 +71,9 @@ a cut-paper night sky (dusk or indigo).
 - As a shooter I open the Range and tune the aim live (mode, gains, smoothing, trigger) until it
   feels right, watching accuracy per config.
 - As a shooter the calibration fit (five dots: centre and corners) sets my gain, vertical gain and offsets.
-- As a shooter I run Training (about 2 minutes: follow a dot, and point at new dots with the
-  crosshair hidden). The room fits sensitivity, accel curve, vertical gain, smoothing, prediction and
+- As a shooter I run Training: first the game's calibration, both passes (five dots blind, then five with
+  the crosshair), then about a minute of trials (follow a dot, and point at new dots with the crosshair
+  hidden). The room fits sensitivity, accel curve, vertical gain, smoothing, prediction and
   deadzone to how I move, shows before/after, lets me compare blind (A/B), and saves the winner as my
   default for every new room.
 - As a shooter without a phone I use the mouse.
@@ -82,8 +83,10 @@ a cut-paper night sky (dusk or indigo).
 
 ## Training and the fit (`game/training.ts`, `game/fit.ts`)
 
-- **Script** (31 trials, ~2 min): 24 jumps with the crosshair hidden (4 distances × 6 directions),
-  4 smooth tracks at rising speeds, 3 holds. The crosshair is put on the start dot of each trial
+- **Before the script**: the two-pass calibration (Initialize, then Calibrate), so the gain starts about right;
+  skipping it starts the script straight away.
+- **Script** (16 trials, ~56 s): 12 jumps with the crosshair hidden (4 distances × 3 directions, turned at
+  random per distance), 2 smooth tracks, 2 holds. A gain fit needs 6 usable jumps. The crosshair is put on the start dot of each trial
   (training aims in relative mode).
 - **Gain** comes from the hidden jumps: without a crosshair to correct against, where you stop is
   your own sense of "this far". For each accel curve on a grid the best sensitivity is a least-squares

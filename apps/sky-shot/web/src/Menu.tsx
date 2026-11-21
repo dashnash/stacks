@@ -15,7 +15,7 @@ const AIM_MODES: Tuning['mode'][] = ['absolute', 'relative', 'hybrid'];
 export const GAMES: { mode: GameMode; name: string; note: string }[] = [
   { mode: 'rounds', name: 'Rounds', note: 'scored waves' },
   { mode: 'range', name: 'Range', note: 'free fire, tune' },
-  { mode: 'training', name: 'Training', note: '2 min fit' },
+  { mode: 'training', name: 'Training', note: '1 min fit' },
 ];
 
 export const gameName = (m: GameMode) => GAMES.find((g) => g.mode === m)?.name ?? m;

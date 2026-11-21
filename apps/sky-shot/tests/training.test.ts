@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { playGame, type TestPlayer } from '@stacks/testing';
 import { Aim, fromEuler, IDENTITY, qconj, rotate, turnRates } from '../game/aim';
-import { runFit, SHAKE_BUDGET } from '../game/fit';
+import { MIN_JUMPS, runFit, SHAKE_BUDGET } from '../game/fit';
 import { MAX_RESULTS_BYTES, type Quat, type Results, type ServerEvent, type Snapshot, type Vec3, type WireSample } from '../game/protocol';
 import { skyShot } from '../game/server';
 import { scriptMs, trainingScript } from '../game/training';
@@ -31,13 +31,13 @@ describe('turning, whatever the grip', () => {
 });
 
 describe('the training script', () => {
-  it('is 31 trials of about two minutes: 24 jumps, 4 tracks, 3 holds, all on screen', () => {
-    expect(script).toHaveLength(31);
+  it('is 16 trials of about a minute: 12 jumps, 2 tracks, 2 holds, all on screen', () => {
+    expect(script).toHaveLength(16);
     expect(script[0]!.kind).toBe('hold');
     const count = (k: string) => script.filter((t) => t.kind === k).length;
-    expect([count('jump'), count('track'), count('hold')]).toEqual([24, 4, 3]);
-    expect(scriptMs(script)).toBeGreaterThan(100_000);
-    expect(scriptMs(script)).toBeLessThan(130_000);
+    expect([count('jump'), count('track'), count('hold')]).toEqual([12, 2, 2]);
+    expect(scriptMs(script)).toBeGreaterThan(50_000);
+    expect(scriptMs(script)).toBeLessThan(62_000);
     for (const t of script) for (const p of [t.a, t.b].filter(Boolean)) {
       expect(p![0]).toBeGreaterThanOrEqual(0.09);
       expect(p![0]).toBeLessThanOrEqual(0.91);
@@ -53,7 +53,7 @@ describe('fitting', () => {
   it('recovers the gain, curve and vertical gain a player feels, from the hidden jumps', () => {
     // Played in the default relative mode (1.2 widths/rad): too fast for this player.
     const report = runFit(simulateRun(script, { feel }, { aspect: ASPECT, base: { ...DEFAULT_TUNING, mode: 'relative' } }));
-    expect(report.usedJumps).toBeGreaterThanOrEqual(20);
+    expect(report.usedJumps).toBeGreaterThanOrEqual(10);
     expect(report.fitted.mode).toBe('relative');
     close(report.fitted.sensitivity, feel.sensitivity, 0.12);
     close(report.fitted.accelCurve, feel.accelCurve, 0.08);
@@ -90,7 +90,7 @@ describe('fitting', () => {
     rec.trials = rec.trials.filter((t) => t.kind !== 'jump').concat(rec.trials.filter((t) => t.kind === 'jump').slice(0, 3));
     rec.trials.sort((a, b) => a.t0 - b.t0);
     const report = runFit(rec);
-    expect(report.usedJumps).toBeLessThan(8);
+    expect(report.usedJumps).toBeLessThan(MIN_JUMPS);
     expect(report.fitted.sensitivity).toBe(base.sensitivity);
     expect(report.fitted).toMatchObject({ trigger: 'flick', flickThreshold: 2.2, hitboxScale: 1.4 });
   });
@@ -170,9 +170,14 @@ describe('training in a room', () => {
     screen.event({ mode: 'training' });
     const phone = bot(g, screen, ASPECT);
     phone.run(200);
-    expect(screen.state!.tr).toMatchObject({ k: 'ready', n: 31 });
+    expect(screen.state!.tr).toMatchObject({ k: 'ready', n: 16 });
     screen.event({ start: true });
-    phone.run(130_000);
+    phone.run(200);
+    // The game's calibration runs first, both passes; skipping it (or finishing it) starts the script.
+    expect(screen.state!.cal).toMatchObject({ gun: phone.seat.id, st: 'init' });
+    expect(screen.state!.tr!.k).toBe('ready');
+    phone.seat.event({ menu: { calSkip: true } });
+    phone.run(70_000);
     for (let i = 0; i < 400 && screen.state!.tr!.k !== 'done'; i++) g.advance(100);
     expect(phone.seen).toContain('jump (hidden)');
     expect(phone.seen).toContain('track');
@@ -182,7 +187,7 @@ describe('training in a room', () => {
     expect(events.some((e) => 'hit' in e || 'miss' in e)).toBe(false);
     const report = events.map((e) => ('trained' in e ? e.trained : null)).find(Boolean)!;
     expect(report).toBeTruthy();
-    expect(report.usedJumps).toBeGreaterThanOrEqual(18);
+    expect(report.usedJumps).toBeGreaterThanOrEqual(9);
     expect(Math.abs(report.fitted.sensitivity - feel.sensitivity) / feel.sensitivity).toBeLessThan(0.15);
     expect(Math.abs(report.fitted.accelCurve - feel.accelCurve)).toBeLessThan(0.15);
     expect(report.after.jumpErr).toBeLessThan(report.before.jumpErr);
@@ -192,9 +197,9 @@ describe('training in a room', () => {
     expect(results.training).toHaveLength(1);
     const run = results.training![0]!;
     expect(run).toMatchObject({ shooterId: 'u_ann_test_dev', aspect: ASPECT });
-    expect(run.trials).toHaveLength(31);
+    expect(run.trials).toHaveLength(16);
     // About 25 Hz for the whole run (this phone sends every 16 ms, so every third sample).
-    expect(run.raw.length).toBeGreaterThan(2000);
+    expect(run.raw.length).toBeGreaterThan(1000);
     expect(JSON.stringify(results).length).toBeLessThanOrEqual(MAX_RESULTS_BYTES);
   }, 60_000);
 

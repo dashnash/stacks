@@ -53,7 +53,7 @@ export interface FitReport {
 }
 
 /** Need this many usable jumps for a gain fit; below that only the feel is fitted. */
-export const MIN_JUMPS = 8;
+export const MIN_JUMPS = 6;
 /** A jump counts if the player held still at the end (mean turn speed below this, rad/s) and moved. */
 const STILL_AT_END = 0.5;
 const MOVED = 0.01;

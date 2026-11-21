@@ -6,11 +6,12 @@
  *   disappears; the player points where they think B is and holds. With no crosshair to correct
  *   against, this measures the player's own sense of "this far", which fits the gain and the
  *   accel curve.
- * - **track** (crosshair shown): follow a dot moving on a smooth path, at four speeds.
+ * - **track** (crosshair shown): follow a dot moving on a smooth path, at two speeds.
  * - **hold** (crosshair shown): keep the crosshair on a still dot.
  *
  * Tracks and holds give the motion that the smoothing and prediction are fitted on. The script is
- * seeded, so a recording can be replayed against the trials that produced it.
+ * seeded, so a recording can be replayed against the trials that produced it. About a minute: the
+ * two-pass calibration that runs first has already set the gain, so the jumps only refine it.
  */
 import type { Quat, Vec3 } from './protocol';
 import { rng } from './targets';
@@ -37,14 +38,17 @@ export const GAP_MS = 600;
 export const JUMP_AIM_MS = 900;
 export const JUMP_MOVE_MS = 1600;
 export const ENDPOINT_MS = 300;
-export const TRACK_MS = 6000;
-export const HOLD_MS = 4000;
+export const TRACK_MS = 5000;
+export const HOLD_MS = 3000;
 
-/** Jump distances (screen heights) and how many directions each is tried in. */
+/**
+ * Jump distances (screen heights) and how many directions each is tried in: four distances for the
+ * accel curve; three directions each, turned at random per distance, so the twelve cover the circle.
+ */
 export const JUMP_DISTANCES = [0.08, 0.16, 0.28, 0.42];
-export const JUMP_DIRECTIONS = 6;
-export const TRACK_SPEEDS = [0.12, 0.2, 0.3, 0.42];
-export const HOLDS = 3;
+export const JUMP_DIRECTIONS = 3;
+export const TRACK_SPEEDS = [0.16, 0.34];
+export const HOLDS = 2;
 const TRACK_AMP: [number, number] = [0.3, 0.28];
 
 const inside = (p: [number, number]) => p[0] >= 0.1 && p[0] <= 0.9 && p[1] >= 0.12 && p[1] <= 0.88;
