@@ -26,6 +26,8 @@ Mobile Safari at ~60 Hz). No phone: the mouse plays too.
 - **Session**: room id, mode, score, accuracy, rounds, shooter, saved once per room.
 - **Shot** (30-day TTL): time, config id, trigger, hit, miss distance, rewind, latency, motion window.
 - **Tuning config**: stored once per config id next to the shots.
+- **Your default tuning**: one per person (by user id), saved by a 5-point calibration or "Save as my
+  default"; the screen sends it to every new room.
 
 ## What signed-out visitors see
 
@@ -41,6 +43,8 @@ Flat vector arcade: bold shapes and colours on a dusk-sky gradient, chunky type,
 - As a shooter I press Play, scan the QR with my iPhone, calibrate, and shoot targets in Rounds.
 - As a shooter I open the Range and tune the aim live (mode, gains, smoothing, trigger) until it
   feels right, watching accuracy per config.
+- As a shooter I calibrate on five dots (centre and corners: point, tap). The fit sets my gain,
+  vertical gain and offsets, and is saved as my default for every new room.
 - As a shooter without a phone I use the mouse.
 - As a shooter I see the leaderboard and my own shot telemetry, and download it.
 - As the owner I see everyone's telemetry and remove bad leaderboard rows.

@@ -45,7 +45,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const [enabled, setEnabled] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING);
-  const [hud, setHud] = useState<{ sl: number; rd: number; mode: string; ph: string } | null>(null);
+  const [hud, setHud] = useState<{ sl: number; rd: number; mode: string; ph: string; cal: string | null } | null>(null);
   const [flash, setFlash] = useState<'hit' | 'miss' | null>(null);
   const latest = useRef<Snapshot | null>(null);
   const recent = useRef<WireSample[]>([]);
@@ -138,7 +138,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   useEffect(() => {
     const id = setInterval(() => {
       const s = latest.current;
-      if (s) setHud({ sl: s.sl, rd: s.rd, mode: s.m, ph: s.ph });
+      if (s) setHud({ sl: s.sl, rd: s.rd, mode: s.m, ph: s.ph, cal: s.cal ? `${s.cal.i + 1} of ${s.cal.pts.length}` : null });
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -191,6 +191,19 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
     );
 
   const flick = tuning.trigger === 'flick';
+  if (hud?.cal)
+    // 5-point calibration: the whole screen marks "I'm on the dot" (in flick mode too).
+    return (
+      <div className="gun">
+        <div className="gun-top">
+          <span className={`chip ${live ? 'ok' : ''}`}>{live ? `Live · ${room.rttMs ?? '-'} ms` : 'Connecting…'}</span>
+        </div>
+        <button type="button" className="trigger" onPointerDown={calibrate} disabled={!live} aria-label={`On the dot (${hud.cal})`}>
+          Tap when on the dot
+          <small>{hud.cal}</small>
+        </button>
+      </div>
+    );
   return (
     <div className={`gun${flash ? ` gun-${flash}` : ''}`}>
       <div className="gun-top">

@@ -6,6 +6,7 @@
  */
 import { defineGame, type GamePlayer, type GameRoom } from '@stacks/game-server';
 import { Aim, qnorm, toEuler } from './aim';
+import { CAL_POINTS, CAL_POOR, fitCalibration, meanPose, POSE_FROM_MS, POSE_TO_MS } from './calibrate';
 import {
   MAX_RESULTS_BYTES,
   MAX_SAMPLES_PER_INPUT,
@@ -52,6 +53,8 @@ const WINDOW_STEP_MS = 40;
 const SAMPLES_KEPT_MS = 1500;
 /** Two taps closer than this are one (a bounce on the glass). */
 const TAP_DEBOUNCE_MS = 80;
+/** The crosshairs' lag: as the screen reports it, or (a screen that doesn't) the same as the targets'. */
+const aimLagOf = (state: State) => state.aimLag ?? state.screenLag;
 
 interface StampedSample {
   /** Server time, ms. */
@@ -100,7 +103,11 @@ export interface State {
   aspect: number;
   screen: string | null;
   screenLag: number;
+  /** How far behind the crosshairs on the screen are (it draws them from the newest state); null until it says. */
+  aimLag: number | null;
   screenRtt: number;
+  /** A 5-point calibration in progress: the gun, and the pose taken at each dot so far. */
+  cal: { gun: string; poses: Quat[] } | null;
   guns: Map<string, Gun>;
   targets: Target[];
   history: TargetHistory;
@@ -261,7 +268,8 @@ function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger
   let e = Math.min(now, aimT - state.screenLag);
   if (now - e > tuning.maxRewindMs) e = now - tuning.maxRewindMs;
   const rewind = Math.round(now - e);
-  const aim = gun.aim.at(e);
+  // The crosshair is drawn fresher than the targets: look it up at its own lag.
+  const aim = gun.aim.at(Math.max(now - tuning.maxRewindMs, Math.min(now, aimT - aimLagOf(state))));
   const cx = aim.x * state.aspect;
   const cy = aim.y;
 
@@ -279,7 +287,7 @@ function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger
   }
   state.gameShots++;
   state.shooter = { id: gun.seat.userId, name: gun.seat.name };
-  const lat: Latency = { gun: Math.round(gun.rtt), screen: Math.round(state.screenRtt), pix: Math.round(gun.rtt / 2 + state.screenLag) };
+  const lat: Latency = { gun: Math.round(gun.rtt), screen: Math.round(state.screenRtt), pix: Math.round(gun.rtt / 2 + aimLagOf(state)) };
   const stat = statFor(state, state.cfg);
   stat.shots++;
   const at = { x: r3(aim.x), y: r3(aim.y), lat, rw: rewind, cfg: state.cfg };
@@ -369,6 +377,34 @@ export function buildResults(state: State): Results {
   return results;
 }
 
+/** The phone was on the current dot at time `raw.t` (its clock): take the pose, and fit after the last dot. */
+function calibrationPoint(state: State, gun: Gun, raw: unknown): void {
+  const cal = state.cal!;
+  const now = state.room.elapsedMs;
+  const t = raw && typeof raw === 'object' ? (raw as { t?: unknown }).t : undefined;
+  const at = fin(t) && t >= 0 ? Math.min(now, serverTime(gun, t, now)) : now - gun.rtt / 2;
+  if (at - gun.lastShotAt < TAP_DEBOUNCE_MS) return;
+  gun.lastShotAt = at;
+  const window = gun.samples.filter((s) => s.st >= at - POSE_FROM_MS && s.st <= at - POSE_TO_MS).map((s) => s.s.q);
+  const pose = meanPose(window) ?? gun.aim.q;
+  if (!pose) return;
+  cal.poses.push(pose);
+  if (cal.poses.length < CAL_POINTS.length) return;
+  state.cal = null;
+  const fit = fitCalibration(CAL_POINTS, cal.poses, state.tuning, state.aspect);
+  if (!fit) {
+    state.room.broadcast({ calibrationFailed: { reason: 'The phone barely moved between the dots. Point right at each one and try again.' } });
+    return;
+  }
+  state.tuning = applyTune(state.tuning, fit.change);
+  state.cfg = configId(state.tuning);
+  // The centre pose is the reference: the crosshair starts there.
+  gun.aim.calibrate();
+  gun.aim.ref = cal.poses[0]!;
+  state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
+  state.room.broadcast({ calibrated: { gain: r3(fit.gain), ratioY: r3(fit.ratioY), offsetX: r3(fit.offsetX), offsetY: r3(fit.offsetY), error: r3(fit.error), poor: fit.error > CAL_POOR } });
+}
+
 function addGun(state: State, seat: GamePlayer, mouse: boolean): void {
   if (state.guns.size >= MAX_GUNS) return;
   const used = new Set([...state.guns.values()].map((g) => g.color));
@@ -441,11 +477,22 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
   } else if ('pause' in event) {
     state.paused = event.pause === true;
   } else if ('ack' in event && event.ack && typeof event.ack === 'object') {
-    const { shown, rtt } = event.ack as { shown?: unknown; rtt?: unknown };
+    const { shown, rtt, aim } = event.ack as { shown?: unknown; rtt?: unknown; aim?: unknown };
     if (!fin(shown) || !fin(rtt) || rtt < 0 || rtt > 5000) return;
     state.screenRtt = rtt;
     const lag = Math.min(1000, Math.max(0, now - rtt / 2 - shown));
     state.screenLag = state.screenLag * 0.8 + lag * 0.2;
+    if (fin(aim)) {
+      const aimLag = Math.min(1000, Math.max(0, now - rtt / 2 - aim));
+      state.aimLag = state.aimLag === null ? aimLag : state.aimLag * 0.8 + aimLag * 0.2;
+    }
+  } else if ('calibrate' in event) {
+    if (event.calibrate === 'cancel') state.cal = null;
+    else if (event.calibrate === 'points') {
+      const gun = [...state.guns.values()].find((g) => !g.mouse);
+      if (!gun) state.room.broadcast({ calibrationFailed: { reason: 'Pair a phone first.' } });
+      else state.cal = { gun: gun.seat.id, poses: [] };
+    }
   } else if ('view' in event && event.view && typeof event.view === 'object') {
     const aspect = (event.view as { aspect?: unknown }).aspect;
     if (fin(aspect)) state.aspect = Math.min(3, Math.max(0.5, aspect));
@@ -520,7 +567,9 @@ export function skyShot(opts: SkyShotOptions = {}) {
         aspect: 16 / 9,
         screen: null,
         screenLag: DEFAULT_SCREEN_LAG_MS,
+        aimLag: null,
         screenRtt: 0,
+        cal: null,
         guns: new Map(),
         targets: [],
         history: new TargetHistory(),
@@ -561,6 +610,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
       if (state.screen === player.id) state.screen = null;
       const gun = state.guns.get(player.id);
       if (gun) {
+        if (state.cal?.gun === gun.seat.id) state.cal = null;
         state.pending = state.pending.filter((p) => p.gun !== gun);
         state.guns.delete(player.id);
       }
@@ -577,13 +627,18 @@ export function skyShot(opts: SkyShotOptions = {}) {
       const gun = state.guns.get(player.id);
       if (gun) {
         const now = state.room.elapsedMs;
-        if ('shot' in e && e.shot && typeof e.shot === 'object' && (gun.mouse || state.tuning.trigger === 'tap')) {
+        if ('shot' in e && state.cal?.gun === gun.seat.id) {
+          calibrationPoint(state, gun, e.shot);
+        } else if ('shot' in e && e.shot && typeof e.shot === 'object' && (gun.mouse || state.tuning.trigger === 'tap')) {
           const t = (e.shot as { t?: unknown }).t;
           const at = fin(t) && t >= 0 ? Math.min(now, serverTime(gun, t, now)) : now - gun.rtt / 2;
           if (at - gun.lastShotAt < TAP_DEBOUNCE_MS) return;
           gun.lastShotAt = at;
           fire(state, gun, at, gun.mouse ? 'mouse' : 'tap');
-        } else if ('calibrate' in e) gun.aim.calibrate();
+        } else if ('calibrate' in e) {
+          if (state.cal?.gun === gun.seat.id) calibrationPoint(state, gun, e.calibrate);
+          else gun.aim.calibrate();
+        }
         return;
       }
       if (player.id === state.screen) onScreenEvent(state, e);
@@ -623,9 +678,10 @@ export function skyShot(opts: SkyShotOptions = {}) {
         left: state.toRelease,
         cfg: state.cfg,
       };
+      if (state.cal) snap.cal = { i: state.cal.poses.length, pts: CAL_POINTS };
       if (forPlayer.id === state.screen) {
         const first = [...state.guns.values()][0];
-        snap.lat = { gun: Math.round(first?.rtt ?? 0), screen: Math.round(state.screenRtt), pix: Math.round((first?.rtt ?? 0) / 2 + state.screenLag), lag: Math.round(state.screenLag) };
+        snap.lat = { gun: Math.round(first?.rtt ?? 0), screen: Math.round(state.screenRtt), pix: Math.round((first?.rtt ?? 0) / 2 + aimLagOf(state)), lag: Math.round(aimLagOf(state)) };
         const last = first?.samples[first.samples.length - 1]?.s;
         if (last) {
           const e = toEuler(last.q);

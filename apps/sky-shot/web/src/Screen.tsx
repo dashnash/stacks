@@ -92,6 +92,21 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<Error | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
+  const tuningNow = useRef<Tuning>(DEFAULT_TUNING);
+  // Your saved default goes to the room once it is live.
+  const mine = useAsync(() => api.get<{ tuning: Tuning | null }>('/tuning'), []);
+  const saveDefault = useCallback(
+    async (t: Tuning, source: 'calibration' | 'manual') => {
+      try {
+        await api.put('/tuning', { tuning: t, source });
+        return true;
+      } catch (err) {
+        setSaveError(err as Error);
+        return false;
+      }
+    },
+    [api],
+  );
 
   const show = useCallback((text: string, ms = 1800) => {
     setBanner(text);
@@ -110,7 +125,18 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       } else if ('miss' in e) {
         effects.current.push({ kind: 'flash', x: e.miss.x, y: e.miss.y, c: colorOf(e.miss.seat), at: now });
         setLastShot({ ...e.miss.lat, rw: e.miss.rw });
-      } else if ('tuning' in e) setTuning(e.tuning);
+      } else if ('tuning' in e) {
+        tuningNow.current = e.tuning.tuning;
+        setTuning(e.tuning);
+      } else if ('calibrated' in e) {
+        const c = e.calibrated;
+        const off = `${Math.round(c.error * 100)} %`;
+        if (c.poor) show(`Calibrated, but the dots didn't line up (off by ${off}). Try again?`, 4000);
+        else {
+          show(`Calibrated: ${c.gain.toFixed(2)} widths/rad, off by ${off}. Saved as your default.`, 3500);
+          void saveDefault(tuningNow.current, 'calibration');
+        }
+      } else if ('calibrationFailed' in e) show(e.calibrationFailed.reason, 3500);
       else if ('stats' in e) setStats(e.stats);
       else if ('roundStart' in e) show(`Round ${e.roundStart.round} · hit ${e.roundStart.quota} of 10`);
       else if ('roundEnd' in e) show(e.roundEnd.passed ? `Round ${e.roundEnd.round} clear! +${e.roundEnd.bonus} accuracy bonus` : `Round ${e.roundEnd.round}: ${e.roundEnd.hits} of ${e.roundEnd.quota}`, 2400);
@@ -118,7 +144,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
       else if ('empty' in e) show('Out of shots', 800);
       effects.current = effects.current.filter((x) => now - x.at < EFFECT_MS);
     },
-    [show],
+    [show, saveDefault],
   );
 
   // Events go both ways on one channel: the screen sends ScreenEvents and receives ServerEvents.
@@ -149,9 +175,11 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     view();
     sendEvent({ mode: startMode });
     window.addEventListener('resize', view);
+    // Targets are drawn ~100 ms back (interpolated), crosshairs from the newest state.
     const ack = setInterval(() => {
       if (offset.current === null) return;
-      sendEvent({ ack: { shown: performance.now() - offset.current - DELAY_MS, rtt: rtt.current } });
+      const newest = performance.now() - offset.current;
+      sendEvent({ ack: { shown: newest - DELAY_MS, rtt: rtt.current, aim: newest } });
     }, ACK_MS);
     return () => {
       window.removeEventListener('resize', view);
@@ -164,7 +192,16 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
     const id = setInterval(() => setSnap(latest.current), 100);
     return () => clearInterval(id);
   }, []);
+  const sentMine = useRef(false);
+  useEffect(() => {
+    if (live && mine.data && !sentMine.current) {
+      sentMine.current = true;
+      if (mine.data.tuning) sendEvent({ tune: mine.data.tuning });
+    }
+  }, [live, mine.data, sendEvent]);
   const calibrating = !!snap && snap.g.length > 0 && snap.ph === 'ready';
+  const pointCal = snap?.cal;
+  const phone = !!snap?.g.some((g) => !g.m);
   useEffect(() => {
     let frame = 0;
     const draw = () => {
@@ -178,7 +215,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           el.height = h * devicePixelRatio;
         }
         ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-        drawFrame(ctx, w, h, buffer.sample(), effects.current, { now: performance.now(), overlay, calibrate: calibrating });
+        const cal = latest.current?.cal;
+        drawFrame(ctx, w, h, buffer.sample(), effects.current, { now: performance.now(), overlay, calibrate: calibrating && !cal, guns: latest.current?.g, cal });
       }
       frame = requestAnimationFrame(draw);
     };
@@ -336,9 +374,24 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             Use mouse instead
           </button>
         </div>
+      ) : live && pointCal ? (
+        <div className="overlay calibrate" role="dialog" aria-label="Calibrating">
+          <h2>Point at the green dot and tap the phone</h2>
+          <p className="muted">
+            Dot {Math.min(pointCal.i + 1, pointCal.pts.length)} of {pointCal.pts.length}. Hold the phone the way you play.
+          </p>
+          <button type="button" className="link" onClick={() => sendEvent({ calibrate: 'cancel' })}>
+            Cancel
+          </button>
+        </div>
       ) : live && calibrating ? (
         <div className="overlay calibrate">
           <h2>{tuning.tuning.mode === 'relative' ? 'Wave to find your crosshair' : 'Point your phone at the dot and tap Calibrate'}</h2>
+          {phone && (
+            <button type="button" onClick={() => sendEvent({ calibrate: 'points' })}>
+              Calibrate (5 dots)
+            </button>
+          )}
           <button type="button" className="primary" onClick={start}>
             Start {snap?.m === 'range' ? 'the Range' : 'Round 1'}
           </button>
@@ -365,6 +418,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           onRange={changeRange}
           onOverlay={setOverlay}
           onClose={() => setPanel(false)}
+          onSave={() => void saveDefault(tuning.tuning, 'manual').then((ok) => ok && show('Saved as your default'))}
+          onCalibrate={phone ? () => sendEvent({ calibrate: 'points' }) : undefined}
         />
       )}
     </div>
