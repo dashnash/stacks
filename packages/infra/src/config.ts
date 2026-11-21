@@ -132,6 +132,23 @@ export function loadStacksConfig(path: string): StacksConfig {
         if (new Set(old.hosts).size !== old.hosts.length) throw new Error(`${where}.legacyRedirects[${i}].hosts has a label twice`);
         for (const h of old.hosts) {
           if (typeof h !== 'string' || !HOST_LABEL.test(h)) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${JSON.stringify(h)} is not a host label`);
+          // ACM caps a certificate's main name at 64 characters, and any of these may be it.
+          if (`${h}.${old.rootDomain}`.length > 64) throw new Error(`${where}.legacyRedirects[${i}].hosts: ${h}.${old.rootDomain} is longer than 64 characters`);
+        }
+      }
+    }
+  }
+  // A listed host must not take over another environment's legacy root (staging's test.<old> sits under production's <old>).
+  for (const name of ['production', 'staging'] as const) {
+    for (const [i, old] of (config.environments[name].legacyRedirects ?? []).entries()) {
+      for (const h of old.hosts ?? []) {
+        const host = `${h}.${old.rootDomain}`;
+        for (const other of ['production', 'staging'] as const) {
+          for (const o of config.environments[other].legacyRedirects ?? []) {
+            if (o !== old && (o.rootDomain === host || o.rootDomain.endsWith(`.${host}`))) {
+              throw new Error(`${path}: environments.${name}.legacyRedirects[${i}].hosts: ${host} overlaps ${other}'s legacy root ${o.rootDomain}`);
+            }
+          }
         }
       }
     }

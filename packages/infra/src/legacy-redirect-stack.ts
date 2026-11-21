@@ -67,7 +67,8 @@ export class LegacyRedirectStack extends cdk.Stack {
       const zone = route53.HostedZone.fromHostedZoneAttributes(this, `${id}Zone`, { hostedZoneId: old.hostedZoneId, zoneName: old.hostedZoneName ?? old.rootDomain });
       const records: Array<readonly [string, string]> = old.hosts?.length
         ? // Ids from the label, not its position, so removing one never renames another's record.
-          // Sorted, so reordering `hosts` never changes the certificate's main name (a replacement).
+          // Sorted, so reordering `hosts` alone changes nothing. Adding or removing a label still replaces
+          // the certificate (new DNS validation, then a CloudFront update).
           [...old.hosts].sort().map((h) => [`Host${h.replace(/-/g, 'Dash')}`, `${h}.${old.rootDomain}`] as const)
         : [['Apex', old.rootDomain], ['Wildcard', `*.${old.rootDomain}`]];
       const names = records.map(([, name]) => name);
