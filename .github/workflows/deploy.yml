@@ -1,9 +1,11 @@
 name: Deploy
 
 # Every merge to main. The changes job first decides what it has to deploy (#47), from the files changed
-# since the last green Deploy run (scripts/deploy-changes.mjs, rules in scripts/pr-paths.mjs):
+# since the last green Deploy run, plus those of any failed run since (scripts/deploy-changes.mjs,
+# rules in scripts/pr-paths.mjs):
 #   docs  only docs/ and Markdown outside apps: every other job is skipped and the run ends green.
-#   app   only apps/<slug>/ (and package-lock.json): just that app's stack, staging then production.
+#   app   only apps/<slug>/ (and that app's own package-lock.json entries): just that app's stack,
+#         staging then production.
 #   full  anything else: all of staging (platform, then every app).
 # Then a smoke check of staging (tools/smoke, #100), so a broken change stops there; then production
 # the same way. CloudFormation skips stacks with no changes. Zones marked "lookup" in
@@ -120,9 +122,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Test
+      # Typecheck and the import rule too: PR branches needn't be up to date (the ruleset isn't
+      # strict), so two green PRs can still break main together; this is where that shows.
+      - name: Typecheck, import rule, test
         run: |
-          if [[ "$MODE" == app ]]; then npm test -w "apps/${APP}"; else npm test; fi
+          node scripts/check-imports.mjs
+          if [[ "$MODE" == app ]]; then
+            npm run typecheck -w "apps/${APP}"
+            npm test -w "apps/${APP}"
+          else
+            npm run typecheck
+            npm test
+          fi
       - name: Build (stamps the commit into every app's and the portal's footer)
         env:
           VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}

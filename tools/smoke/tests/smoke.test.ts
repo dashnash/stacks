@@ -131,6 +131,25 @@ describe('smoke check (#100)', () => {
       expect(empty[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
     });
 
+    it('doesn\'t warn that the portal is on another commit (it wasn\'t deployed), but still checks the app', async () => {
+      const sha = 'a'.repeat(40);
+      const s = stub({
+        ...green(),
+        [`${portal}/api/health`]: healthy({ build: 'b'.repeat(40) }),
+        'https://pantry.test.example/api/health': healthy({ build: 'c'.repeat(40) }),
+        'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` },
+      });
+      const results = await runChecks(plan(targetsFromOutputs(appOnly, { portal }), { appsOnly: true, sha }), { fetch: s.fetch, sleep: async () => {}, delayMs: 0 });
+      expect(results[0]).toMatchObject({ ok: true, warnings: [] });
+      expect(results[1].warnings[0]).toMatch(/mixed versions/);
+    });
+
+    it('doesn\'t count malformed catalog entries as apps', async () => {
+      const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
+      const results = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{}, null] } } });
+      expect(results[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
+    });
+
     it('still needs a portal: no PortalURL and no --portal fails', () => {
       expect(() => targetsFromOutputs(appOnly)).toThrow(/--portal/);
     });

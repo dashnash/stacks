@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
-import { decide, heldApps, lastGreenDeploy } from '../../../scripts/deploy-changes.mjs';
+import { baselineFrom, decide, heldApps, lastGreenDeploy } from '../../../scripts/deploy-changes.mjs';
 // @ts-expect-error: plain .mjs script, no types
-import { classifyDeploy, isDocsFile } from '../../../scripts/pr-paths.mjs';
+import { classifyDeploy, isDocsFile, lockfileChanges } from '../../../scripts/pr-paths.mjs';
 
 const known = { appsBefore: ['hello', 'potluck'], appsAfter: ['hello', 'potluck'] };
 
@@ -24,7 +24,7 @@ describe('what a push to main deploys (classifyDeploy)', () => {
   });
 
   it('deploys just the app when only one app (and the lockfile, and docs) changed', () => {
-    expect(classifyDeploy(['apps/potluck/api/routes.ts', 'package-lock.json'], known)).toMatchObject({ mode: 'app', app: 'potluck' });
+    expect(classifyDeploy(['apps/potluck/api/routes.ts', 'package-lock.json'], { ...known, lockfile: ['apps/potluck'] })).toMatchObject({ mode: 'app', app: 'potluck' });
     expect(classifyDeploy(['apps/potluck/web/src/App.tsx', 'docs/specs/1-potluck.md'], known)).toMatchObject({ mode: 'app', app: 'potluck' });
   });
 
@@ -41,6 +41,18 @@ describe('what a push to main deploys (classifyDeploy)', () => {
     expect(classifyDeploy(['apps/pantry/app.manifest.json'], { appsBefore: ['hello', 'pantry'], appsAfter: ['hello'] })).toMatchObject({ mode: 'full', reason: expect.stringContaining('was removed') });
     // A file at apps/ itself is no app folder.
     expect(classifyDeploy(['apps/.gitkeep'], known)).toMatchObject({ mode: 'full' });
+  });
+
+  it('allows package-lock.json in an app deploy only for that app\'s own entries', () => {
+    const files = ['apps/hello/package.json', 'package-lock.json'];
+    expect(classifyDeploy(files, { ...known, lockfile: ['apps/hello', 'apps/hello/node_modules/left-pad'] })).toMatchObject({ mode: 'app', app: 'hello' });
+    expect(classifyDeploy(files, { ...known, lockfile: ['apps/hello', 'node_modules/zod'] })).toMatchObject({ mode: 'full', reason: expect.stringContaining('node_modules/zod') });
+    expect(classifyDeploy(files, { ...known, lockfile: ['apps/potluck/node_modules/x'] })).toMatchObject({ mode: 'full' });
+    // Not told what changed in it: full.
+    expect(classifyDeploy(files, known)).toMatchObject({ mode: 'full' });
+    const before = { packages: { '': { name: 'root' }, 'apps/hello': { version: '1' }, 'node_modules/zod': { version: '3.0.0' } } };
+    const after = { packages: { '': { name: 'root' }, 'apps/hello': { version: '2' }, 'node_modules/zod': { version: '3.0.0' }, 'apps/hello/node_modules/x': { version: '1' } } };
+    expect(lockfileChanges(before, after)).toEqual(['apps/hello', 'apps/hello/node_modules/x']);
   });
 
   it('deploys everything when the app is on hold somewhere (the full deploy leaves it out there)', () => {
@@ -81,6 +93,25 @@ describe('deploy-changes against a git history', () => {
     expect(decide(c0, c2, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });
   });
 
+  it('redeploys what a failed run touched, even when a revert undid it (no diff against the baseline)', () => {
+    // c5 changes the platform and its run fails; c6 reverts it.
+    const c5 = commit({ 'packages/api/x.ts': '2' });
+    const c6 = commit({ 'packages/api/x.ts': '1' });
+    expect(decide(c4, c6, config, dir)).toMatchObject({ mode: 'docs', reason: 'nothing changed' });
+    expect(decide(c4, c6, config, dir, [c5])).toMatchObject({ mode: 'full', unsettled: 1 });
+    // A failed run that isn't between the baseline and HEAD: full.
+    expect(decide(c5, c6, config, dir, [c2])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
+  });
+
+  it('reads the lockfile at each side for an app deploy', () => {
+    const l = (hello: string, zod: string) => JSON.stringify({ packages: { 'apps/hello': { version: hello }, 'node_modules/zod': { version: zod } } });
+    const a = commit({ 'package-lock.json': l('1', '3') });
+    const b = commit({ 'package-lock.json': l('2', '3'), 'apps/hello/c.ts': '1' });
+    const c = commit({ 'package-lock.json': l('2', '4'), 'apps/hello/c.ts': '2' });
+    expect(decide(a, b, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });
+    expect(decide(b, c, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('node_modules/zod') });
+  });
+
   it('sees a new app, and a move within an app', () => {
     expect(decide(c2, c3, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('apps/pantry is new') });
     expect(decide(c3, c4, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });
@@ -88,20 +119,25 @@ describe('deploy-changes against a git history', () => {
 
   it('deploys everything without a usable baseline', () => {
     expect(decide(undefined, c2, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('no earlier') });
-    expect(decide(c2, c2, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('re-run') });
+    expect(decide(c2, c2, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('second run for one commit') });
     // Not an ancestor (a newer commit as the "baseline").
     expect(decide(c4, c2, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't an ancestor") });
   });
 
-  it('finds the newest green Deploy run other than this one', async () => {
+  it('finds the newest green Deploy run other than this one, and the failed ones after it', async () => {
+    const run = (id: number, head_sha: string, conclusion: string | null, status = 'completed') => ({ id, head_sha, status, conclusion });
+    const runs = [run(9, 'this', null, 'in_progress'), run(8, 'cancelled', 'cancelled'), run(7, 'failed', 'failure'), run(6, 'green', 'success'), run(5, 'older', 'failure')];
+    expect(baselineFrom(runs, 9)).toEqual({ base: 'green', unsettled: ['cancelled', 'failed'] });
+    // A re-run keeps its id: it skips itself, even once green.
+    expect(baselineFrom([run(6, 'green', 'success'), run(5, 'prev', 'success')], '6')).toEqual({ base: 'prev', unsettled: [] });
+    expect(baselineFrom([run(5, 'older', 'failure')], 9)).toEqual({ base: undefined, unsettled: ['older'] });
     const calls: string[] = [];
     const fetch = async (url: string) => {
       calls.push(url);
-      return { ok: true, json: async () => ({ workflow_runs: [{ id: 7, conclusion: 'success', head_sha: 'this' }, { id: 6, conclusion: 'success', head_sha: 'prev' }] }) };
+      return { ok: true, json: async () => ({ workflow_runs: runs }) };
     };
-    expect(await lastGreenDeploy({ repo: 'o/r', runId: '7', fetch })).toBe('prev');
-    expect(calls[0]).toContain('/repos/o/r/actions/workflows/deploy.yml/runs?branch=main&event=push&status=success');
-    expect(await lastGreenDeploy({ repo: 'o/r', runId: '1', fetch: async () => ({ ok: true, json: async () => ({ workflow_runs: [] }) }) })).toBeUndefined();
+    expect(await lastGreenDeploy({ repo: 'o/r', runId: '9', fetch })).toEqual({ base: 'green', unsettled: ['cancelled', 'failed'] });
+    expect(calls[0]).toContain('/repos/o/r/actions/workflows/deploy.yml/runs?branch=main&event=push&per_page=50');
     await expect(lastGreenDeploy({ repo: 'o/r', fetch: async () => ({ ok: false, status: 403 }) })).rejects.toThrow('403');
   });
 });

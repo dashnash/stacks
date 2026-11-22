@@ -64,6 +64,17 @@ function classifyPaths(branch, changed) {
   };
 }
 
+/**
+ * The lockfile entries (`packages` keys) that differ between two parsed package-lock.json files.
+ * An app's own dependencies live under `apps/<slug>/node_modules/`; anything else (a hoisted
+ * `node_modules/…` entry, another workspace) can reach the platform's or another app's bundle.
+ */
+export function lockfileChanges(before, after) {
+  const a = before?.packages ?? {};
+  const b = after?.packages ?? {};
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).sort();
+}
+
 /** Files that never reach a stack: docs/ and Markdown outside an app's folder (apps keep theirs: an app's own files are its deploy). */
 export const isDocsFile = (f) => f.startsWith('docs/') || (f.endsWith('.md') && !/^apps\/[^/]+\//.test(f));
 
@@ -80,9 +91,11 @@ const SLUG = /^[a-z][a-z0-9-]*[a-z0-9]$/;
  *   platform's dashboard lists every app), two apps, and an app on hold (the full deploy leaves it out).
  *
  * `appsBefore` / `appsAfter`: the app slugs (folders with app.manifest.json) at the baseline and at
- * the pushed commit. `heldApps`: every environment's holdApps. Returns { mode, app?, reason }.
+ * the pushed commit. `heldApps`: every environment's holdApps. `lockfile`: the changed lockfile
+ * entries (lockfileChanges), when package-lock.json changed; an app deploy allows only that app's
+ * own (`apps/<slug>` and `apps/<slug>/node_modules/…`). Returns { mode, app?, reason }.
  */
-export function classifyDeploy(changed, { appsBefore = [], appsAfter = [], heldApps = [] } = {}) {
+export function classifyDeploy(changed, { appsBefore = [], appsAfter = [], heldApps = [], lockfile } = {}) {
   const files = changed.filter(Boolean);
   const code = files.filter((f) => !isDocsFile(f));
   if (!code.length) return { mode: 'docs', reason: files.length ? `only docs changed (${files.length} file(s))` : 'nothing changed' };
@@ -94,5 +107,9 @@ export function classifyDeploy(changed, { appsBefore = [], appsAfter = [], heldA
   if (!appsAfter.includes(app)) return { mode: 'full', reason: `apps/${app} was removed (the platform lists every app)` };
   if (!appsBefore.includes(app)) return { mode: 'full', reason: `apps/${app} is new (the platform lists every app)` };
   if (heldApps.includes(app)) return { mode: 'full', reason: `${app} is on hold in an environment (the full deploy leaves it out there)` };
+  if (code.includes('package-lock.json')) {
+    const outside = (lockfile ?? ['(unknown)']).filter((k) => k !== `apps/${app}` && !k.startsWith(`apps/${app}/node_modules/`));
+    if (outside.length) return { mode: 'full', reason: `package-lock.json changes beyond ${app}'s own dependencies (${outside.slice(0, 3).join(', ')}${outside.length > 3 ? ', …' : ''})` };
+  }
   return { mode: 'app', app, reason: `only apps/${app}/ changed` };
 }

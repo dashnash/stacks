@@ -42,7 +42,8 @@ export const probeApp = (apps) => apps.find((a) => a.slug === SIGN_IN_PROBE) ?? 
 /** The checks to run, in order. Each `run(fetch)` resolves to `{ warnings? }` or throws with the reason. */
 export function plan({ portal, apps }, { maintenance = false, sha, appsOnly = false } = {}) {
   const checks = [
-    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, sha) },
+    // After an app-only deploy the portal is on an older commit by design: no mixed-versions warning.
+    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, appsOnly ? undefined : sha) },
     ...apps.map((a) => ({ name: `${a.slug} /api/health`, run: (f) => health(f, `${a.url}/api/health`, sha) })),
   ];
   if (maintenance) return checks;
@@ -87,7 +88,7 @@ async function catalog(f, url, slugs, anyApp = false) {
   if (res.status !== 200) throw new Error(`${url}: ${res.status}, expected 200`);
   const body = await json(res, url);
   if (!Array.isArray(body?.apps)) throw new Error(`${url}: no "apps" list`);
-  const listed = new Set(body.apps.map((a) => a?.slug));
+  const listed = new Set(body.apps.map((a) => a?.slug).filter((s) => typeof s === 'string' && s));
   if (anyApp) {
     if (!listed.size) throw new Error(`${url}: lists no apps`);
   } else if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
