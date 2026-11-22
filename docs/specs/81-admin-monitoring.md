@@ -20,7 +20,7 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 | Who | **Platform admins only** (`isPlatformAdmin`). Everyone else gets 403 from the API, and the page shows "Platform admins only". App approvers see nothing new. |
 | Which environment | **Each portal shows its own**: `auth.dashnash.ninja` shows `prod`, `auth.test.dashnash.ninja` shows `test`. Each platform Lambda can start queries only on `/stacks/<its tag>/*` log groups. |
 | Content | (1) a per-app **health table** (registered apps and the platform only), (2) **graphs** (the dashboard's seven), (3) the **Latest errors**, **Slowest requests** and **Browser errors** tables (Browser errors is its own table), (4) **Find by ref**, (5) **One user's trail** (click a user, or paste an id), (6) **One app's requests** (when an app is selected). |
-| Time range | Presets **1h / 24h / 7d / 30d**, default 24h. No custom from/to. Log tables cover at most the log retention (1 week on staging, 1 month on production); the page says so when the range is longer. |
+| Time range | Presets **1h / 24h / 7d / 30d**, default 24h. No custom from/to. CloudWatch `SEARCH` only finds metrics that reported in the last two weeks, so on 30d an app quiet since then shows zero in the graphs and health totals (the page says so). Log tables cover at most the log retention (1 week on staging, 1 month on production); the page says so when the range is longer. |
 | Names | The API resolves user ids in its answers to the person's name and email from the platform table, at read time. **Logs stay as they are** (ids only); names are never written to CloudWatch. |
 | Refresh | Loads once when opened, plus a **Refresh** button. A **"Refresh every 60s"** checkbox (off by default, not remembered) refreshes the health table, the graphs and the three tables while the tab is visible. Find by ref and the user trail never refresh automatically. |
 | Entry point | A **Monitoring** tab in the portal header next to Access, shown only to platform admins. No account-menu item, no link from `ErrorNote`. |
@@ -115,8 +115,9 @@ page shows the id only).
 - New deps on `platform/api`: `@aws-sdk/client-cloudwatch` and `@aws-sdk/client-cloudwatch-logs`
   (same major as the existing SDK clients; neither has install scripts). They go in the Lambda
   bundle like the others.
-- `SAVED_QUERIES.userTrail` also returns `message.userId`, so the trail's heading can name the person
-  (the console query gains a column, nothing else).
+- `SAVED_QUERIES.userTrail` also returns `message.userId`, so the trail's heading can name the person,
+  and sorts newest first so its 500-line limit keeps the latest lines (the console query now reads
+  newest first; the page shows them oldest first).
 - No query text or rows are ever logged. Besides the request line: a `warn` when CloudWatch fails
   or answers incomplete metrics, and an `info` when stopping a query that had already ended.
 - Errors from CloudWatch become a 424 `{ error: "CloudWatch didn't answer: <AWS error name>" }` (not a
@@ -173,7 +174,7 @@ code only asks for its own. Logs, which hold user ids, are scoped.
 ## Tests
 
 - `platform/api/tests/monitoring.test.ts`: 403 for a non-admin (signed in) and 401 signed out on all
-  three routes; the metrics call builds the expected expressions and periods per range and maps
+  four routes; the metrics call builds the expected expressions and periods per range and maps
   results into `apps`/`graphs`; every bad `ref`/`userId`/`app`/`query` is a 400 and nothing reaches
   the fake; good parameters produce exactly the saved query text with the value substituted; the
   range is clamped to retention; `people` resolves names and skips unknown ids; a CloudWatch failure

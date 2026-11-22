@@ -321,6 +321,9 @@ describe('appOfResource', () => {
     const long = 'a-very-long-app-slug-of-thirty';
     expect(appOfResource('prod', `stacks-prod-app-${long.slice(0, 20)}-ApiHandl-AbC123XyZ0123456789`, [...slugs, long])).toBe(long);
     expect(appOfResource('prod', 'stacks-prod-app-sk-Fn', slugs)).toBeUndefined();
+    // A retired 'sky-shot' is not credited to a registered 'sky', nor 'book-club' to 'book'.
+    expect(appOfResource('prod', 'stacks-prod-app-sky-shot-ApiHandler1A2B', ['sky'])).toBeUndefined();
+    expect(appOfResource('prod', 'stacks-prod-app-book-club-Table1A2B', ['book'])).toBeUndefined();
     // A retired 'sky' with a long name is not credited to 'sky-shot'.
     expect(appOfResource('prod', 'stacks-prod-app-sky-RealtimeAuthorizerFunction1A2B3C4D-AbCdEf123456', ['sky-shot'])).toBeUndefined();
     // A retired app's resource is not given to a registered slug that starts the same way.

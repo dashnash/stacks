@@ -168,6 +168,7 @@ function MonitoringPage() {
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
             ? `Tables cover the last ${metrics.logRetentionDays} days: apps keep their logs that long. Graphs go back further; the platform's older logs are in CloudWatch.`
             : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
+          {range === '30d' && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
         </p>
       )}
     </section>
@@ -222,7 +223,7 @@ function HealthTable({ apps, selected, onSelect }: { apps: AppHealth[]; selected
                   </button>
                 </td>
                 <td className="num">{a.requests.toLocaleString()}</td>
-                <td className={`num${server ? ' bad' : ''}`} title={a.unhandled ? `${a.unhandled} unhandled` : undefined}>
+                <td className={`num${server ? ' bad' : ''}`} title={`At least ${server}: ${a.serverErrors} 5xx responses, ${a.unhandled} unhandled (most unhandled errors are also a 5xx, so the two overlap)`}>
                   {server}
                 </td>
                 <td className="num">{a.clientErrors}</td>

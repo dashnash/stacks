@@ -127,7 +127,9 @@ export function appOfResource(tag: string, name: string, slugs: string[]): strin
   if (name.startsWith(`stacks-${tag}-platform-`)) return 'platform';
   const rest = name.startsWith(`stacks-${tag}-app-`) ? name.slice(`stacks-${tag}-app-`.length) : undefined;
   if (rest === undefined) return undefined;
-  const whole = [...slugs].sort((a, b) => b.length - a.length).find((s) => rest.startsWith(`${s}-`));
+  // The slug, then the CDK logical id (upper case; slugs are lower case), so `sky` never takes
+  // `sky-shot-ApiHandler…` of an app no longer registered.
+  const whole = [...slugs].sort((a, b) => b.length - a.length).find((s) => rest.startsWith(`${s}-`) && /^[A-Z]/.test(rest.slice(s.length + 1)));
   if (whole) return whole;
   // Generated names are cut at 64 characters, which can cut a long slug: the longest piece before a
   // `-` that starts exactly one slug. Only for names that were cut; a shorter one is another app's.
