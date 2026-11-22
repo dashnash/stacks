@@ -2,12 +2,16 @@
 /**
  * Smoke check after a deploy (#100): is every API up, does the catalog answer, does sign-in start?
  *
- *   node tools/smoke/smoke.mjs <outputs.json> --env staging|production [--sha <commit>]
+ *   node tools/smoke/smoke.mjs <outputs.json> --env staging|production [--sha <commit>] [--portal <url>]
  *
  * `outputs.json` is `cdk deploy --outputs-file`: the platform stack's `PortalURL` and each app
  * stack's `SiteURL` (held apps aren't deployed, so they aren't checked). Fails on network errors,
  * 5xx, a wrong status or a wrong redirect. Missing secrets in a health body are warnings. While the
  * environment is in maintenance (stacks.config.json) only the health checks run.
+ *
+ * `--portal <url>`: the run deployed only apps (deploy.yml's one-app mode), so the outputs have no
+ * `PortalURL`: check the portal at this URL instead (no mixed-versions warning for it: it wasn't
+ * deployed), and that the catalog lists the one app.
  *
  * Every `/api/health` names the commit it runs (`build`, #105); the table shows it. With `--sha`
  * (the commit just deployed) a stack on another commit, or one that doesn't say, is a warning, never
@@ -16,16 +20,16 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-/** `{ portal, apps: [{ slug, url }] }` from a CDK outputs file's parsed JSON. */
-export function targetsFromOutputs(outputs) {
-  let portal;
+/** `{ portal, apps: [{ slug, url }] }` from a CDK outputs file's parsed JSON (`portal`: the URL when the platform wasn't deployed). */
+export function targetsFromOutputs(outputs, { portal: given } = {}) {
+  let portal = given ? trim(given) : undefined;
   const apps = [];
   for (const [stack, values] of Object.entries(outputs ?? {})) {
-    if (values?.PortalURL) portal = trim(values.PortalURL);
+    if (values?.PortalURL && !given) portal = trim(values.PortalURL);
     const app = /-app-(.+)$/.exec(stack)?.[1];
     if (app && values?.SiteURL) apps.push({ slug: app, url: trim(values.SiteURL) });
   }
-  if (!portal) throw new Error('No PortalURL in the outputs file (did the platform stack deploy?)');
+  if (!portal) throw new Error('No PortalURL in the outputs file (did the platform stack deploy? For an app-only deploy pass --portal)');
   apps.sort((a, b) => a.slug.localeCompare(b.slug));
   return { portal, apps };
 }
@@ -36,13 +40,16 @@ export const SIGN_IN_PROBE = 'hello';
 export const probeApp = (apps) => apps.find((a) => a.slug === SIGN_IN_PROBE) ?? apps[0];
 
 /** The checks to run, in order. Each `run(fetch)` resolves to `{ warnings? }` or throws with the reason. */
-export function plan({ portal, apps }, { maintenance = false, sha } = {}) {
+export function plan({ portal, apps }, { maintenance = false, sha, appsOnly = false } = {}) {
+  // An app-only deploy deployed exactly one app: anything else means the outputs aren't what ran.
+  if (appsOnly && apps.length !== 1) throw new Error(`An app-only deploy should have one app in its outputs, found ${apps.length}`);
   const checks = [
-    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, sha) },
+    // After an app-only deploy the portal is on an older commit by design: no mixed-versions warning.
+    { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, appsOnly ? undefined : sha) },
     ...apps.map((a) => ({ name: `${a.slug} /api/health`, run: (f) => health(f, `${a.url}/api/health`, sha) })),
   ];
   if (maintenance) return checks;
-  checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug)) });
+  checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug), appsOnly) });
   const probe = probeApp(apps);
   if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: (f) => signIn(f, probe.url, portal) });
   return checks;
@@ -75,15 +82,20 @@ async function health(f, url, sha) {
 
 /**
  * The catalog must list at least one of the apps just deployed: an empty list means the registry
- * read broke. (Not all of them: an archived app stays deployed but leaves the catalog.)
+ * read broke. (Not all of them: an archived app stays deployed but leaves the catalog.) After an
+ * app-only deploy (`onlyApp`) it must list that app: archived and a broken registration look the
+ * same from outside, so a missing one fails, and the message says what to do if it's archived.
  */
-async function catalog(f, url, slugs) {
+async function catalog(f, url, slugs, onlyApp = false) {
   const res = await f(url, { redirect: 'manual' });
   if (res.status !== 200) throw new Error(`${url}: ${res.status}, expected 200`);
   const body = await json(res, url);
   if (!Array.isArray(body?.apps)) throw new Error(`${url}: no "apps" list`);
-  const listed = new Set(body.apps.map((a) => a?.slug));
-  if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
+  const listed = new Set(body.apps.map((a) => a?.slug).filter((s) => typeof s === 'string' && s));
+  if (onlyApp) {
+    const missing = slugs.filter((s) => !listed.has(s));
+    if (missing.length) throw new Error(`${url}: doesn't list ${missing.join(', ')}: its registration broke, or it's archived (then run Deploy by hand on main: a full deploy's smoke check doesn't need it)`);
+  } else if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
   return { warnings: [] };
 }
 
@@ -141,14 +153,15 @@ async function main() {
   const file = args.find((a) => !a.startsWith('--'));
   const env = args[args.indexOf('--env') + 1];
   if (!file || !['staging', 'production'].includes(env)) {
-    console.error('Usage: smoke.mjs <outputs.json> --env staging|production [--sha <commit>]');
+    console.error('Usage: smoke.mjs <outputs.json> --env staging|production [--sha <commit>] [--portal <url>]');
     process.exit(2);
   }
   const config = JSON.parse(readFileSync(new URL('../../stacks.config.json', import.meta.url), 'utf8'));
   const maintenance = config.environments?.[env]?.maintenance === true;
-  const targets = targetsFromOutputs(JSON.parse(readFileSync(file, 'utf8')));
+  const portal = args.includes('--portal') ? args[args.indexOf('--portal') + 1] : undefined;
+  const targets = targetsFromOutputs(JSON.parse(readFileSync(file, 'utf8')), { portal });
   const sha = args.includes('--sha') ? args[args.indexOf('--sha') + 1] : undefined;
-  const results = await runChecks(plan(targets, { maintenance, sha }));
+  const results = await runChecks(plan(targets, { maintenance, sha, appsOnly: !!portal }));
   for (const r of results) {
     console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.build ? ` (build ${shortSha(r.build)})` : ''}${r.ok ? r.warnings.map((w) => `\n     warning: ${w}`).join('') : `\n     ${r.error}`}`);
     for (const w of r.warnings) console.log(`::warning title=Smoke ${escapeCommand(r.name)}::${escapeCommand(w)}`);

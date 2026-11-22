@@ -1,23 +1,79 @@
 name: Deploy
 
-# Every merge to main: all of staging first (platform, then every app), then a smoke check of it
-# (tools/smoke, #100), so a broken change stops there; then the production platform, then every production app. CloudFormation skips stacks with
-# no changes. Zones marked "lookup" in stacks.config.json are resolved first (zones job). Apps on hold for an environment (holdApps in stacks.config.json) are left out of it.
+# Every merge to main. The changes job first decides what it has to deploy (#47), from the files changed
+# since the last green Deploy run; after any run since then that didn't succeed, full
+# (scripts/deploy-changes.mjs, rules in scripts/pr-paths.mjs):
+#   docs  only docs/ and Markdown outside apps: every other job is skipped and the run ends green.
+#   app   only apps/<slug>/ (and that app's own package-lock.json entries): just that app's stack,
+#         staging then production.
+#   full  anything else: all of staging (platform, then every app).
+# Then a smoke check of staging (tools/smoke, #100), so a broken change stops there; then production
+# the same way. CloudFormation skips stacks with no changes. Zones marked "lookup" in
+# stacks.config.json are resolved first (zones job). Apps on hold for an environment (holdApps in
+# stacks.config.json) are left out of it. Always one run per merge commit, even a docs-only one: the
+# merge train's `wait-deploy` waits for it (so no paths-ignore here).
 on:
   push:
     branches: [main]
+  # By hand, on main: deploys everything. "Re-run failed jobs" keeps a run's mode; "Re-run all jobs" works it out again.
+  # Runs of either event count for the baseline; the merge train waits only for push runs, so don't
+  # start one while a push run is queued (it would replace it). On another ref the changes job fails.
+  workflow_dispatch:
 
 concurrency:
-  group: deploy-main
+  # A hand run from another ref gets its own group: it must never replace main's queued run.
+  group: deploy-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  # What this push deploys: docs | app | full (see the top). Against the last green run, not the
+  # merge's parent: after a failed run, or a queued one a newer push replaced, the next is full.
+  changes:
+    runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      app: ${{ steps.classify.outputs.app }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          # No npm cache: outside docs mode nothing installs, and saving a missing cache can fail.
+      - name: Classify
+        id: classify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Node's fetch ignores HTTPS_PROXY without it (a self-hosted runner behind a proxy).
+          NODE_USE_ENV_PROXY: '1'
+        run: node scripts/deploy-changes.mjs
+      # Docs only: no build job, so the tests that read the docs (tools/app-conformance) run here.
+      - name: Install (docs only)
+        if: steps.classify.outputs.mode == 'docs'
+        run: npm ci --ignore-scripts
+      - name: Docs tests (docs only)
+        if: steps.classify.outputs.mode == 'docs'
+        run: npm test -w tools/app-conformance
+      # The merge train's wait-deploy reads this step's success as "green, nothing to deploy"
+      # (scripts/merge-train.mjs); keep its name.
+      - name: Nothing to deploy (docs only)
+        if: steps.classify.outputs.mode == 'docs'
+        run: echo "Docs only; every deploy job is skipped."
+
   # #101: are the live stacks-ci guardrail policies what main says? Warnings only; nothing waits on it.
+  # Only with a full deploy: an app or docs change can't change the guardrails (it also runs daily).
   ci-drift:
-    if: github.ref == 'refs/heads/main'
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.mode == 'full'
     permissions:
       contents: read
       id-token: write
@@ -28,7 +84,8 @@ jobs:
   # Zones marked "lookup" in stacks.config.json, resolved by name (read-only, through staging's
   # CDK lookup role) and handed to synth. Everything here is main's code; nothing is deployed.
   zones:
-    if: github.ref == 'refs/heads/main'
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.mode != 'docs'
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     environment: staging
     permissions:
@@ -64,9 +121,15 @@ jobs:
           ids="$(node scripts/lookup-zones.mjs)"
           echo "ids=${ids}" >> "$GITHUB_OUTPUT"
 
+  # The only place main's tests run after a merge (ci.yml runs on PRs only, #47 WF-03). One app:
+  # that app's tests and build, and an assembly of only its stack (-c app=<slug>).
   build:
-    needs: zones
+    needs: [changes, zones]
+    if: needs.changes.outputs.mode != 'docs'
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    env:
+      MODE: ${{ needs.changes.outputs.mode }}
+      APP: ${{ needs.changes.outputs.app }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -74,11 +137,33 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
+      # Typecheck and the import rule too: PR branches needn't be up to date (the ruleset isn't
+      # strict), so two green PRs can still break main together; this is where that shows.
+      # CI runs on PRs only: in a full deploy, lint the workflows of the merged main too.
+      - name: Lint workflows
+        if: env.MODE == 'full'
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
+      - name: Typecheck, repo checks, test
+        run: |
+          node scripts/check-imports.mjs
+          node scripts/check-action-pins.mjs
+          node scripts/check-install-scripts.mjs
+          npm run typecheck
+          if [[ "$MODE" == app ]]; then
+            # Every test except the other apps' (packages, tools and infra read or bundle apps).
+            npm test --if-present -w "apps/${APP}" -w packages -w packages/modules -w platform -w tools -w infra
+          else
+            npm test
+          fi
       - name: Build (stamps the commit into every app's and the portal's footer)
         env:
           VITE_STACKS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)" npm run build
+        run: |
+          VITE_STACKS_BUILD_SHA="$(git rev-parse HEAD)"
+          export VITE_STACKS_BUILD_SHA
+          if [[ "$MODE" == app ]]; then npm run build -w "apps/${APP}"; else npm run build; fi
       - name: Synth
         working-directory: infra
         env:
@@ -87,8 +172,22 @@ jobs:
           # The same commit as the web build, stamped on every Lambda's log lines.
           STACKS_BUILD_SHA="$(git rev-parse HEAD)"
           export STACKS_BUILD_SHA
-          npx cdk synth -q -c env=production -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
-          npx cdk synth -q -c env=staging -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
+          only=()
+          if [[ "$MODE" == app ]]; then only=(-c "app=${APP}"); fi
+          npx cdk synth -q -c env=production "${only[@]}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
+          npx cdk synth -q -c env=staging "${only[@]}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
+      # One app: the deploy jobs run `cdk deploy --all` with the platform step skipped, so each
+      # assembly must hold exactly that app's stack (staging also gets deploy-test.yml's full gate).
+      - name: Check the one-app assemblies
+        if: env.MODE == 'app'
+        run: |
+          node -e '
+            for (const [dir, want] of [["cdk.out-staging", "stacks-test-app-" + process.env.APP], ["cdk.out", "stacks-prod-app-" + process.env.APP]]) {
+              const m = require("./" + dir + "/manifest.json");
+              const got = Object.entries(m.artifacts ?? {}).filter(([, a]) => a.type === "aws:cloudformation:stack").map(([k]) => k);
+              if (got.length !== 1 || got[0] !== want) { console.error(dir + ": expected only " + want + ", got " + got.join(", ")); process.exit(1); }
+            }'
+          npx tsx scripts/check-assembly.ts cdk.out-staging "stacks-test-app-${APP}"
       # One artifact per environment: each deploy job downloads only its own (the runners
       # download slowly).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -103,7 +202,7 @@ jobs:
           retention-days: 7
 
   staging:
-    needs: build
+    needs: [changes, build]
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     environment: staging
     permissions:
@@ -126,18 +225,26 @@ jobs:
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
           aws-region: us-east-1
       - name: Platform first (apps read its certificate from SSM)
+        if: needs.changes.outputs.mode != 'app'
         run: npx cdk deploy --app cdk.out-staging stacks-test-platform --require-approval never
+      # One app: its assembly holds only that app's stack, so --all deploys just it.
       - name: Apps (then the legacy-domain redirects, which depend on them)
         run: npx cdk deploy --app cdk.out-staging --all --require-approval never --concurrency 4 --outputs-file outputs-staging.json
       - name: Summary
         run: |
           node -e "const o=require('./outputs-staging.json');for(const[s,v]of Object.entries(o))console.log('- '+s+': '+(v.SiteURL??v.PortalURL??''))" >> "$GITHUB_STEP_SUMMARY"
       # CloudFormation finishing isn't the same as working (#100): production waits on this.
+      # One app: the platform wasn't deployed, so smoke checks the live portal at its address.
       - name: Smoke check
-        run: node tools/smoke/smoke.mjs outputs-staging.json --env staging --sha "$GITHUB_SHA"
+        env:
+          MODE: ${{ needs.changes.outputs.mode }}
+        run: |
+          portal=()
+          if [[ "$MODE" == app ]]; then portal=(--portal "$(node -p "'https://auth.' + require('./stacks.config.json').environments.staging.rootDomain")"); fi
+          node tools/smoke/smoke.mjs outputs-staging.json --env staging --sha "$GITHUB_SHA" "${portal[@]}"
 
   production:
-    needs: staging
+    needs: [changes, staging]
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     environment: production
     permissions:
@@ -159,6 +266,7 @@ jobs:
           role-to-assume: ${{ vars.AWS_PRODUCTION_ROLE_ARN }}
           aws-region: us-east-1
       - name: Platform first (apps read its certificate from SSM)
+        if: needs.changes.outputs.mode != 'app'
         run: npx cdk deploy --app cdk.out stacks-prod-platform --require-approval never
       - name: Apps (then the legacy-domain redirects, which depend on them)
         run: npx cdk deploy --app cdk.out --all --require-approval never --concurrency 4 --outputs-file outputs.json
@@ -168,4 +276,9 @@ jobs:
       # Production is already live by now: a failure here fails the run loudly (no automatic
       # rollback, #100; what to do then: docs/ROLLBACK.md). --sha warns about stacks on another commit (#105).
       - name: Smoke check
-        run: node tools/smoke/smoke.mjs outputs.json --env production --sha "$GITHUB_SHA"
+        env:
+          MODE: ${{ needs.changes.outputs.mode }}
+        run: |
+          portal=()
+          if [[ "$MODE" == app ]]; then portal=(--portal "$(node -p "'https://auth.' + require('./stacks.config.json').environments.production.rootDomain")"); fi
+          node tools/smoke/smoke.mjs outputs.json --env production --sha "$GITHUB_SHA" "${portal[@]}"

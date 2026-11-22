@@ -102,6 +102,63 @@ describe('smoke check (#100)', () => {
     expect(noHello.at(-1).name).toBe('pantry sign-in redirects to the portal');
   });
 
+  describe('after an app-only deploy (--portal)', () => {
+    const appOnly = { 'stacks-test-app-pantry': { SiteURL: 'https://pantry.test.example' } };
+    const runAppOnly = (routes: Record<string, Reply | Reply[]>) => {
+      const s = stub(routes);
+      return runChecks(plan(targetsFromOutputs(appOnly, { portal: `${portal}/` }), { appsOnly: true }), { fetch: s.fetch, sleep: async () => {}, delayMs: 0 });
+    };
+
+    it('checks the given portal, the one app and its sign-in', async () => {
+      expect(targetsFromOutputs(appOnly, { portal: `${portal}/` })).toEqual({ portal, apps: [{ slug: 'pantry', url: 'https://pantry.test.example' }] });
+      const results = await runAppOnly({
+        ...green(),
+        'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` },
+      });
+      expect(results.map((r: any) => [r.name, r.ok])).toEqual([
+        ['portal /api/health', true],
+        ['pantry /api/health', true],
+        ['portal /api/public/catalog', true],
+        ['pantry sign-in redirects to the portal', true],
+      ]);
+    });
+
+    it('fails a catalog without the one app (archived and broken look the same), or an empty one', async () => {
+      const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
+      const without = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
+      expect(without[2]).toMatchObject({ ok: false, error: expect.stringContaining("doesn't list pantry") });
+      const empty = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{}, null] } } });
+      expect(empty[2]).toMatchObject({ ok: false });
+    });
+
+    it('doesn\'t warn that the portal is on another commit (it wasn\'t deployed), but still checks the app', async () => {
+      const sha = 'a'.repeat(40);
+      const s = stub({
+        ...green(),
+        [`${portal}/api/health`]: healthy({ build: 'b'.repeat(40) }),
+        'https://pantry.test.example/api/health': healthy({ build: 'c'.repeat(40) }),
+        'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` },
+      });
+      const results = await runChecks(plan(targetsFromOutputs(appOnly, { portal }), { appsOnly: true, sha }), { fetch: s.fetch, sleep: async () => {}, delayMs: 0 });
+      expect(results[0]).toMatchObject({ ok: true, warnings: [] });
+      expect(results[1].warnings[0]).toMatch(/mixed versions/);
+    });
+
+    it('fails the one app\'s refused sign-in', async () => {
+      const refused = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` }, [`${portal}/authorize?*`]: { status: 404 } };
+      const r = await runAppOnly({ ...green(), ...refused });
+      expect(r[3]).toMatchObject({ ok: false });
+    });
+
+    it('needs exactly one app in the outputs', () => {
+      expect(() => plan(targetsFromOutputs({}, { portal }), { appsOnly: true })).toThrow(/one app in its outputs, found 0/);
+    });
+
+    it('still needs a portal: no PortalURL and no --portal fails', () => {
+      expect(() => targetsFromOutputs(appOnly)).toThrow(/--portal/);
+    });
+  });
+
   it('escapes workflow command messages', () => {
     expect(escapeCommand('next=%2Fa\nline')).toBe('next=%252Fa%0Aline');
   });

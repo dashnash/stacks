@@ -63,3 +63,59 @@ function classifyPaths(branch, changed) {
     message: `Platform PR (${platform.length} file(s) outside apps/${apps.length ? `, plus apps: ${apps.join(', ')}` : ''}): needs review from the code owners (CODEOWNERS).`,
   };
 }
+
+/**
+ * The lockfile entries (`packages` keys) that differ between two parsed package-lock.json files.
+ * An app's own dependencies live under `apps/<slug>/node_modules/`; anything else (a hoisted
+ * `node_modules/…` entry, another workspace) can reach the platform's or another app's bundle.
+ */
+export function lockfileChanges(before, after) {
+  const a = before?.packages ?? {};
+  const b = after?.packages ?? {};
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).sort();
+}
+
+/**
+ * Files that never reach a stack: docs/, package READMEs, and Markdown outside the folders that
+ * build or ship code: an app's folder (its own files are its deploy), templates/ (tools/new-app
+ * copies those into new apps), platform/ (the portal serves its public/) and packages/ (a bundle
+ * may import one).
+ */
+export const isDocsFile = (f) =>
+  f.startsWith('docs/') || /^packages\/(modules\/)?[^/]+\/README\.md$/.test(f) || (f.endsWith('.md') && !/^(apps\/[^/]+|templates|platform|packages)\//.test(f));
+
+const SLUG = /^[a-z][a-z0-9-]*[a-z0-9]$/;
+
+/**
+ * What a push to main has to deploy (deploy.yml's `changes` job, spec: Environments and CI/CD), from
+ * the files changed since the last green Deploy run. Errs towards `full` whenever in doubt.
+ *
+ * - `docs`: only docs/ and Markdown outside apps (or nothing): nothing to deploy.
+ * - `app`: only apps/<slug>/ (and package-lock.json), for an app that exists on both sides and
+ *   isn't on hold anywhere: just that app's stack, in staging then production.
+ * - `full`: anything else: the platform and every app. That includes a new or removed app (the
+ *   platform's dashboard lists every app), two apps, and an app on hold (the full deploy leaves it out).
+ *
+ * `appsBefore` / `appsAfter`: the app slugs (folders with app.manifest.json) at the baseline and at
+ * the pushed commit. `heldApps`: every environment's holdApps. `lockfile`: the changed lockfile
+ * entries (lockfileChanges), when package-lock.json changed; an app deploy allows only that app's
+ * own (`apps/<slug>` and `apps/<slug>/node_modules/…`). Returns { mode, app?, reason }.
+ */
+export function classifyDeploy(changed, { appsBefore = [], appsAfter = [], heldApps = [], lockfile } = {}) {
+  const files = changed.filter(Boolean);
+  const code = files.filter((f) => !isDocsFile(f));
+  if (!code.length) return { mode: 'docs', reason: files.length ? `only docs changed (${files.length} file(s))` : 'nothing changed' };
+  const paths = classifyPaths(undefined, code);
+  if (paths.kind === 'none') return { mode: 'full', reason: 'only package-lock.json changed' };
+  if (paths.kind !== 'app' || !paths.ok) return { mode: 'full', reason: paths.kind === 'app' ? `${paths.apps.length} apps changed (${paths.apps.join(', ')})` : `${code.filter((f) => !f.startsWith('apps/') && f !== 'package-lock.json').length} file(s) outside apps/ changed` };
+  const [app] = paths.apps;
+  if (!SLUG.test(app)) return { mode: 'full', reason: `apps/${app} isn't an app folder` };
+  if (!appsAfter.includes(app)) return { mode: 'full', reason: `apps/${app} was removed (the platform lists every app)` };
+  if (!appsBefore.includes(app)) return { mode: 'full', reason: `apps/${app} is new (the platform lists every app)` };
+  if (heldApps.includes(app)) return { mode: 'full', reason: `${app} is on hold in an environment (the full deploy leaves it out there)` };
+  if (code.includes('package-lock.json')) {
+    const outside = (lockfile ?? ['(unknown)']).filter((k) => k !== `apps/${app}` && !k.startsWith(`apps/${app}/node_modules/`));
+    if (outside.length) return { mode: 'full', reason: `package-lock.json changes beyond ${app}'s own dependencies (${outside.slice(0, 3).join(', ')}${outside.length > 3 ? ', …' : ''})` };
+  }
+  return { mode: 'app', app, reason: `only apps/${app}/ changed` };
+}

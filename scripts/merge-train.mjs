@@ -7,7 +7,7 @@
  *   node scripts/merge-train.mjs wait-approval <pr>   until the owner approves the current head
  *   node scripts/merge-train.mjs wait-deploy <sha>    until the Deploy run for a merge commit ends
  *
- * Exit codes: 0 approved / deploy green · 2 changes requested · 3 on hold · 4 PR closed or merged ·
+ * Exit codes: 0 approved / deploy green (or nothing to deploy) · 2 changes requested · 3 on hold · 4 PR closed or merged ·
  * 5 deploy failed or cancelled · 6 gave up waiting (re-arm) · 1 error.
  *
  * Waking up is all it does: the session still re-checks every gate in the skill right before it
@@ -50,14 +50,24 @@ export function approvalVerdict(pr, reviews, owner) {
 /** The `Deploy` run (deploy.yml, push to main) for a commit, from a runs listing. */
 export const deployRunFor = (runs, sha) => runs.find((r) => r.head_sha === sha);
 
-/** What a finished Deploy run means: `{ code, line }`. `jobs` from the run's jobs listing. */
+/** The `changes` job's step that runs only when a push has nothing to deploy (docs only, deploy.yml). */
+export const NOTHING_TO_DEPLOY = /^Nothing to deploy/;
+
+/**
+ * What a finished Deploy run means: `{ code, line }`. `jobs` from the run's jobs listing. Green
+ * needs a successful run and every smoke step green, or, with no smoke step at all, the `changes`
+ * job's "Nothing to deploy" step succeeded (a docs-only push: every deploy job skipped on purpose).
+ */
 export function deployVerdict(run, jobs) {
-  const smokes = jobs.flatMap((j) => (j.steps ?? []).filter((s) => /smoke/i.test(s.name)).map((s) => `${j.name} ${s.conclusion}`));
+  const steps = jobs.flatMap((j) => (j.steps ?? []).map((s) => ({ job: j.name, ...s })));
+  const smokes = steps.filter((s) => /smoke/i.test(s.name)).map((s) => `${s.job} ${s.conclusion}`);
+  const nothing = !smokes.length && steps.some((s) => NOTHING_TO_DEPLOY.test(s.name) && s.conclusion === 'success');
   const smokesOk = smokes.length > 0 && smokes.every((s) => s.endsWith(' success'));
-  const ok = run.conclusion === 'success' && smokesOk;
+  const ok = run.conclusion === 'success' && (smokesOk || nothing);
+  const detail = smokes.length ? ` (smoke: ${smokes.join(', ')})` : nothing ? ' (nothing to deploy: docs only)' : ' (no smoke steps found)';
   return {
     code: ok ? EXIT.ok : EXIT.deployFailed,
-    line: `Deploy ${run.id} for ${run.head_sha.slice(0, 7)}: ${run.conclusion}${smokes.length ? ` (smoke: ${smokes.join(', ')})` : ' (no smoke steps found)'} ${run.html_url ?? ''}`.trim(),
+    line: `Deploy ${run.id} for ${run.head_sha.slice(0, 7)}: ${run.conclusion}${detail} ${run.html_url ?? ''}`.trim(),
   };
 }
 

@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error: plain .mjs script, no types
+import { NOTHING_TO_DEPLOY } from '../../../scripts/merge-train.mjs';
 
 // #93: the repo is public, so `main` is gated by the ruleset in .github/rulesets/main.json
 // (applied by the owner with `gh api -X POST repos/dashnash/stacks/rulesets --input …`), and
@@ -139,7 +141,48 @@ describe('workflows on a public repo', () => {
   });
 
   it('finds every job (the parser sanity check)', () => {
-    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['ci-drift', 'zones', 'build', 'staging', 'production']);
+    expect(jobs(workflows.find((w) => w.file === 'deploy.yml')!.text).map((j) => j.id)).toEqual(['changes', 'ci-drift', 'zones', 'build', 'staging', 'production']);
+  });
+});
+
+// #47: Deploy deploys what changed, but always runs (the merge train waits for a run per merge).
+describe('Deploy path filtering (#47)', () => {
+  const text = workflows.find((w) => w.file === 'deploy.yml')!.text;
+  const deploy = jobs(text);
+  const on = text.slice(0, text.indexOf('\njobs:\n'));
+
+  it('runs on every push to main: no paths filter', () => {
+    expect(on).toMatch(/^ {2}push:\n {4}branches: \[main\]$/m);
+    expect(on.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n')).not.toMatch(/paths/);
+  });
+
+  it('gates every job on the changes job', () => {
+    for (const j of deploy.filter((x) => x.id !== 'changes')) {
+      expect(j.body.match(/^ {4}needs:.*$/m)?.[0] ?? '', j.id).toMatch(/\bchanges\b/);
+    }
+    expect(deploy.find((j) => j.id === 'changes')!.body).toMatch(/run: node scripts\/deploy-changes\.mjs$/m);
+  });
+
+  it('names the docs-only step the way the merge train reads it', () => {
+    const step = deploy.find((j) => j.id === 'changes')!.body.match(/- name: (Nothing to deploy.*)$/m)?.[1] ?? '';
+    expect(step).toMatch(NOTHING_TO_DEPLOY);
+  });
+
+  it('deploys the platform only in a full run, and points smoke at the live portal otherwise', () => {
+    for (const env of ['staging', 'production']) {
+      const body = deploy.find((j) => j.id === env)!.body;
+      // Anything but a one-app run (even an unexpected mode) deploys the platform first.
+      expect(body, env).toMatch(/- name: Platform first.*\n {8}if: needs\.changes\.outputs\.mode != 'app'\n/);
+      expect(body, env).toMatch(/--portal/);
+    }
+  });
+
+  it('leaves the main tests to Deploy: CI runs on pull requests only (WF-03)', () => {
+    const ci = workflows.find((w) => w.file === 'ci.yml')!.text;
+    const ciOn = ci.slice(0, ci.indexOf('\njobs:\n')).split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    expect(ciOn).toMatch(/^on:\n {2}pull_request:$/m);
+    expect(ciOn).not.toMatch(/push:/);
+    expect(deploy.find((j) => j.id === 'build')!.body).toMatch(/npm test/);
   });
 });
 

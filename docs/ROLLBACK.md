@@ -2,7 +2,10 @@
 
 Every merge to `main` runs **Deploy** (`.github/workflows/deploy.yml`): staging (platform, then
 every app with `cdk deploy --all --concurrency 4`), a smoke check, then production the same way and
-the same smoke check. CloudFormation rolls back **each stack on its own**, so a failed run can leave
+the same smoke check. A merge that changed only one app deploys only that app's stack, and a
+docs-only merge deploys nothing (the `changes` job says which in the run summary). Either way, the
+run after a failed one deploys everything, so whatever a failed run left behind is redeployed. To redeploy everything regardless, run Deploy by hand on `main` (Actions → Deploy → Run
+workflow), but not while a merge's run is queued: it would replace it. "Re-run failed jobs" keeps a run's mode; "Re-run all jobs" works it out again (for an older run usually full, at that run's old commit). CloudFormation rolls back **each stack on its own**, so a failed run can leave
 the platform and some apps on the new commit and the rest on the old one. That is safe by design
 (the Platform API stays compatible with the previous SDK for one release: `docs/PLATFORM_SPEC.md`,
 "Compatibility across a deploy"), but it shouldn't stay that way. This page is what to do.
@@ -49,7 +52,8 @@ ships. Failed jobs re-run with the jobs after them, so a re-run `staging` contin
 CloudFormation skips the stacks that already succeeded. Deploy runs one at a time (`concurrency:
 deploy-main`), so a re-run waits while another run is in progress.
 
-After 7 days the artifacts are gone; revert, or merge a no-op change, instead.
+After 7 days the artifacts are gone; revert, or merge a no-op change, instead (even a docs-only one
+redeploys everything after a failed run).
 
 ## 4. Revert (roll forward to the old code)
 
@@ -58,7 +62,10 @@ After 7 days the artifacts are gone; revert, or merge a no-op change, instead.
 2. It is an ordinary PR: CI must pass, and platform paths need your code-owner review (and the agent
    review gate, #111, for `packages/infra/`, `.github/` or `platform/api/`).
 3. Merging it deploys the old code to staging and production through the normal Deploy run. The
-   smoke check's table should show one commit for every stack.
+   smoke check's table should show one commit for every stack it deployed. A revert of a one-app
+   change whose run succeeded deploys only that app (after a failed run, the revert's run deploys
+   everything): the table lists the portal and that app, and the portal stays on
+   the commit of the last full deploy (no mixed-versions warning for it).
 
 Never deploy an old artifact or run `cdk deploy` by hand; only CI deploys, and `.claude/settings.json`
 stops sessions from trying (#107).

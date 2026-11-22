@@ -50,6 +50,29 @@ describe('merge train waiters', () => {
       expect(deployVerdict(run('failure'), jobs())).toMatchObject({ code: EXIT.deployFailed });
       expect(deployVerdict(run('cancelled'), [])).toMatchObject({ code: EXIT.deployFailed, line: expect.stringContaining('no smoke steps found') });
     });
+
+    // deploy.yml's `changes` job: a docs-only push skips every deploy job on purpose.
+    const docsOnly = (nothing = 'success') => [
+      { name: 'changes', steps: [{ name: 'Classify', conclusion: 'success' }, { name: 'Nothing to deploy (docs only)', conclusion: nothing }] },
+      { name: 'zones', conclusion: 'skipped', steps: [] },
+      { name: 'build', conclusion: 'skipped', steps: [] },
+      { name: 'staging', conclusion: 'skipped', steps: [] },
+      { name: 'production', conclusion: 'skipped', steps: [] },
+    ];
+    it('is green for a docs-only run that deployed nothing on purpose', () => {
+      expect(deployVerdict(run('success'), docsOnly())).toEqual({ code: EXIT.ok, line: 'Deploy 9 for aaaaaaa: success (nothing to deploy: docs only) https://x/9' });
+    });
+
+    it('is red when the deploy jobs were skipped without the "Nothing to deploy" step', () => {
+      expect(deployVerdict(run('success'), docsOnly('skipped'))).toMatchObject({ code: EXIT.deployFailed, line: expect.stringContaining('no smoke steps found') });
+      expect(deployVerdict(run('failure'), docsOnly())).toMatchObject({ code: EXIT.deployFailed });
+    });
+
+    it('reads a one-app run like any other: both smoke checks must be green', () => {
+      const appRun = [{ name: 'changes', steps: [{ name: 'Classify', conclusion: 'success' }, { name: 'Nothing to deploy (docs only)', conclusion: 'skipped' }] }, ...jobs()];
+      expect(deployVerdict(run('success'), appRun)).toMatchObject({ code: EXIT.ok, line: expect.stringContaining('smoke: staging success, production success') });
+      expect(deployVerdict(run('success'), [appRun[0]!, ...jobs('skipped')])).toMatchObject({ code: EXIT.deployFailed });
+    });
   });
 
   // A fake GitHub: `routes` maps a path prefix to a list of bodies, one per call (the last repeats).

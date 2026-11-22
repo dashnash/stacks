@@ -1,13 +1,14 @@
 name: CI
 
+# Pull requests only: `check` is a required status of the main ruleset. After a merge, Deploy runs the
+# tests for what the merge changed (all of them in a full deploy; #47 WF-03: they used to run twice
+# per merge, here and in Deploy).
 on:
   pull_request:
-  push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ permissions:
 jobs:
   check:
     # Public repo: PRs from forks never run on the self-hosted runner (#93).
-    runs-on: ${{ (vars.LINUX_RUNNER && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.LINUX_RUNNER && github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -39,7 +40,6 @@ jobs:
       - name: Actions pinned to commit SHAs (#99)
         run: node scripts/check-action-pins.mjs
       - name: PR paths (app PRs change one app; anything else is platform work)
-        if: github.event_name == 'pull_request'
         env:
           HEAD_REF: ${{ github.head_ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
