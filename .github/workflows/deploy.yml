@@ -134,6 +134,12 @@ jobs:
       - run: npm ci --ignore-scripts
       # Typecheck and the import rule too: PR branches needn't be up to date (the ruleset isn't
       # strict), so two green PRs can still break main together; this is where that shows.
+      # CI runs on PRs only: in a full deploy, lint the workflows of the merged main too.
+      - name: Lint workflows
+        if: env.MODE == 'full'
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
       - name: Typecheck, repo checks, test
         run: |
           node scripts/check-imports.mjs

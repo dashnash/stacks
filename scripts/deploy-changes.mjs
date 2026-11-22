@@ -26,9 +26,10 @@ const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', st
 /**
  * From the newest Deploy runs on main, other than this one: `base`, the head commit of the run that
  * last **finished** green (`updated_at`), and `unsettled`, the commits of every completed run in the
- * page that didn't succeed (decide keeps those after `base`). If that green run is a re-run of a
- * run older than another one in the page, it put an old commit back over newer ones: no baseline
- * (`reason` says why), so the next run deploys everything. Re-runs of runs older than the page
+ * page that didn't succeed (decide keeps those after `base`). If that green run, or any run that
+ * finished after it, is a re-run of a run older than another one in the page, it may have put an
+ * old commit back over newer ones (even if it then failed): no baseline (`reason` says why), so the
+ * next run deploys everything. (A re-run that finished before `base` already made `base`'s run full.) Re-runs of runs older than the page
  * aren't seen (the spec notes it).
  */
 export function baselineFrom(runs, runId) {
@@ -36,8 +37,9 @@ export function baselineFrom(runs, runId) {
   const unsettled = done.filter((r) => r.conclusion !== 'success').map((r) => r.head_sha);
   const green = done.filter((r) => r.conclusion === 'success').sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))[0];
   if (!green) return { base: undefined, unsettled };
-  const newer = runs.some((r) => String(r.id) !== String(runId) && r.id !== green.id && String(r.created_at ?? '') > String(green.created_at ?? ''));
-  if ((green.run_attempt ?? 1) > 1 && newer) return { base: undefined, unsettled, reason: `the last green run re-ran an older run (${String(green.head_sha).slice(0, 7)}), deploying its old commit` };
+  const olderRerun = (r) => (r.run_attempt ?? 1) > 1 && runs.some((o) => String(o.id) !== String(runId) && o.id !== r.id && String(o.created_at ?? '') > String(r.created_at ?? ''));
+  const back = done.find((r) => olderRerun(r) && (r.id === green.id || String(r.updated_at ?? '') > String(green.updated_at ?? '')));
+  if (back) return { base: undefined, unsettled, reason: `a re-run of an older Deploy run (${String(back.head_sha).slice(0, 7)}, ${back.conclusion}) may have put its old commit back` };
   return { base: green.head_sha, unsettled };
 }
 

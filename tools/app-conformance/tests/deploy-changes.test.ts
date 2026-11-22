@@ -150,7 +150,12 @@ describe('deploy-changes against a git history', () => {
     expect(baselineFrom([run(5, 'older', 'failure')], 9)).toEqual({ base: undefined, unsettled: ['older'] });
     // An old run re-run green after a newer one put its old commit back over newer ones: no baseline.
     const rerun = { ...run(7, 'c1', 'success', 10), run_attempt: 2, created_at: '2026-11-22T07:00:00Z' };
-    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, rerun], 9)).toMatchObject({ base: undefined, reason: expect.stringContaining('re-ran an older run') });
+    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, rerun], 9)).toMatchObject({ base: undefined, reason: expect.stringContaining('re-run of an older Deploy run (c1, success)') });
+    // The same when the re-run of the older run failed after the green one (it may have deployed part).
+    const failedRerun = { ...run(7, 'c1', 'failure', 10), run_attempt: 2, created_at: '2026-11-22T07:00:00Z' };
+    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, failedRerun], 9)).toMatchObject({ base: undefined, reason: expect.stringContaining('c1, failure') });
+    // ...but not when it finished before the green run (that run was already full because of it).
+    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, { ...failedRerun, updated_at: '2026-11-22T07:30:00Z' }], 9)).toMatchObject({ base: 'c2' });
     // Re-running the newest run's failed jobs (a flake) is an ordinary baseline.
     expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), run_attempt: 2, created_at: '2026-11-22T08:00:00Z' }, { ...run(7, 'c1', 'success', 7), created_at: '2026-11-22T07:00:00Z' }], 9)).toEqual({ base: 'c2', unsettled: [] });
     // Failed runs count whenever they finished; decide drops those at or before the baseline.

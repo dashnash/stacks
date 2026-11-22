@@ -196,7 +196,9 @@ Merge to `main` (or re-run the **Deploy** workflow). It deploys `stacks-test-pla
 `stacks-prod-platform`, then every production app. The first platform deploy waits for the
 certificate's DNS validation (a few minutes). Then open `https://auth.<rootDomain>`.
 
-Each merge to `main` deploys all of staging first (platform and every app), then production.
+Each merge to `main` deploys what it changed (#47): nothing for docs only, just that app for a
+one-app change, else all of staging first (platform and every app), then production. The first
+Deploy run (no earlier green one) always deploys everything.
 
 ## 6. Try a branch on staging
 
@@ -206,7 +208,8 @@ To try an app from a branch before merging:
 gh workflow run deploy-test.yml -f app=hello -f ref=<branch>
 ```
 
-The run summary prints the staging URL. The next merge to `main` puts staging back to `main`.
+The run summary prints the staging URL. The next merge to `main` that deploys that app (a change
+to it, or a full deploy) puts it back to `main`; docs-only and other-app merges leave it.
 
 ## 7. App secrets (API keys an app needs)
 
