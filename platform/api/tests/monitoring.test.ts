@@ -115,6 +115,8 @@ describe('GET /admin/monitoring/metrics', () => {
         { id: 'unhandled', label: 'club', timestamps: [t], values: [1] },
         { id: 'lambdaErrors', label: 'stacks-prod-app-club-ApiHandler1A2B errors', timestamps: [t], values: [0] },
         { id: 'lambdaP95', label: 'stacks-prod-platform-ApiHandler9Z', timestamps: [t], values: [120] },
+        // Staging's function matched by the same SEARCH words (`stacks`, `prod` in a slug): left out.
+        { id: 'lambdaP95', label: 'stacks-test-app-prod-tools-ApiHandler1', timestamps: [t], values: [99] },
         { id: 'tRequests', label: 'club', timestamps: [t], values: [10] },
         { id: 'tServerErrors', label: 'club', timestamps: [t], values: [2] },
         { id: 'tUnhandled', label: 'club', timestamps: [t], values: [1] },
@@ -138,7 +140,7 @@ describe('GET /admin/monitoring/metrics', () => {
     expect(g.requests.series).toEqual([{ label: 'club', app: 'club', points: [[t, 4], [t + 300_000, 6]] }]);
     expect(g.serverErrors.series).toEqual([{ label: 'club unhandled', app: 'club', points: [[t, 1]] }]);
     expect(g.lambdaErrors.series[0].app).toBe('club');
-    expect(g.lambdaP95.series[0].app).toBe('platform');
+    expect(g.lambdaP95.series.map((s: { app: string }) => s.app)).toEqual(['platform']);
   });
 
   it('answers 424 (not a 5xx, which would count as a platform server error) when CloudWatch fails', async () => {
@@ -269,6 +271,15 @@ describe('POST /admin/monitoring/query', () => {
     expect(res.body.limited).toBe(true);
     const few = setup({ rows: rows.slice(0, 3) });
     expect((await few.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'userTrail', userId: 'u_abc123' } })).body.limited).toBe(false);
+  });
+
+  it('stops the query when its first look fails, since the page never gets its id', async () => {
+    const h = setup();
+    h.monitor.getQueryResults = async () => {
+      throw Object.assign(new Error('slow down'), { name: 'ThrottlingException' });
+    };
+    expect((await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } })).status).toBe(424);
+    expect(h.calls.stopped).toEqual([QID]);
   });
 
   it('answers empty when every log group it knew has gone', async () => {

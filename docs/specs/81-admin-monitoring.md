@@ -187,8 +187,8 @@ code only asks for its own. Logs, which hold user ids, are scoped.
 ## Docs
 
 - `docs/PLATFORM_SPEC.md`: decisions log row for #81 (this reverses #75's "No portal page");
-  Monitoring section gains a "Portal page" bullet; Access model rule 6 mentions monitoring;
-  `@stacks/manifest` row mentions the queries module.
+  Monitoring section gains a "Portal page" bullet (which names `@stacks/manifest/monitoring`); Access
+  model rule 6 mentions monitoring.
 - `docs/DEBUGGING.md`: "Where to look" starts with the portal page; the console stays as the
   fallback.
 - `docs/OWNER_STEPS.md` and `docs/specs/README.md`: the owner step below.

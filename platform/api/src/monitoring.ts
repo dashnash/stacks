@@ -17,7 +17,10 @@ export const MONITORING_RANGES: Record<MonitoringRange, { ms: number; periodSeco
   '30d': { ms: 30 * 86_400_000, periodSeconds: 10_800 },
 };
 
-/** API log retention (set by the app stacks): logs older than this are gone, so queries never ask for them. */
+/**
+ * The apps' API log retention: queries never ask for older logs. (The platform's own group keeps 3
+ * months on production; past the apps' retention the console still has those.)
+ */
 export const logRetentionDays = apiLogRetentionDays;
 
 export interface MetricQuery {
@@ -151,7 +154,7 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
   const byId = (id: string) => results.filter((r) => r.id === id);
 
   const known = ['platform', ...slugs];
-  const appFor = (graphId: string, label: string) => (GRAPHS.findIndex((g) => g.id === graphId) < 4 ? label : appOfResource(tag, label, slugs));
+  const appFor = (graphId: string, label: string) => (GRAPHS.findIndex((g) => g.id === graphId) < 4 ? label : appOfResource(tag, label.split(' ')[0]!, slugs));
 
   const graphs = GRAPHS.map((g) => ({
     id: g.id,
@@ -159,7 +162,8 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
     unit: g.unit,
     series: g.queries.flatMap((q) =>
       byId(q.id)
-        .filter((r) => r.timestamps.length)
+        // The SEARCH matches the words `stacks` and `<tag>` anywhere; keep this environment's names only.
+        .filter((r) => r.timestamps.length && (GRAPHS.findIndex((x) => x.id === g.id) < 4 || r.label.startsWith(`stacks-${tag}-`)))
         .map((r) => {
           // Server errors draw two lines per app; name the unhandled one.
           const label = q.id === 'unhandled' ? `${r.label} unhandled` : r.label;
@@ -223,11 +227,13 @@ function rowOut(raw: Record<string, string>): Record<string, string> {
 
 async function withPeople(deps: PlatformDeps, rows: Record<string, string>[]) {
   const people: Record<string, { name: string; email: string }> = {};
-  for (const id of new Set(rows.map((r) => r.userId).filter((v): v is string => !!v && LOG_USER_ID.test(v)))) {
-    // The stored record, not the merge survivor: a merged-away id is shown as the id only.
-    const u = await getUserRecord(deps, id).catch(() => null);
-    if (u && !u.mergedInto) people[id] = { name: shownName(u), email: u.email };
-  }
+  const ids = [...new Set(rows.map((r) => r.userId).filter((v): v is string => !!v && LOG_USER_ID.test(v)))];
+  // In parallel: a serial read per person would show up in the platform's own request durations.
+  const users = await Promise.all(ids.map((id) => getUserRecord(deps, id).catch(() => null)));
+  // The stored record, not the merge survivor: a merged-away id is shown as the id only.
+  users.forEach((u, i) => {
+    if (u && !u.mergedInto) people[ids[i]!] = { name: shownName(u), email: u.email };
+  });
   return people;
 }
 
@@ -274,14 +280,19 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   const logGroupNames = await monitor.listApiLogGroups().catch(upstream);
   const queryId = logGroupNames.length ? await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream) : null;
   if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] });
-  const now = deps.now().getTime();
-  await deps.store.put({ ...startedKey(queryId), query, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
-
-  const deadline = Date.now() + (monitor.waitMs ?? 0);
-  for (;;) {
-    const res = await monitor.getQueryResults(queryId).catch(upstream);
-    if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return answer(deps, queryId, query, res);
-    await new Promise((r) => setTimeout(r, 500));
+  try {
+    const now = deps.now().getTime();
+    await deps.store.put({ ...startedKey(queryId), query, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
+    const deadline = Date.now() + (monitor.waitMs ?? 0);
+    for (;;) {
+      const res = await monitor.getQueryResults(queryId).catch(upstream);
+      if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return await answer(deps, queryId, query, res);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  } catch (err) {
+    // The page never gets this id, so nothing else could stop the query.
+    await monitor.stopQuery(queryId).catch(() => undefined);
+    throw err;
   }
 }
 

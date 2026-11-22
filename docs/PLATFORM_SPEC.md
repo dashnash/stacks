@@ -348,13 +348,15 @@ emails the first production platform admin at 80% of actual and 100% of forecast
   errors, Browser errors and Slowest requests tables, Find by ref, One user's trail and, with an app
   selected, One app's requests; ranges 1h/24h/7d/30d, Refresh plus an optional 60 s auto refresh.
   The Platform API reads CloudWatch (`GET /api/admin/monitoring/metrics`, `POST
-  /api/admin/monitoring/query` + `GET …/query/:id`): `GetMetricData` with the same `SEARCH`
+  /api/admin/monitoring/query`, then `GET …/query/:id` to poll and `DELETE …/query/:id` to stop a
+  query nobody waits for; poll and stop reach only queries this portal started, recorded for an hour
+  as `MONQUERY#<id>`): `GetMetricData` with the same `SEARCH`
   expressions, and Logs Insights over the environment's `/stacks/<tag>/*/api` log groups found with
   `DescribeLogGroups` (so a new app shows up with no platform deploy). The client sends a saved-query
   name and a validated ref (8 characters of the request id), user id or app slug, never query text; queries never
   reach past the log retention. User ids in the answer are resolved to names and emails from the
   platform table at read time; nothing new is logged. IAM: `logs:StartQuery` only on
-  `/stacks/<tag>/*`; `GetMetricData` has no resource scoping, so staging could read production's
+  `/stacks/<tag>/*` (`GetQueryResults`, `StopQuery`, `DescribeLogGroups` on `*`); `GetMetricData` has no resource scoping, so staging could read production's
   metric numbers (counts and durations only). Names and queries shared with the infra live in
   `@stacks/manifest/monitoring`.
 - **No tracing** (X-Ray) and **no alerts** (alarms, SNS, push, email). How to use all of it:

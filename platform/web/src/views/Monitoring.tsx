@@ -166,7 +166,7 @@ function MonitoringPage() {
       {metrics && (
         <p className="small muted mon-note">
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
-            ? `Tables cover the last ${metrics.logRetentionDays} days: logs here are kept that long. Graphs go back further.`
+            ? `Tables cover the last ${metrics.logRetentionDays} days: apps keep their logs that long. Graphs go back further; the platform's older logs are in CloudWatch.`
             : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
         </p>
       )}
@@ -268,7 +268,8 @@ export function shortResource(label: string, env: string): string {
   const [name = '', ...rest] = label.split(' ');
   const short = name
     .replace(new RegExp(`^stacks-${env}-(app-)?`), '')
-    .replace(/-[A-Za-z0-9]{10,}$/, '')
+    // CloudFormation's random suffix (12-13 characters), only after a logical id.
+    .replace(/(-[A-Za-z][A-Za-z0-9]*)-[A-Za-z0-9]{12,13}$/, '$1')
     .replace(/([A-Za-z])[0-9A-F]{8}$/, '$1');
   return [short, ...rest].join(' ');
 }
@@ -460,7 +461,7 @@ function LookupCard({ lookup, onLookup, range, retentionDays, panelRef, ...links
         </form>
       </div>
       {invalid && <p className="error">{invalid}</p>}
-      <div ref={panelRef}>{lookup && !invalid && <LookupResult key={`${lookup.kind}:${lookup.kind === 'ref' ? lookup.ref : lookup.userId}:${range}:${lookup.n}`} lookup={lookup} range={range} retentionDays={retentionDays} {...links} />}</div>
+      <div ref={panelRef}>{lookup && <LookupResult key={`${lookup.kind}:${lookup.kind === 'ref' ? lookup.ref : lookup.userId}:${range}:${lookup.n}`} lookup={lookup} range={range} retentionDays={retentionDays} {...links} />}</div>
     </div>
   );
 }
@@ -470,7 +471,7 @@ function LookupResult({ lookup, range, retentionDays, ...links }: { lookup: Look
   const { answer, error, loading } = useQuery(request, [lookup.kind, lookup.kind === 'ref' ? lookup.ref : lookup.userId, range, lookup.n]);
   // The API never searches past the log retention, so neither does the message.
   const capped = retentionDays !== undefined && RANGE_MS[range] >= retentionDays * 86_400_000;
-  const span = capped ? `${retentionDays} days (all the logs kept here)` : range;
+  const span = capped ? `${retentionDays} days (how long apps keep logs)` : range;
   let heading: ReactNode;
   if (lookup.kind === 'ref') heading = <>Ref <code>{lookup.ref}</code></>;
   else {

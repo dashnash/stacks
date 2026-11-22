@@ -203,6 +203,8 @@ describe('helpers', () => {
     expect(shortResource('stacks-prod-app-hello-ApiHandler5D2B1F4C-AbCdEf123456 errors', 'prod')).toBe('hello-ApiHandler errors');
     expect(shortResource('stacks-prod-platform-Table8A1B2C3D-1XYZ9ABCDEF0 PutItem', 'prod')).toBe('platform-Table PutItem');
     expect(shortResource('something-else', 'prod')).toBe('something-else');
+    // No random suffix: the logical id stays.
+    expect(shortResource('stacks-demo-platform-ApiHandler5D2B', 'demo')).toBe('platform-ApiHandler5D2B');
   });
 
   it('marks a lone point (one error in the range) with a dot, which a path alone would not draw', () => {
