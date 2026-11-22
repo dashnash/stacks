@@ -76,7 +76,8 @@ const upstream = (err: unknown): never => {
 };
 
 function monitorOf(deps: PlatformDeps): { monitor: Monitor; tag: string } {
-  if (!deps.monitor || !deps.config.envTag) throw new HttpError(503, 'Monitoring is not set up here', 'UNAVAILABLE');
+  // 404, not 503: a 5xx request line would count as a platform server error (see `upstream`).
+  if (!deps.monitor || !deps.config.envTag) throw new HttpError(404, 'Monitoring is not set up here', 'UNAVAILABLE');
   return { monitor: deps.monitor, tag: deps.config.envTag };
 }
 
@@ -242,7 +243,8 @@ async function withPeople(deps: PlatformDeps, rows: Record<string, string>[]) {
 
 /** Queries this portal started, so polling and stopping only reach those (1 hour). */
 const startedKey = (queryId: string) => ({ PK: `MONQUERY#${queryId}`, SK: 'MONQUERY' });
-type StartedQuery = { query: SavedQueryId; notAfter: number; searchedDays?: number };
+type StartedQuery = { query: SavedQueryId; notAfter: number; searchedDays?: number; capped?: boolean };
+type Searched = { searchedDays?: number; capped?: boolean };
 
 async function startedQuery(deps: PlatformDeps, queryId: string): Promise<StartedQuery> {
   if (!QUERY_ID.test(queryId)) throw badRequest('Not a query id');
@@ -254,12 +256,12 @@ async function startedQuery(deps: PlatformDeps, queryId: string): Promise<Starte
 
 const limitOf = (id: SavedQueryId) => Number(/^limit (\d+)$/.exec(SAVED_QUERIES[id].query.at(-1) ?? '')?.[1] ?? 0);
 
-async function answer(deps: PlatformDeps, queryId: string | null, query: SavedQueryId, res: { status: QueryStatus; rows: Record<string, string>[] }, searchedDays?: number) {
+async function answer(deps: PlatformDeps, queryId: string | null, query: SavedQueryId, res: { status: QueryStatus; rows: Record<string, string>[] }, searched: Searched = {}) {
   if (res.status !== 'Complete') return { queryId, status: res.status };
   let rows = res.rows.map(rowOut);
   // The trail is fetched newest first so the limit keeps the latest lines; it reads oldest first.
   if (query === 'userTrail') rows = rows.reverse();
-  return { queryId, status: res.status, rows, people: await withPeople(deps, rows), limited: rows.length >= limitOf(query), ...(searchedDays ? { searchedDays } : {}) };
+  return { queryId, status: res.status, rows, people: await withPeople(deps, rows), limited: rows.length >= limitOf(query), ...(searched.searchedDays ? { searchedDays: searched.searchedDays, capped: !!searched.capped } : {}) };
 }
 
 export async function startMonitoringQuery(deps: PlatformDeps, body: Record<string, unknown>, slugs: string[]) {
@@ -282,15 +284,16 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   const start = new Date(end.getTime() - ms);
   const logGroupNames = await monitor.listApiLogGroups().catch(upstream);
   const queryId = logGroupNames.length ? await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream) : null;
-  const searchedDays = Math.round(ms / 86_400_000 * 100) / 100;
-  if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] }, searchedDays);
+  // How far back the search went, and whether the log retention cut the chosen range short.
+  const searched = { searchedDays: ms / 86_400_000, capped: ms < MONITORING_RANGES[range].ms };
+  if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] }, searched);
   try {
     const now = deps.now().getTime();
-    await deps.store.put({ ...startedKey(queryId), query, searchedDays, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
+    await deps.store.put({ ...startedKey(queryId), query, ...searched, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
     const deadline = Date.now() + (monitor.waitMs ?? 0);
     for (;;) {
       const res = await monitor.getQueryResults(queryId).catch(upstream);
-      if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return await answer(deps, queryId, query, res, searchedDays);
+      if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return await answer(deps, queryId, query, res, searched);
       await new Promise((r) => setTimeout(r, 500));
     }
   } catch (err) {
@@ -302,8 +305,8 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
 
 export async function pollMonitoringQuery(deps: PlatformDeps, queryId: string) {
   const { monitor } = monitorOf(deps);
-  const { query, searchedDays } = await startedQuery(deps, queryId);
-  return answer(deps, queryId, query, await monitor.getQueryResults(queryId).catch(upstream), searchedDays);
+  const { query, searchedDays, capped } = await startedQuery(deps, queryId);
+  return answer(deps, queryId, query, await monitor.getQueryResults(queryId).catch(upstream), { searchedDays, capped });
 }
 
 /** Stops a query the page no longer waits for. A query that already ended is fine. */

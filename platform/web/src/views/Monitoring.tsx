@@ -472,8 +472,8 @@ function LookupResult({ lookup, range, retentionDays, ...links }: { lookup: Look
   // The API never searches past the log retention, so neither does the message.
   // From the answer (the API caps the search at the log retention), else from the metrics.
   const days = answer?.searchedDays ?? retentionDays;
-  const capped = days !== undefined && RANGE_MS[range] > days * 86_400_000;
-  const span = capped ? `${days} days (how long apps keep logs)` : range;
+  const capped = answer?.capped ?? (retentionDays !== undefined && RANGE_MS[range] > retentionDays * 86_400_000);
+  const span = capped && days !== undefined ? `${Math.round(days)} days (how long apps keep logs)` : range;
   let heading: ReactNode;
   if (lookup.kind === 'ref') heading = <>Ref <code>{lookup.ref}</code></>;
   else {

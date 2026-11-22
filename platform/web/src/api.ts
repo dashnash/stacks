@@ -161,6 +161,8 @@ export interface QueryAnswer {
   limited?: boolean;
   /** How far back the search went (the range, capped at the apps' log retention). */
   searchedDays?: number;
+  /** The log retention cut the chosen range short. */
+  capped?: boolean;
 }
 export interface QueryRequest {
   query: MonitoringQueryId;

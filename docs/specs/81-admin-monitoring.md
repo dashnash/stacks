@@ -95,7 +95,9 @@ query took too long; try a shorter range").
 
 Rows are objects keyed by the field name without `message.` (`ts`, `app`, `type`, `route`, `status`,
 `durationMs`, `ref`, `userId`, `error`, `stack`, `path`, `source`, `clientBuild`, …). `limited: true`
-means the saved query's limit was reached; `searchedDays` is how far back the search went. The trail is fetched newest first (so the limit keeps the
+means the saved query's limit was reached; `searchedDays` is how far back the search went and
+`capped` whether the log retention cut the chosen range short. Without a monitor the routes answer
+404 (a 5xx would count as a platform server error). The trail is fetched newest first (so the limit keeps the
 latest 500 lines) and answered oldest first. `people` maps
 each `userId` in the rows to `{ name, email }` (unknown or merged-away ids are left out: a merged id is never shown with the survivor's name; the
 page shows the id only).

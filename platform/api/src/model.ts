@@ -176,7 +176,7 @@ export interface PlatformDeps {
   verifyApple?(credential: string): Promise<{ sub: string; email: string; name: string }>;
   /** Push to the iOS app; without it (tests, before setup) notifications only fill the inbox. */
   push?: PushSender;
-  /** CloudWatch for the Monitoring page (#81); without it the routes answer 503. */
+  /** CloudWatch for the Monitoring page (#81); without it the routes answer 404. */
   monitor?: Monitor;
   now(): Date;
   newId(): string;

@@ -72,9 +72,9 @@ describe('monitoring access', () => {
     expect(res.status).toBe(403);
   });
 
-  it('answers 503 where no monitor is set up', async () => {
+  it('answers 404 (not a 5xx) where no monitor is set up', async () => {
     const h = createPlatformHarness();
-    expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN })).status).toBe(503);
+    expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN })).status).toBe(404);
   });
 });
 
@@ -206,13 +206,17 @@ describe('POST /admin/monitoring/query', () => {
     expect(h.calls.queries).toHaveLength(0);
   });
 
-  it('never asks for logs older than the retention', async () => {
+  it('never asks for logs older than the retention, and says when that cut the range', async () => {
     const h = setup();
+    const hour = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors', range: '1h' } });
+    expect(hour.body).toMatchObject({ searchedDays: 1 / 24, capped: false });
+    h.calls.queries.length = 0;
     await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors', range: '30d' } });
     const q = h.calls.queries[0]!;
     expect(q.end.getTime() - q.start.getTime()).toBe(30 * 86_400_000);
     h.deps.config.envTag = 'test';
-    await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors', range: '30d' } });
+    const capped = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors', range: '30d' } });
+    expect(capped.body).toMatchObject({ searchedDays: 7, capped: true });
     const t = h.calls.queries[1]!;
     expect(t.end.getTime() - t.start.getTime()).toBe(7 * 86_400_000);
   });
@@ -246,7 +250,7 @@ describe('POST /admin/monitoring/query', () => {
     const start = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
     expect(start.body).toEqual({ queryId: QID, status: 'Running' });
     const poll = await h.call('GET', `/admin/monitoring/query/${QID}`, { as: ADMIN });
-    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {}, limited: false, searchedDays: 1 });
+    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {}, limited: false, searchedDays: 1, capped: false });
     expect((await h.call('GET', '/admin/monitoring/query/not-an-id', { as: ADMIN })).status).toBe(400);
   });
 
@@ -295,7 +299,7 @@ describe('POST /admin/monitoring/query', () => {
   it('answers empty when the environment has no log groups yet', async () => {
     const h = setup({ groups: [] });
     const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
-    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {}, limited: false, searchedDays: 1 });
+    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {}, limited: false, searchedDays: 1, capped: false });
     expect(h.calls.queries).toHaveLength(0);
   });
 
