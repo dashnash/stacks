@@ -17,16 +17,27 @@ export const AUTO_REFRESH_MS = 60_000;
 const MIN_ZOOM_MS = 10 * 60_000;
 type Zoom = { from: number; to: number };
 
-/** The window a drag across a graph asks for: at least 10 minutes, never past now. */
-export function zoomWindow(from: number, to: number, now: number): Zoom {
+/** How far back a zoom may start (the API allows 31 days; a day's slack for a page left open). */
+const MAX_ZOOM_AGE_MS = 30 * 86_400_000;
+
+/**
+ * The window a drag across a graph asks for: at least 10 minutes, inside the 30 days before `end`.
+ * `end` is the graphs' own end (`metrics.to`, the server's clock), not the browser's.
+ */
+export function zoomWindow(from: number, to: number, end: number): Zoom {
   if (to - from < MIN_ZOOM_MS) {
     const mid = (from + to) / 2;
     from = mid - MIN_ZOOM_MS / 2;
     to = mid + MIN_ZOOM_MS / 2;
   }
-  if (to > now) {
-    from -= to - now;
-    to = now;
+  if (to > end) {
+    from -= to - end;
+    to = end;
+  }
+  const oldest = end - MAX_ZOOM_AGE_MS;
+  if (from < oldest) {
+    to = Math.max(to, oldest + MIN_ZOOM_MS);
+    from = oldest;
   }
   return { from: Math.round(from), to: Math.round(to) };
 }
@@ -67,6 +78,8 @@ function MonitoringPage() {
   const { api } = usePortal();
   const [range, setRange] = useState<MonitoringRange>('24h');
   const [zoom, setZoom] = useState<Zoom | null>(null);
+  /** Why the last zoom fell back to the preset (an error, or an API that can't zoom yet). */
+  const [zoomFailed, setZoomFailed] = useState<string | null>(null);
   const [hover] = useState(createHoverSync);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
@@ -85,11 +98,23 @@ function MonitoringPage() {
       .monitoringMetrics(range, zoom ?? undefined)
       .then((m) => {
         if (!live) return;
+        // An API from before zooming (a mixed deploy) ignores from/to and answers the preset.
+        if (zoom && m.range !== 'custom') {
+          setZoom(null);
+          setZoomFailed("This Platform API can't zoom yet; showing the preset.");
+        }
         setMetrics(m);
         setError(null);
         setUpdated(new Date());
       })
-      .catch((err: Error) => live && setError(err))
+      .catch((err: Error) => {
+        if (!live) return;
+        // A failed zoom goes back to the preset rather than leave "Zoomed" over the old graphs.
+        if (zoom) {
+          setZoom(null);
+          setZoomFailed(`Couldn't zoom: ${err.message}. Showing the preset.`);
+        } else setError(err);
+      })
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -114,7 +139,16 @@ function MonitoringPage() {
   const colorOf = (a: string | null, i: number) => (a && apps.includes(a) ? PALETTE[apps.indexOf(a) % PALETTE.length]! : PALETTE[i % PALETTE.length]!);
   const links = { onRef: (ref: string) => open({ kind: 'ref', ref }), onUser: (userId: string) => open({ kind: 'user', userId }) };
   const shared = { range, tick, ...links };
-  const graphProps = { app, colorOf, hover, onZoom: (from: number, to: number) => setZoom(zoomWindow(from, to, Date.now())) };
+  const graphProps = {
+    app,
+    colorOf,
+    hover,
+    onZoom: (from: number, to: number) => {
+      if (!metrics) return;
+      setZoomFailed(null);
+      setZoom(zoomWindow(from, to, Date.parse(metrics.to)));
+    },
+  };
 
   return (
     <section className="monitoring">
@@ -142,6 +176,7 @@ function MonitoringPage() {
               onClick={() => {
                 setRange(r);
                 setZoom(null);
+                setZoomFailed(null);
               }}
             >
               {r}
@@ -190,6 +225,7 @@ function MonitoringPage() {
           <p className="small muted mon-note">
             Drag across a graph to zoom in{zoom ? `; the tables below still cover the last ${range}` : ''}.
           </p>
+          {zoomFailed && <p className="error small">{zoomFailed}</p>}
           <Graphs metrics={metrics} ids={['requests', 'serverErrors', 'clientErrors', 'p95']} {...graphProps} className="mon-graphs" />
           <h2>AWS: Lambda and DynamoDB</h2>
           <Graphs metrics={metrics} ids={['lambdaErrors', 'lambdaP95', 'ddbThrottles']} {...graphProps} className="mon-graphs three" aws />

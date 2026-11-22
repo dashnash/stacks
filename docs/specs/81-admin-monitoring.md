@@ -57,7 +57,7 @@ whole range can't be summed from buckets).
 **Zoom:** `from` and `to` (epoch ms, both or neither) replace the range; the answer's `range` is
 `custom`. `to` is cut at now; the window must be at least 5 minutes (the page asks for 10 or more)
 and start at most 31 days ago, else 400. P is the finest of 60 s, 5 min, 15 min, 1 h and 3 h that
-keeps a line under 360 points (so the presets keep theirs), at least 5 min when the window starts
+keeps a line at most 360 points long (so the presets keep theirs), at least 5 min when the window starts
 over 15 days ago and 1 h past 63 days (CloudWatch's retention of finer points). The totals' P is the
 window rounded up to a whole number of graph periods.
 

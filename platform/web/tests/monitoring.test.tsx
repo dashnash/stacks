@@ -190,17 +190,20 @@ describe('Monitoring page', () => {
     expect(before).toEqual(['24h', undefined]);
     const [chart] = charts();
     pointer('pointerDown', chart!, 40);
-    pointer('pointerMove', chart!, 158);
+    pointer('pointerMove', chart!, 99);
     expect(screen.getByTestId('chart-select')).toBeInTheDocument();
-    pointer('pointerUp', chart!, 158);
-    // A quarter of the plot (118 of 472 units) of the last 24h: its first 6 hours.
+    pointer('pointerUp', chart!, 99);
+    // An eighth of the plot (59 of 472 units) of the last 24h: its first 3 hours.
     await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
     const zoom = spy.mock.calls.at(-1)![1]!;
-    expect(zoom.to - zoom.from).toBeCloseTo(6 * 3_600_000, -4);
+    expect(zoom.to - zoom.from).toBeCloseTo(3 * 3_600_000, -4);
     expect(await screen.findByText(/^Zoomed:/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'false');
-    // The demo answers at the finer period, so the graphs redraw over the window.
-    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThan(0));
+    // The demo answers the window at a finer period (1 min for 3 hours, against 5 for 24h), and the page draws it.
+    const answer = await spy.mock.results.at(-1)!.value;
+    expect(answer).toMatchObject({ range: 'custom', periodSeconds: 60 });
+    const firstX = () => [...charts()[0]!.querySelectorAll('text.chart-axis')].map((t) => t.textContent)[3];
+    await waitFor(() => expect(firstX()).toBe(new Date(zoom.from).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' })));
     // The tables stay on the preset.
     expect(screen.getByText(/the tables below still cover the last 24h/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reset zoom' }));
@@ -305,11 +308,31 @@ describe('helpers', () => {
     expect(container.querySelectorAll('circle.chart-dot')).toHaveLength(1);
   });
 
-  it('keeps a zoom window at least 10 minutes long and never past now', () => {
-    const now = 100 * 3_600_000;
-    expect(zoomWindow(now - 3_600_000, now - 1_800_000, now)).toEqual({ from: now - 3_600_000, to: now - 1_800_000 });
-    expect(zoomWindow(now - 3_600_000, now - 3_540_000, now)).toEqual({ from: now - 3_570_000 - 300_000, to: now - 3_570_000 + 300_000 });
-    expect(zoomWindow(now - 60_000, now, now)).toEqual({ from: now - 600_000, to: now });
+  it('keeps a zoom window at least 10 minutes long, never past the end nor over 30 days back', () => {
+    const end = 100 * 86_400_000;
+    expect(zoomWindow(end - 3_600_000, end - 1_800_000, end)).toEqual({ from: end - 3_600_000, to: end - 1_800_000 });
+    expect(zoomWindow(end - 3_600_000, end - 3_540_000, end)).toEqual({ from: end - 3_570_000 - 300_000, to: end - 3_570_000 + 300_000 });
+    expect(zoomWindow(end - 60_000, end, end)).toEqual({ from: end - 600_000, to: end });
+    // A 30d page left open a day: the drag's start is cut to 30 days before the graphs' end.
+    expect(zoomWindow(end - 31 * 86_400_000, end - 20 * 86_400_000, end)).toEqual({ from: end - 30 * 86_400_000, to: end - 20 * 86_400_000 });
+    expect(zoomWindow(end - 32 * 86_400_000, end - 31 * 86_400_000, end)).toEqual({ from: end - 30 * 86_400_000, to: end - 30 * 86_400_000 + 600_000 });
+  });
+
+  it('goes back to the preset with a note when a zoom fails', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const real = api.monitoringMetrics.bind(api);
+    vi.spyOn(api, 'monitoringMetrics').mockImplementation((range, window) => (window ? Promise.reject(new Error('CloudWatch did not answer')) : real(range)));
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerMove', chart!, 158);
+    pointer('pointerUp', chart!, 158);
+    expect(await screen.findByText("Couldn't zoom: CloudWatch did not answer. Showing the preset.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+    expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shares the hover time between charts given one sync, and keeps it inside each range', () => {

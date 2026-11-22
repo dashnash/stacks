@@ -113,7 +113,9 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
   };
   const onUp = (e: React.PointerEvent) => {
     if (!drag) return;
-    if (onZoom && Math.abs(sx(drag.b) - sx(drag.a)) >= MIN_DRAG) onZoom(Math.min(drag.a, drag.b), Math.max(drag.a, drag.b));
+    // Where the pointer was let go, not the last move React has drawn.
+    const b = timeAt(e) ?? drag.b;
+    if (onZoom && Math.abs(sx(b) - sx(drag.a)) >= MIN_DRAG) onZoom(Math.min(drag.a, b), Math.max(drag.a, b));
     setDrag(null);
     // Released outside the chart: the leave already happened during the capture.
     const box = svg.current?.getBoundingClientRect();
