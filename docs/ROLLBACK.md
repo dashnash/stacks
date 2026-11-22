@@ -52,7 +52,8 @@ ships. Failed jobs re-run with the jobs after them, so a re-run `staging` contin
 CloudFormation skips the stacks that already succeeded. Deploy runs one at a time (`concurrency:
 deploy-main`), so a re-run waits while another run is in progress.
 
-After 7 days the artifacts are gone; revert, or merge a no-op change, instead.
+After 7 days the artifacts are gone; revert, or merge a no-op change, instead (even a docs-only one
+redeploys: the next run counts the files of every run since the last green one that didn't succeed).
 
 ## 4. Revert (roll forward to the old code)
 
@@ -61,7 +62,9 @@ After 7 days the artifacts are gone; revert, or merge a no-op change, instead.
 2. It is an ordinary PR: CI must pass, and platform paths need your code-owner review (and the agent
    review gate, #111, for `packages/infra/`, `.github/` or `platform/api/`).
 3. Merging it deploys the old code to staging and production through the normal Deploy run. The
-   smoke check's table should show one commit for every stack.
+   smoke check's table should show one commit for every stack it deployed. A revert of a one-app
+   change deploys only that app: the table lists the portal and that app, and the portal stays on
+   the commit of the last full deploy (no mixed-versions warning for it).
 
 Never deploy an old artifact or run `cdk deploy` by hand; only CI deploys, and `.claude/settings.json`
 stops sessions from trying (#107).

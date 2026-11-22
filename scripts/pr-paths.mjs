@@ -75,8 +75,11 @@ export function lockfileChanges(before, after) {
   return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).sort();
 }
 
-/** Files that never reach a stack: docs/ and Markdown outside an app's folder (apps keep theirs: an app's own files are its deploy). */
-export const isDocsFile = (f) => f.startsWith('docs/') || (f.endsWith('.md') && !/^apps\/[^/]+\//.test(f));
+/**
+ * Files that never reach a stack: docs/ and Markdown outside an app's folder (an app's own files
+ * are its deploy) and outside templates/ (tools/new-app copies those into new apps).
+ */
+export const isDocsFile = (f) => f.startsWith('docs/') || (f.endsWith('.md') && !/^(apps\/[^/]+|templates)\//.test(f));
 
 const SLUG = /^[a-z][a-z0-9-]*[a-z0-9]$/;
 

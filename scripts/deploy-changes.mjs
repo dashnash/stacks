@@ -24,16 +24,17 @@ import { classifyDeploy, lockfileChanges } from './pr-paths.mjs';
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
 /**
- * From the newest Deploy runs on main (newest first, as the API lists them), other than this one:
- * `base`, the head commit of the newest successful run (undefined if none in the page), and
- * `unsettled`, the commits of the completed runs after it that didn't succeed.
+ * From the newest Deploy runs on main, other than this one, ordered by when they **finished**
+ * (`updated_at`; a re-run of an old run deploys its old commit last): `base`, the head commit of
+ * the run that last finished green (undefined if none in the page), and `unsettled`, the commits of
+ * the completed runs that finished after it without succeeding.
  */
 export function baselineFrom(runs, runId) {
+  const done = runs.filter((r) => String(r.id) !== String(runId) && r.status === 'completed').sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')));
   const unsettled = [];
-  for (const r of runs) {
-    if (String(r.id) === String(runId)) continue;
-    if (r.status === 'completed' && r.conclusion === 'success') return { base: r.head_sha, unsettled };
-    if (r.status === 'completed') unsettled.push(r.head_sha);
+  for (const r of done) {
+    if (r.conclusion === 'success') return { base: r.head_sha, unsettled };
+    unsettled.push(r.head_sha);
   }
   return { base: undefined, unsettled };
 }

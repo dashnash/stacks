@@ -1,7 +1,7 @@
 name: Deploy app to staging
 
-# A merge to main redeploys an app to staging when it changes that app or anything outside apps/
-# (deploy.yml), which puts it back to main. Use this to try a
+# A merge to main redeploys an app to staging when it changes that app or any non-docs file outside
+# apps/ (deploy.yml), which puts it back to main. Use this to try a
 # branch on staging before merging. Start it from a session or terminal (always on main; the
 # branch is an input):
 #   gh workflow run deploy-test.yml -f app=<slug> -f ref=<branch>

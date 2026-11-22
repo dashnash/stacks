@@ -20,6 +20,8 @@ describe('what a push to main deploys (classifyDeploy)', () => {
   it('counts Markdown inside an app folder as that app', () => {
     expect(isDocsFile('apps/hello/BRIEF.md')).toBe(false);
     expect(isDocsFile('apps/README.md')).toBe(true);
+    // tools/new-app copies the template's Markdown into new apps.
+    expect(isDocsFile('templates/app/BRIEF.md')).toBe(false);
     expect(classifyDeploy(['apps/hello/BRIEF.md'], known)).toEqual({ mode: 'app', app: 'hello', reason: 'only apps/hello/ changed' });
   });
 
@@ -125,12 +127,15 @@ describe('deploy-changes against a git history', () => {
   });
 
   it('finds the newest green Deploy run other than this one, and the failed ones after it', async () => {
-    const run = (id: number, head_sha: string, conclusion: string | null, status = 'completed') => ({ id, head_sha, status, conclusion });
-    const runs = [run(9, 'this', null, 'in_progress'), run(8, 'cancelled', 'cancelled'), run(7, 'failed', 'failure'), run(6, 'green', 'success'), run(5, 'older', 'failure')];
+    // `at`: when the run finished (updated_at), an hour per step.
+    const run = (id: number, head_sha: string, conclusion: string | null, at = id, status = 'completed') => ({ id, head_sha, status, conclusion, updated_at: `2026-11-22T${String(at).padStart(2, '0')}:00:00Z` });
+    const runs = [run(9, 'this', null, 9, 'in_progress'), run(8, 'cancelled', 'cancelled'), run(7, 'failed', 'failure'), run(6, 'green', 'success'), run(5, 'older', 'failure')];
     expect(baselineFrom(runs, 9)).toEqual({ base: 'green', unsettled: ['cancelled', 'failed'] });
     // A re-run keeps its id: it skips itself, even once green.
     expect(baselineFrom([run(6, 'green', 'success'), run(5, 'prev', 'success')], '6')).toEqual({ base: 'prev', unsettled: [] });
     expect(baselineFrom([run(5, 'older', 'failure')], 9)).toEqual({ base: undefined, unsettled: ['older'] });
+    // An old run re-run green after a newer one: what it deployed (its old commit) is the baseline.
+    expect(baselineFrom([run(8, 'c2', 'success', 8), run(7, 'c1', 'success', 10)], 9)).toEqual({ base: 'c1', unsettled: [] });
     const calls: string[] = [];
     const fetch = async (url: string) => {
       calls.push(url);

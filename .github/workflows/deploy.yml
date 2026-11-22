@@ -43,11 +43,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
+          cache: npm
       - name: Classify
         id: classify
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Node's fetch ignores HTTPS_PROXY without it (a self-hosted runner behind a proxy).
+          NODE_USE_ENV_PROXY: '1'
         run: node scripts/deploy-changes.mjs
+      # Docs only: no build job, so the tests that read the docs (tools/app-conformance) run here.
+      - name: Install (docs only)
+        if: steps.classify.outputs.mode == 'docs'
+        run: npm ci --ignore-scripts
+      - name: Docs tests (docs only)
+        if: steps.classify.outputs.mode == 'docs'
+        run: npm test -w tools/app-conformance
       # The merge train's wait-deploy reads this step's success as "green, nothing to deploy"
       # (scripts/merge-train.mjs); keep its name.
       - name: Nothing to deploy (docs only)
@@ -129,7 +139,8 @@ jobs:
           node scripts/check-imports.mjs
           if [[ "$MODE" == app ]]; then
             npm run typecheck -w "apps/${APP}"
-            npm test -w "apps/${APP}"
+            # The app's own tests, plus the ones that read every app: conformance, manifests, synth.
+            npm test -w "apps/${APP}" -w tools/app-conformance -w packages/manifest -w infra
           else
             npm run typecheck
             npm test
