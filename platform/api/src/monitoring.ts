@@ -188,7 +188,13 @@ export async function monitoringMetrics(deps: PlatformDeps, params: { range?: un
   const preset = parseRange(params.range);
   const range: MonitoringRange | 'custom' = window ? 'custom' : preset;
   const end = window ? window.end : now;
-  const start = window ? window.start : new Date(now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms);
+  // A zoom starts on the minute (5 minutes past 15 days), as CloudWatch rounds the start down
+  // anyway: `from` then matches the first bucket, and the totals cover no minutes before the window.
+  const align = (t: number) => {
+    const step = (now.getTime() - t > 15 * DAY_MS ? 300 : 60) * 1000;
+    return new Date(Math.floor(t / step) * step);
+  };
+  const start = window ? align(window.start.getTime()) : new Date(now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms);
   const ms = end.getTime() - start.getTime();
   const periodSeconds = window ? periodFor(ms, now.getTime() - start.getTime()) : MONITORING_RANGES[range as MonitoringRange].periodSeconds;
   // One bucket for the whole window, a multiple of the period (CloudWatch's rule for older starts).

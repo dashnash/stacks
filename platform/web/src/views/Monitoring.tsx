@@ -17,14 +17,15 @@ export const AUTO_REFRESH_MS = 60_000;
 const MIN_ZOOM_MS = 10 * 60_000;
 type Zoom = { from: number; to: number };
 
-/** How far back a zoom may start (the API allows 31 days; a day's slack for a page left open). */
+/** How far back a zoom may start (the API allows 31 days before its now; a day's slack). */
 const MAX_ZOOM_AGE_MS = 30 * 86_400_000;
 
 /**
- * The window a drag across a graph asks for: at least 10 minutes, inside the 30 days before `end`.
- * `end` is the graphs' own end (`metrics.to`, the server's clock), not the browser's.
+ * The window a drag across a graph asks for: at least 10 minutes, never past the graphs' end, and
+ * starting at most 30 days before `now`. Both are the server's clock: `end` is `metrics.to`, `now`
+ * the browser's clock corrected by how far it was from the server's at the last preset load.
  */
-export function zoomWindow(from: number, to: number, end: number): Zoom {
+export function zoomWindow(from: number, to: number, { end, now }: { end: number; now: number }): Zoom {
   if (to - from < MIN_ZOOM_MS) {
     const mid = (from + to) / 2;
     from = mid - MIN_ZOOM_MS / 2;
@@ -34,9 +35,9 @@ export function zoomWindow(from: number, to: number, end: number): Zoom {
     from -= to - end;
     to = end;
   }
-  const oldest = end - MAX_ZOOM_AGE_MS;
+  const oldest = now - MAX_ZOOM_AGE_MS;
   if (from < oldest) {
-    to = Math.max(to, oldest + MIN_ZOOM_MS);
+    to = Math.min(Math.max(to, oldest + MIN_ZOOM_MS), Math.max(end, oldest + MIN_ZOOM_MS));
     from = oldest;
   }
   return { from: Math.round(from), to: Math.round(to) };
@@ -83,6 +84,8 @@ function MonitoringPage() {
   const [hover] = useState(createHoverSync);
   /** The zoom whose window has loaded once: after that, a failed refresh is an ordinary error. */
   const loadedZoom = useRef<Zoom | null>(null);
+  /** The server's clock minus the browser's, from the last preset answer (whose `to` is its now). */
+  const clockSkew = useRef(0);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
   const [tick, setTick] = useState(0);
@@ -106,6 +109,7 @@ function MonitoringPage() {
           setZoomFailed("This Platform API can't zoom yet; showing the preset.");
         }
         loadedZoom.current = zoom;
+        if (m.range !== 'custom') clockSkew.current = Date.parse(m.to) - Date.now();
         setMetrics(m);
         setError(null);
         setUpdated(new Date());
@@ -149,7 +153,7 @@ function MonitoringPage() {
     onZoom: (from: number, to: number) => {
       if (!metrics) return;
       setZoomFailed(null);
-      setZoom(zoomWindow(from, to, Date.parse(metrics.to)));
+      setZoom(zoomWindow(from, to, { end: Date.parse(metrics.to), now: Date.now() + clockSkew.current }));
     },
   };
 
@@ -252,7 +256,7 @@ function MonitoringPage() {
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
             ? `Tables cover the last ${metrics.logRetentionDays} days: apps keep their logs that long. Graphs go back further; the platform's older logs are in CloudWatch.`
             : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
-          {(zoom ? Date.parse(metrics.to) - zoom.from > 14 * 86_400_000 : range === '30d') && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
+          {(zoom ? Date.now() + clockSkew.current - zoom.from > 14 * 86_400_000 : range === '30d') && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
         </p>
       )}
     </section>

@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 export interface ChartSeries {
   label: string;
@@ -68,6 +68,18 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
   /** The pointer is on this chart: only its readout is announced (the others follow silently). */
   const [pointing, setPointing] = useState(false);
+  const clip = `clip${useId().replace(/:/g, '')}`;
+  // The SVG goes (no data after a refresh) or the chart unmounts under the pointer: no leave event
+  // comes, so clear the shared time here or the other charts keep the line.
+  const pointingRef = useRef(false);
+  pointingRef.current = pointing;
+  useEffect(() => {
+    if (!series.length && pointingRef.current) {
+      setPointing(false);
+      store.set(null);
+    }
+  }, [series.length, store]);
+  useEffect(() => () => void (pointingRef.current && store.set(null)), [store]);
   const span = Math.max(1, to - from);
   const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1]))));
   const sx = (t: number) => L + ((t - from) / span) * (W - L - R);
@@ -118,7 +130,11 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     if (!drag) return;
     // Where the pointer was let go, not the last move React has drawn.
     const b = timeAt(e) ?? drag.b;
-    if (onZoom && Math.abs(sx(b) - sx(drag.a)) >= MIN_DRAG) onZoom(Math.min(drag.a, b), Math.max(drag.a, b));
+    if (onZoom && Math.abs(sx(b) - sx(drag.a)) >= MIN_DRAG) {
+      // The time under the pointer means another place once the zoomed window loads.
+      store.set(null);
+      onZoom(Math.min(drag.a, b), Math.max(drag.a, b));
+    }
     setDrag(null);
     // Released outside the chart: the leave already happened during the capture.
     const box = svg.current?.getBoundingClientRect();
@@ -157,8 +173,14 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
               {xLabel(from + f * span)}
             </text>
           ))}
+          <defs>
+            <clipPath id={clip}>
+              {/* The plot, plus room for a dot's radius: CloudWatch's first bucket can start before `from`. */}
+              <rect x={L} y={T - 3} width={W - L - R + 3} height={H - T - B + 6} />
+            </clipPath>
+          </defs>
           {series.map((s, i) => (
-            <g key={i}>
+            <g key={i} clipPath={`url(#${clip})`}>
               <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeDasharray={s.dashed ? '4 3' : undefined} />
               {lonely(s.points).map(([t, v]) => (
                 <circle key={t} className="chart-dot" cx={sx(t)} cy={sy(v)} r={2.5} fill={s.color} />

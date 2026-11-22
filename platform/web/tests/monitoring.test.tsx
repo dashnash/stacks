@@ -193,6 +193,8 @@ describe('Monitoring page', () => {
     pointer('pointerMove', chart!, 99);
     expect(screen.getByTestId('chart-select')).toBeInTheDocument();
     pointer('pointerUp', chart!, 99);
+    // The time under the pointer is cleared: it would mean another place in the zoomed window.
+    for (const c of charts()) expect(c.querySelector('line.chart-hover')).toBeNull();
     // An eighth of the plot (59 of 472 units) of the last 24h: its first 3 hours.
     await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
     const zoom = spy.mock.calls.at(-1)![1]!;
@@ -310,12 +312,14 @@ describe('helpers', () => {
 
   it('keeps a zoom window at least 10 minutes long, never past the end nor over 30 days back', () => {
     const end = 100 * 86_400_000;
-    expect(zoomWindow(end - 3_600_000, end - 1_800_000, end)).toEqual({ from: end - 3_600_000, to: end - 1_800_000 });
-    expect(zoomWindow(end - 3_600_000, end - 3_540_000, end)).toEqual({ from: end - 3_570_000 - 300_000, to: end - 3_570_000 + 300_000 });
-    expect(zoomWindow(end - 60_000, end, end)).toEqual({ from: end - 600_000, to: end });
-    // A 30d page left open a day: the drag's start is cut to 30 days before the graphs' end.
-    expect(zoomWindow(end - 31 * 86_400_000, end - 20 * 86_400_000, end)).toEqual({ from: end - 30 * 86_400_000, to: end - 20 * 86_400_000 });
-    expect(zoomWindow(end - 32 * 86_400_000, end - 31 * 86_400_000, end)).toEqual({ from: end - 30 * 86_400_000, to: end - 30 * 86_400_000 + 600_000 });
+    const at = { end, now: end };
+    expect(zoomWindow(end - 3_600_000, end - 1_800_000, at)).toEqual({ from: end - 3_600_000, to: end - 1_800_000 });
+    expect(zoomWindow(end - 3_600_000, end - 3_540_000, at)).toEqual({ from: end - 3_570_000 - 300_000, to: end - 3_570_000 + 300_000 });
+    expect(zoomWindow(end - 60_000, end, at)).toEqual({ from: end - 600_000, to: end });
+    expect(zoomWindow(end - 32 * 86_400_000, end - 31 * 86_400_000, at)).toEqual({ from: end - 30 * 86_400_000, to: end - 30 * 86_400_000 + 600_000 });
+    // A 30d page left open a day: the start is cut to 30 days before now, not before the graphs' end.
+    const later = { end, now: end + 86_400_000 };
+    expect(zoomWindow(end - 30 * 86_400_000, end - 20 * 86_400_000, later)).toEqual({ from: end - 29 * 86_400_000, to: end - 20 * 86_400_000 });
   });
 
   it('goes back to the preset with a note when a zoom fails', async () => {
@@ -352,6 +356,23 @@ describe('helpers', () => {
     expect(await screen.findByText(/Network down/)).toBeInTheDocument();
     expect(screen.getByText(/^Zoomed:/)).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't zoom/)).toBeNull();
+  });
+
+  it('clips lines to the plot (a first bucket can start before the range)', () => {
+    const { container } = render(<LineChart title="Requests" from={600_000} to={1_200_000} periodMs={60_000} series={[{ label: 'a', color: 'red', points: [[540_000, 1], [600_000, 2], [660_000, 3]] }]} />);
+    const id = container.querySelector('clipPath')!.id;
+    expect(container.querySelector('path')!.closest('g')!.getAttribute('clip-path')).toBe(`url(#${id})`);
+  });
+
+  it('clears the shared hover line when the chart under the pointer stops drawing', () => {
+    layOutCharts();
+    const sync = createHoverSync();
+    const series = [{ label: 'a', color: 'red', points: [[0, 1], [60_000, 2]] as [number, number][] }];
+    const { container, rerender } = render(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={series} />);
+    pointer('pointerMove', container.querySelector('svg')!, 276);
+    expect(sync.get()).not.toBeNull();
+    rerender(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[]} />);
+    expect(sync.get()).toBeNull();
   });
 
   it('shows no readout on a graph without data', () => {

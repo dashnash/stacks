@@ -125,6 +125,9 @@ describe('GET /admin/monitoring/metrics', () => {
     expect(future.body.to).toBe(new Date(now).toISOString());
     // CloudWatch has no 1-minute points older than 15 days.
     expect((await ask(now - 20 * 86_400_000, now - 20 * 86_400_000 + 3_600_000)).body.periodSeconds).toBe(300);
+    // The start is rounded down as CloudWatch does: to the minute, or to 5 minutes past 15 days.
+    expect((await ask(now - 3_600_000 - 42_000, now)).body.from).toBe(new Date(now - 3_660_000).toISOString());
+    expect((await ask(now - 20 * 86_400_000 + 180_000, now - 19 * 86_400_000)).body.from).toBe(new Date(now - 20 * 86_400_000).toISOString());
   });
 
   it('refuses a bad, too short or too old window', async () => {
