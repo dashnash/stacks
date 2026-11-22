@@ -31,8 +31,34 @@ plan unless the owner names it in chat, or anything with `force`, admin bypass o
 
 - Find the plan: the spec's **Merge plan** section (`docs/specs/<n>-*.md` on the PR's branch). A
   single PR with nothing after it is a plan of one.
-- `subscribe_pr_activity` for every PR in it, so reviews and CI wake you.
+- `subscribe_pr_activity` for every PR in it, so reviews and CI wake you where events arrive.
 - Tell the owner in one line: the order, and which steps need them.
+
+## 1b. Wait for the approval (don't just stop)
+
+When the next PR is waiting on the owner, start **one** quiet background waiter for it (a Bash
+call with `run_in_background`, timeout 7200000) instead of ending the train:
+
+```bash
+node scripts/merge-train.mjs wait-approval <pr>
+```
+
+It polls the PR every 30 s (2 min without a usable token) with the same approval rule as above
+and prints one line when it exits. A finished background command wakes the session even when
+it's idle. By exit code:
+
+| Exit | Meaning | Next |
+| --- | --- | --- |
+| 0 | approved on the current head | re-check the whole rule above, then step 2 |
+| 2 | changes requested | read the review, fix, push (that needs a new approval), wait again |
+| 3 | `hold` label | stop (section 4) |
+| 4 | PR closed or merged | merged by the owner: step 3 for its commit; closed: stop and ask |
+| 6 | gave up after ~110 min | start it again, quietly |
+| 1 | error | read stderr; retry once, then tell the owner |
+
+The waiter only wakes you: the rule is checked again right before merging, and only a review's
+*state* counts. It works only while the session is alive; a closed session needs the owner to
+come back and say "go". Don't start a second waiter for the same PR.
 
 ## 2. Merge the next PR
 
@@ -41,15 +67,19 @@ merge commit SHA from the result.
 
 ## 3. Wait for its deploy
 
-Find the `Deploy` run for that SHA: `actions_list` → `list_workflow_runs` on `deploy.yml`, filtered
-by branch `main` and event `push`, then pick the run whose `head_sha` is the merge commit (the
-filter has no SHA option). It starts within a minute or two. Wait without polling in the
-foreground: the repo is public, so a background `until` loop on
-`https://api.github.com/repos/dashnash/stacks/actions/runs/<id>` (status `completed`) works and
-notifies you when done.
+Start a background waiter for the merge commit (full 40-character SHA):
 
-- `success`, with both **Smoke check** steps green → back to step 2 for the next PR.
-- `failure`, `cancelled` or a red smoke check → **stop** (section 4).
+```bash
+node scripts/merge-train.mjs wait-deploy <merge commit sha>
+```
+
+It finds the `Deploy` run for that commit (push to `main`), waits until it completes and prints
+its conclusion and every smoke-check step.
+
+- Exit 0 (run `success` and every **Smoke check** green) → back to step 2 for the next PR.
+- Exit 5 (failed, cancelled or a red smoke check) → **stop** (section 4), unless it was cancelled
+  only because a newer run replaced it (below).
+- Exit 6 → start it again.
 
 A run that shows `cancelled` because a newer run replaced it isn't a failure of your commit: check
 the newer run, which contains it. If a PR merged out of your hands (the owner merged it), treat it
@@ -66,7 +96,8 @@ Stop the train and tell the owner exactly where it is when:
   for a new approval;
 - a PR has `hold`, isn't mergeable, or its checks are red.
 
-Then wait. Pick up again when the owner says so or a review event shows a new approval.
+Then wait. Pick up again when the owner says so or a review event shows a new approval; for a
+dismissed approval or requested changes, start `wait-approval` again once you've pushed.
 
 If your session can't stay around until the end, say which PR is next and that nothing more merges
 until a session picks it up. Nothing merges on its own.
