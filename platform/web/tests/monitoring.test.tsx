@@ -41,9 +41,11 @@ async function openMonitoring() {
 if (typeof window.PointerEvent === 'undefined') {
   class PointerEvent extends MouseEvent {
     pointerId: number;
+    isPrimary: boolean;
     constructor(type: string, init: PointerEventInit = {}) {
       super(type, init);
       this.pointerId = init.pointerId ?? 0;
+      this.isPrimary = init.isPrimary ?? false;
     }
   }
   window.PointerEvent = PointerEvent as typeof window.PointerEvent;
@@ -55,7 +57,7 @@ function layOutCharts() {
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 520, bottom: 170, width: 520, height: 170, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
 }
 const charts = () => screen.getAllByRole('img').filter((e) => e.tagName === 'svg');
-const pointer = (type: 'pointerMove' | 'pointerDown' | 'pointerUp' | 'pointerLeave', el: Element, clientX: number) => fireEvent[type](el, { clientX, clientY: 50, button: 0, pointerId: 1 });
+const pointer = (type: 'pointerMove' | 'pointerDown' | 'pointerUp' | 'pointerLeave', el: Element, clientX: number) => fireEvent[type](el, { clientX, clientY: 50, button: 0, pointerId: 1, isPrimary: true });
 
 beforeEach(() => {
   window.location.hash = '#/';
@@ -339,7 +341,7 @@ describe('helpers', () => {
     expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('falls back to the preset with one call when the API ignores from/to (a mixed deploy)', async () => {
+  it('falls back to the preset when the API ignores from/to (a mixed deploy)', async () => {
     const api = renderPortal();
     await signInAs('Dash Nash');
     await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
@@ -353,7 +355,9 @@ describe('helpers', () => {
     expect(await screen.findByText("This Platform API can't zoom yet; showing the preset.")).toBeInTheDocument();
     expect(screen.queryByText(/^Zoomed:/)).toBeNull();
     await waitFor(() => expect(screen.getByText(/^Updated/)).toBeInTheDocument());
-    expect(spy).toHaveBeenCalledTimes(1);
+    // The zoom asked once; the fallback then asks for the preset only.
+    expect(spy.mock.calls[0]![1]).toBeDefined();
+    expect(spy.mock.calls.slice(1).every(([range, window]) => range === '24h' && window === undefined)).toBe(true);
   });
 
   it('keeps a zoom that has loaded when a later refresh fails, showing the error', async () => {
@@ -392,6 +396,20 @@ describe('helpers', () => {
     expect(sync.get()).not.toBeNull();
     rerender(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[]} />);
     expect(sync.get()).toBeNull();
+  });
+
+  it('ignores a second finger during a drag', () => {
+    layOutCharts();
+    const onZoom = vi.fn();
+    const { container } = render(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} onZoom={onZoom} series={[{ label: 'a', color: 'red', points: [[0, 1], [60_000, 2]] }]} />);
+    const svg = container.querySelector('svg')!;
+    pointer('pointerDown', svg, 100);
+    fireEvent.pointerDown(svg, { clientX: 400, clientY: 50, button: 0, pointerId: 2, isPrimary: false });
+    pointer('pointerUp', svg, 200);
+    expect(onZoom).toHaveBeenCalledOnce();
+    const [a, b] = onZoom.mock.calls[0]!;
+    expect(Math.round(a / 60_000)).toBe(Math.round(((100 - 40) / 472) * 60));
+    expect(Math.round(b / 60_000)).toBe(Math.round(((200 - 40) / 472) * 60));
   });
 
   it('shows no readout on a graph without data', () => {

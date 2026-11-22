@@ -86,8 +86,6 @@ function MonitoringPage() {
   const loadedZoom = useRef<Zoom | null>(null);
   /** The server's clock minus the browser's, from the last preset answer (whose `to` is its now). */
   const clockSkew = useRef(0);
-  /** Set when a fallback already holds the preset's answer: the zoom change then needs no fetch. */
-  const skipFetch = useRef(false);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
   const [tick, setTick] = useState(0);
@@ -99,20 +97,16 @@ function MonitoringPage() {
   const lookupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (skipFetch.current) {
-      skipFetch.current = false;
-      setLoading(false);
-      return;
-    }
     let live = true;
     setLoading(true);
     api
       .monitoringMetrics(range, zoom ?? undefined)
       .then((m) => {
         if (!live) return;
-        // An API from before zooming (a mixed deploy) ignores from/to and answers the preset.
+        // An API from before zooming (a mixed deploy) ignores from/to and answers the preset. Clearing
+        // the zoom fetches the preset once more: rare and harmless, unlike skipping a fetch that a
+        // range click or refresh in the same render asked for.
         if (zoom && m.range !== 'custom') {
-          skipFetch.current = true;
           setZoom(null);
           setZoomFailed("This Platform API can't zoom yet; showing the preset.");
         }
@@ -200,7 +194,8 @@ function MonitoringPage() {
         </div>
         {zoom && (
           <span className="zoom-chip" title={`Graphs and health cover this window; the tables still cover the last ${range}.`}>
-            Zoomed: {zoomLabel(zoom)}
+            {/* Once loaded, the window served (the start rounded down, the end cut at now). */}
+            Zoomed: {zoomLabel(metrics?.range === 'custom' && loadedZoom.current === zoom ? { from: Date.parse(metrics.from), to: Date.parse(metrics.to) } : zoom)}
             <button type="button" className="button secondary small" onClick={() => setZoom(null)}>
               Reset zoom
             </button>

@@ -103,7 +103,8 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     pts.filter(([t], i) => !(i > 0 && t - pts[i - 1]![0] <= periodMs * 1.5) && !(i < pts.length - 1 && pts[i + 1]![0] - t <= periodMs * 1.5));
   const nearest = (pts: [number, number][], t: number) => {
     let best: [number, number] | undefined;
-    for (const p of pts) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    // Only drawn points: a bucket the clip hides must not show in the readout.
+    for (const p of pts) if (shown(p[0]) && (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t))) best = p;
     return best && Math.abs(best[0] - t) <= periodMs ? best[1] : null;
   };
 
@@ -113,7 +114,9 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     const x = ((e.clientX - box.left) / box.width) * W;
     return Math.min(to, Math.max(from, from + ((x - L) / (W - L - R)) * span));
   };
+  // One finger (or the mouse) drives hover and drag: a second touch must not restart the selection.
   const onMove = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
     const t = timeAt(e);
     if (t === null) return;
     store.set(t);
@@ -121,6 +124,7 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     if (drag) setDrag({ a: drag.a, b: t });
   };
   const onDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
     if (!onZoom || e.button !== 0) return;
     const t = timeAt(e);
     if (t === null) return;
@@ -129,6 +133,7 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     svg.current?.setPointerCapture?.(e.pointerId);
   };
   const onUp = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
     if (!drag) return;
     // Where the pointer was let go, not the last move React has drawn.
     const b = timeAt(e) ?? drag.b;
