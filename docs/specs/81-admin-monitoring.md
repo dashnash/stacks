@@ -20,12 +20,12 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 | Who | **Platform admins only** (`isPlatformAdmin`). Everyone else gets 403 from the API, and the page shows "Platform admins only". App approvers see nothing new. |
 | Which environment | **Each portal shows its own**: `auth.dashnash.ninja` shows `prod`, `auth.test.dashnash.ninja` shows `test`. Each platform Lambda can start queries only on `/stacks/<its tag>/*` log groups. |
 | Content | (1) a per-app **health table** (registered apps and the platform only), (2) **graphs** (the dashboard's seven), (3) the **Latest errors**, **Slowest requests** and **Browser errors** tables (Browser errors is its own table), (4) **Find by ref**, (5) **One user's trail** (click a user, or paste an id), (6) **One app's requests** (when an app is selected). |
-| Time range | Presets **1h / 24h / 7d / 30d**, default 24h. No custom from/to. CloudWatch `SEARCH` only finds metrics that reported in the last two weeks, so on 30d an app quiet since then shows zero in the graphs and health totals (the page says so). Log tables cover at most the log retention (1 week on staging, 1 month on production); the page says so when the range is longer. |
+| Time range | Presets **1h / 24h / 7d / 30d**, default 24h. **Drag across any graph to zoom** (added after launch): the graphs and the health table reload for that window at a finer period, with a "Zoomed: … · Reset zoom" chip; the tables, Find by ref and the trail stay on the preset. A preset or Reset zoom goes back. CloudWatch `SEARCH` only finds metrics that reported in the last two weeks, so on 30d an app quiet since then shows zero in the graphs and health totals (the page says so). Log tables cover at most the log retention (1 week on staging, 1 month on production); the page says so when the range is longer. |
 | Names | The API resolves user ids in its answers to the person's name and email from the platform table, at read time. **Logs stay as they are** (ids only); names are never written to CloudWatch. |
-| Refresh | Loads once when opened, plus a **Refresh** button. A **"Refresh every 60s"** checkbox (off by default, not remembered) refreshes the health table, the graphs and the three tables while the tab is visible. Find by ref and the user trail never refresh automatically. |
+| Refresh | Loads once when opened, plus a **Refresh** button. A **"Refresh every 60s"** checkbox (off by default, not remembered) refreshes the health table, the graphs and the three tables while the tab is visible. Find by ref and the user trail never refresh automatically. While zoomed, a refresh reloads the same fixed window (the page says so). |
 | Entry point | A **Monitoring** tab in the portal header next to Access, shown only to platform admins. No account-menu item, no link from `ErrorNote`. |
 | CloudWatch console | **Kept** (dashboards and saved queries unchanged). The page links to the CloudWatch dashboard, and `docs/DEBUGGING.md` starts with the page. |
-| Charts | Hand-drawn inline SVG in `platform/web` (line charts, hover readout). **No new npm dependency.** |
+| Charts | Hand-drawn inline SVG in `platform/web` (line charts, hover readout). Hovering one graph draws the time line, with each graph's own readout, on every graph. **No new npm dependency.** |
 | Query safety | The client never sends query text. It names one of the six saved queries plus validated parameters; the API builds the query from `SAVED_QUERIES` (moved where both infra and API can read it, see Changes). |
 | Log groups | The API lists `/stacks/<tag>/*/api` log groups with `DescribeLogGroups` (cached 5 min) instead of a fixed list. A new app's logs show up on the page with no platform deploy, and an app that was never deployed can't break a query (a group deleted since the cache: the list is refreshed and the query retried once). At most 50 (Logs Insights' limit), the platform's always included; more logs a warning. |
 | Health dot | The Server errors column is `ServerErrors` (5xx request lines, which include every unhandled error; hover shows how many were unhandled). Red if the app had any server error in the range; amber if it had browser errors or p95 > 1,500 ms; else green. It is a hint for the eye, not an alert. |
@@ -36,7 +36,7 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 All four routes (metrics; start, poll and stop a query) live under the existing `/api` router next to
 `/admin/audit`.
 
-### `GET /api/admin/monitoring/metrics?range=1h|24h|7d|30d`
+### `GET /api/admin/monitoring/metrics?range=1h|24h|7d|30d[&from=<ms>&to=<ms>]`
 
 One `GetMetricData` call with these expressions (the same as `Monitoring` in `packages/infra`):
 
@@ -52,7 +52,16 @@ One `GetMetricData` call with these expressions (the same as `Monitoring` in `pa
 
 Period P: 1h → 60 s, 24h → 300 s, 7d → 3,600 s, 30d → 10,800 s. A second, cheap set of the five
 `Stacks/<tag>` expressions with P = the whole range gives the health table's totals (p95 over the
-whole range can't be summed from buckets).
+whole range can't be summed from buckets). Every start, preset or zoom, is rounded down to the minute
+as CloudWatch does, so `from` is the first bucket; a start older than 15 days less 10 minutes goes to
+5 minutes (the margin keeps the rounding and CloudWatch's later clock from crossing 15 days).
+
+**Zoom:** `from` and `to` (epoch ms, both or neither) replace the range; the answer's `range` is
+`custom`. `to` is cut at now; the window must be at least 5 minutes (the page asks for 10 or more)
+and start at most 31 days ago, else 400. P is the finest of 60 s, 5 min, 15 min, 1 h and 3 h that
+keeps a line at most 360 points long (so the presets keep theirs), and at least 5 min when the window
+starts over 15 days less 10 minutes ago (CloudWatch keeps 1-minute points 15 days). `range` is still checked. The totals' P is the
+window rounded up to a whole number of graph periods.
 
 ```jsonc
 {

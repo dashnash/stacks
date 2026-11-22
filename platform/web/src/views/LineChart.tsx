@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 export interface ChartSeries {
   label: string;
@@ -23,17 +23,67 @@ export function niceMax(v: number): number {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * m;
 }
 
+/**
+ * The time under the pointer, shared by charts so hovering one draws the line on all of them. A small
+ * store, not React state on the page: moving the mouse then re-renders the charts only.
+ */
+export interface HoverSync {
+  get(): number | null;
+  set(t: number | null): void;
+  subscribe(listener: () => void): () => void;
+}
+export function createHoverSync(): HoverSync {
+  let value: number | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => value,
+    set(t) {
+      if (t === value) return;
+      value = t;
+      listeners.forEach((l) => l());
+    },
+    subscribe(l) {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+  };
+}
+
+/** A drag narrower than this (in chart units, ~1% of the width) is a click, not a zoom. */
+const MIN_DRAG = 6;
+
 const short = (v: number) => (v >= 1000 ? `${+(v / 1000).toFixed(1)}k` : `${+v.toFixed(1)}`);
 
 /**
  * A small multi-line chart drawn in SVG (no chart library). Buckets CloudWatch left out are gaps,
- * not zeros. Hovering shows each line's value at that time.
+ * not zeros. Hovering shows each line's value at that time, on every chart sharing `sync`; with
+ * `onZoom`, dragging across the chart picks a time window.
  */
-export function LineChart({ title, unit, series, from, to, periodMs }: { title: string; unit?: string; series: ChartSeries[]; from: number; to: number; periodMs: number }) {
+export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoom }: { title: string; unit?: string; series: ChartSeries[]; from: number; to: number; periodMs: number; sync?: HoverSync; onZoom?(from: number, to: number): void }) {
   const svg = useRef<SVGSVGElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
+  const [own] = useState(createHoverSync);
+  const store = sync ?? own;
+  const shared = useSyncExternalStore(store.subscribe, store.get);
+  const hover = shared !== null && shared >= from && shared <= to ? shared : null;
+  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  /** The pointer is on this chart: only its readout is announced (the others follow silently). */
+  const [pointing, setPointing] = useState(false);
+  const clip = `clip${useId().replace(/:/g, '')}`;
+  // The SVG goes (no data after a refresh) or the chart unmounts under the pointer: no leave event
+  // comes, so clear the shared time here or the other charts keep the line.
+  const pointingRef = useRef(false);
+  pointingRef.current = pointing;
+  useEffect(() => {
+    if (!series.length && pointingRef.current) {
+      setPointing(false);
+      store.set(null);
+    }
+  }, [series.length, store]);
+  useEffect(() => () => void (pointingRef.current && store.set(null)), [store]);
   const span = Math.max(1, to - from);
-  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1]))));
+  // Scaled to what is drawn: a bucket the clip hides (before `from`) must not set the scale.
+  const shown = (t: number) => t >= from - periodMs / 2 && t <= to;
+  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.filter((p) => shown(p[0])).map((p) => p[1]))));
   const sx = (t: number) => L + ((t - from) / span) * (W - L - R);
   const sy = (v: number) => T + (1 - v / max) * (H - T - B);
   const day = span > 36 * 3_600_000;
@@ -53,22 +103,77 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
     pts.filter(([t], i) => !(i > 0 && t - pts[i - 1]![0] <= periodMs * 1.5) && !(i < pts.length - 1 && pts[i + 1]![0] - t <= periodMs * 1.5));
   const nearest = (pts: [number, number][], t: number) => {
     let best: [number, number] | undefined;
-    for (const p of pts) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    // Only drawn points: a bucket the clip hides must not show in the readout.
+    for (const p of pts) if (shown(p[0]) && (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t))) best = p;
     return best && Math.abs(best[0] - t) <= periodMs ? best[1] : null;
   };
 
-  const onMove = (e: React.PointerEvent) => {
+  const timeAt = (e: React.PointerEvent) => {
     const box = svg.current?.getBoundingClientRect();
-    if (!box || !box.width) return;
+    if (!box || !box.width) return null;
     const x = ((e.clientX - box.left) / box.width) * W;
-    setHover(Math.min(to, Math.max(from, from + ((x - L) / (W - L - R)) * span)));
+    return Math.min(to, Math.max(from, from + ((x - L) / (W - L - R)) * span));
+  };
+  // One finger (or the mouse) drives hover and drag: a second touch must not restart the selection.
+  const onMove = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    const t = timeAt(e);
+    if (t === null) return;
+    store.set(t);
+    setPointing(true);
+    if (drag) setDrag({ a: drag.a, b: t });
+  };
+  const onDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    if (!onZoom || e.button !== 0) return;
+    const t = timeAt(e);
+    if (t === null) return;
+    setDrag({ a: t, b: t });
+    // Keep getting moves (and the release) when the pointer leaves the chart mid-drag.
+    svg.current?.setPointerCapture?.(e.pointerId);
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    if (!drag) return;
+    // Where the pointer was let go, not the last move React has drawn.
+    const b = timeAt(e) ?? drag.b;
+    if (onZoom && Math.abs(sx(b) - sx(drag.a)) >= MIN_DRAG) {
+      // The time under the pointer means another place once the zoomed window loads.
+      store.set(null);
+      onZoom(Math.min(drag.a, b), Math.max(drag.a, b));
+    }
+    setDrag(null);
+    // Released outside the chart: the leave already happened during the capture.
+    const box = svg.current?.getBoundingClientRect();
+    if (box && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) {
+      setPointing(false);
+      store.set(null);
+    }
   };
 
   return (
     <figure className="card chart">
       <figcaption className="chart-title">{title}</figcaption>
       {series.length ? (
-        <svg ref={svg} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
+        <svg
+          ref={svg}
+          className={onZoom ? 'zoomable' : undefined}
+          viewBox={`0 0 ${W} ${H}`}
+          role="img"
+          aria-label={title}
+          onPointerMove={onMove}
+          onPointerDown={onDown}
+          onPointerUp={onUp}
+          onPointerCancel={() => {
+            setDrag(null);
+            setPointing(false);
+            store.set(null);
+          }}
+          onPointerLeave={() => {
+            setPointing(false);
+            if (!drag) store.set(null);
+          }}
+        >
           {[0, max / 2, max].map((v) => (
             <g key={v}>
               <line className="chart-grid" x1={L} x2={W - R} y1={sy(v)} y2={sy(v)} />
@@ -82,22 +187,30 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
               {xLabel(from + f * span)}
             </text>
           ))}
+          <defs>
+            <clipPath id={clip}>
+              {/* The plot, plus room for a dot's radius. Lines from a bucket before `from` stop at its edge. */}
+              <rect x={L - 3} y={T - 3} width={W - L - R + 6} height={H - T - B + 6} />
+            </clipPath>
+          </defs>
           {series.map((s, i) => (
-            <g key={i}>
+            <g key={i} clipPath={`url(#${clip})`}>
               <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeDasharray={s.dashed ? '4 3' : undefined} />
               {lonely(s.points).map(([t, v]) => (
                 <circle key={t} className="chart-dot" cx={sx(t)} cy={sy(v)} r={2.5} fill={s.color} />
               ))}
             </g>
           ))}
+          {drag && <rect className="chart-select" data-testid="chart-select" x={sx(Math.min(drag.a, drag.b))} y={T} width={Math.abs(sx(drag.b) - sx(drag.a))} height={H - T - B} />}
           {hover !== null && <line className="chart-hover" x1={sx(hover)} x2={sx(hover)} y1={T} y2={H - B} />}
           <rect x={L} y={T} width={W - L - R} height={H - T - B} fill="transparent" />
         </svg>
       ) : (
         <p className="muted pad">No data in this range</p>
       )}
-      <div className="chart-readout" aria-live="polite">
+      <div className="chart-readout" aria-live={pointing ? 'polite' : 'off'}>
         {hover !== null &&
+          series.length > 0 &&
           `${new Date(hover).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${series
             .map((s) => {
               const v = nearest(s.points, hover);

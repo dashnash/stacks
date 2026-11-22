@@ -584,7 +584,7 @@ export function createPlatformApp(deps: PlatformDeps) {
       '/admin/monitoring/metrics',
       signedIn(async (req, user) => {
         requireAdmin(user);
-        return { body: await monitoringMetrics(deps, req.query.range, await appSlugs()) };
+        return { body: await monitoringMetrics(deps, req.query, await appSlugs()) };
       }),
     )
     .add(

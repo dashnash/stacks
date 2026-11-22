@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,8 +7,8 @@ import { runQuery, type PortalApi } from '../src/api';
 import { createDemoPortal, DEMO_PEOPLE } from '../src/demo/backend';
 import { DEMO_REF } from '../src/demo/monitoring';
 import { PortalProvider } from '../src/portal';
-import { healthOf, shortResource } from '../src/views/Monitoring';
-import { LineChart, niceMax } from '../src/views/LineChart';
+import { healthOf, shortResource, zoomWindow } from '../src/views/Monitoring';
+import { createHoverSync, LineChart, niceMax } from '../src/views/LineChart';
 
 // StrictMode, as in main.tsx: it runs state updates twice, which catches updates that mutate state.
 function renderPortal(hash = '#/') {
@@ -37,11 +37,34 @@ async function openMonitoring() {
   await screen.findByRole('heading', { name: 'Health' });
 }
 
+// jsdom has no PointerEvent: without one, fireEvent's pointer events carry no clientX.
+if (typeof window.PointerEvent === 'undefined') {
+  class PointerEvent extends MouseEvent {
+    pointerId: number;
+    isPrimary: boolean;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+      this.isPrimary = init.isPrimary ?? false;
+    }
+  }
+  window.PointerEvent = PointerEvent as typeof window.PointerEvent;
+}
+
+// jsdom lays nothing out: give every chart the viewBox's size, so a pointer at clientX x is at
+// chart unit x (the plot runs from 40 to 512, the whole range).
+function layOutCharts() {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 520, bottom: 170, width: 520, height: 170, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+}
+const charts = () => screen.getAllByRole('img').filter((e) => e.tagName === 'svg');
+const pointer = (type: 'pointerMove' | 'pointerDown' | 'pointerUp' | 'pointerLeave', el: Element, clientX: number) => fireEvent[type](el, { clientX, clientY: 50, button: 0, pointerId: 1, isPrimary: true });
+
 beforeEach(() => {
   window.location.hash = '#/';
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('Monitoring tab', () => {
@@ -144,6 +167,69 @@ describe('Monitoring page', () => {
     expect(screen.getByRole('combobox', { name: 'App' })).toHaveValue('');
   });
 
+  it('draws the hover line at the same time on every graph', async () => {
+    await openMonitoring();
+    layOutCharts();
+    const all = charts();
+    expect(all.length).toBe(7);
+    pointer('pointerMove', all[0]!, 276);
+    for (const c of all) expect(c.querySelector('line.chart-hover')!.getAttribute('x1')).toBe('276');
+    // Each graph reads out its own values at that time.
+    const readouts = [...document.querySelectorAll('.chart-readout')].map((e) => e.textContent);
+    expect(readouts.every((r) => r && r.length > 0)).toBe(true);
+    pointer('pointerLeave', all[0]!, 600);
+    for (const c of all) expect(c.querySelector('line.chart-hover')).toBeNull();
+  });
+
+  it('zooms graphs and health to a window dragged across a graph, and resets', async () => {
+    const api = renderPortal();
+    const spy = vi.spyOn(api, 'monitoringMetrics');
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const before = spy.mock.calls.at(-1)!;
+    expect(before).toEqual(['24h', undefined]);
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerMove', chart!, 99);
+    expect(screen.getByTestId('chart-select')).toBeInTheDocument();
+    pointer('pointerUp', chart!, 99);
+    // The time under the pointer is cleared: it would mean another place in the zoomed window.
+    for (const c of charts()) expect(c.querySelector('line.chart-hover')).toBeNull();
+    // An eighth of the plot (59 of 472 units) of the last 24h: its first 3 hours.
+    await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
+    const zoom = spy.mock.calls.at(-1)![1]!;
+    expect(zoom.to - zoom.from).toBeCloseTo(3 * 3_600_000, -4);
+    expect(await screen.findByText(/^Zoomed:/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'false');
+    // The demo answers the window at a finer period (1 min for 3 hours, against 5 for 24h), and the page draws it.
+    const answer = await spy.mock.results.at(-1)!.value;
+    expect(answer).toMatchObject({ range: 'custom', periodSeconds: 60 });
+    const firstX = () => [...charts()[0]!.querySelectorAll('text.chart-axis')].map((t) => t.textContent)[3];
+    await waitFor(() => expect(firstX()).toBe(new Date(zoom.from).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' })));
+    // The tables stay on the preset.
+    expect(screen.getByText(/the tables below still cover the last 24h/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reset zoom' }));
+    await waitFor(() => expect(spy.mock.calls.at(-1)).toEqual(['24h', undefined]));
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+  });
+
+  it('treats a click on a graph as a click, not a zoom', async () => {
+    const api = renderPortal();
+    const spy = vi.spyOn(api, 'monitoringMetrics');
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const calls = spy.mock.calls.length;
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 200);
+    pointer('pointerUp', chart!, 202);
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+    expect(spy.mock.calls.length).toBe(calls);
+  });
+
   it('refreshes every 60 s only while the box is ticked', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const api = renderPortal();
@@ -224,6 +310,129 @@ describe('helpers', () => {
     );
     // The first point stands alone; the other two are joined by the line.
     expect(container.querySelectorAll('circle.chart-dot')).toHaveLength(1);
+  });
+
+  it('keeps a zoom window at least 10 minutes long, never past the end nor over 30 days back', () => {
+    const end = 100 * 86_400_000;
+    const at = { end, now: end };
+    expect(zoomWindow(end - 3_600_000, end - 1_800_000, at)).toEqual({ from: end - 3_600_000, to: end - 1_800_000 });
+    expect(zoomWindow(end - 3_600_000, end - 3_540_000, at)).toEqual({ from: end - 3_570_000 - 300_000, to: end - 3_570_000 + 300_000 });
+    expect(zoomWindow(end - 60_000, end, at)).toEqual({ from: end - 600_000, to: end });
+    expect(zoomWindow(end - 32 * 86_400_000, end - 31 * 86_400_000, at)).toEqual({ from: end - 30 * 86_400_000, to: end - 30 * 86_400_000 + 600_000 });
+    // A 30d page left open a day: the start is cut to 30 days before now, not before the graphs' end.
+    const later = { end, now: end + 86_400_000 };
+    expect(zoomWindow(end - 30 * 86_400_000, end - 20 * 86_400_000, later)).toEqual({ from: end - 29 * 86_400_000, to: end - 20 * 86_400_000 });
+  });
+
+  it('goes back to the preset with a note when a zoom fails', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const real = api.monitoringMetrics.bind(api);
+    vi.spyOn(api, 'monitoringMetrics').mockImplementation((range, window) => (window ? Promise.reject(new Error('CloudWatch did not answer')) : real(range)));
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerMove', chart!, 158);
+    pointer('pointerUp', chart!, 158);
+    expect(await screen.findByText("Couldn't zoom: CloudWatch did not answer. Showing the preset.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+    expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('falls back to the preset when the API ignores from/to (a mixed deploy)', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const real = api.monitoringMetrics.bind(api);
+    const spy = vi.spyOn(api, 'monitoringMetrics').mockImplementation((range) => real(range));
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerUp', chart!, 99);
+    expect(await screen.findByText("This Platform API can't zoom yet; showing the preset.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+    await waitFor(() => expect(screen.getByText(/^Updated/)).toBeInTheDocument());
+    // The zoom asked once; the fallback then asks for the preset only.
+    expect(spy.mock.calls[0]![1]).toBeDefined();
+    expect(spy.mock.calls.slice(1).every(([range, window]) => range === '24h' && window === undefined)).toBe(true);
+  });
+
+  it('keeps a zoom that has loaded when a later refresh fails, showing the error', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const spy = vi.spyOn(api, 'monitoringMetrics');
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerUp', chart!, 99);
+    await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
+    await spy.mock.results.at(-1)!.value;
+    spy.mockRejectedValueOnce(new Error('Network down'));
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText(/Network down/)).toBeInTheDocument();
+    expect(screen.getByText(/^Zoomed:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't zoom/)).toBeNull();
+  });
+
+  it('clips lines to the plot (a first bucket can start before the range)', () => {
+    const { container } = render(<LineChart title="Requests" from={600_000} to={1_200_000} periodMs={60_000} series={[{ label: 'a', color: 'red', points: [[540_000, 1], [600_000, 2], [660_000, 3]] }]} />);
+    const id = container.querySelector('clipPath')!.id;
+    expect(container.querySelector('path')!.closest('g')!.getAttribute('clip-path')).toBe(`url(#${id})`);
+    // A dot on `from` stays whole inside the clip.
+    expect(Number(container.querySelector('clipPath rect')!.getAttribute('x'))).toBeLessThanOrEqual(40 - 2.5);
+  });
+
+  it('clears the shared hover line when the chart under the pointer stops drawing', () => {
+    layOutCharts();
+    const sync = createHoverSync();
+    const series = [{ label: 'a', color: 'red', points: [[0, 1], [60_000, 2]] as [number, number][] }];
+    const { container, rerender } = render(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={series} />);
+    pointer('pointerMove', container.querySelector('svg')!, 276);
+    expect(sync.get()).not.toBeNull();
+    rerender(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[]} />);
+    expect(sync.get()).toBeNull();
+  });
+
+  it('ignores a second finger during a drag', () => {
+    layOutCharts();
+    const onZoom = vi.fn();
+    const { container } = render(<LineChart title="A" from={0} to={3_600_000} periodMs={60_000} onZoom={onZoom} series={[{ label: 'a', color: 'red', points: [[0, 1], [60_000, 2]] }]} />);
+    const svg = container.querySelector('svg')!;
+    pointer('pointerDown', svg, 100);
+    fireEvent.pointerDown(svg, { clientX: 400, clientY: 50, button: 0, pointerId: 2, isPrimary: false });
+    pointer('pointerUp', svg, 200);
+    expect(onZoom).toHaveBeenCalledOnce();
+    const [a, b] = onZoom.mock.calls[0]!;
+    expect(Math.round(a / 60_000)).toBe(Math.round(((100 - 40) / 472) * 60));
+    expect(Math.round(b / 60_000)).toBe(Math.round(((200 - 40) / 472) * 60));
+  });
+
+  it('shows no readout on a graph without data', () => {
+    const sync = createHoverSync();
+    const { container } = render(<LineChart title="Empty" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[]} />);
+    act(() => sync.set(60_000));
+    expect(container.querySelector('.chart-readout')!.textContent).toBe('');
+  });
+
+  it('shares the hover time between charts given one sync, and keeps it inside each range', () => {
+    const sync = createHoverSync();
+    const { container } = render(
+      <>
+        <LineChart title="A" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[{ label: 'a', color: 'red', points: [[0, 1], [60_000, 2]] }]} />
+        <LineChart title="B" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[{ label: 'b', color: 'blue', points: [[0, 3], [60_000, 4]] }]} />
+        <LineChart title="C" from={7_200_000} to={9_000_000} periodMs={60_000} sync={sync} series={[{ label: 'c', color: 'green', points: [[7_200_000, 1]] }]} />
+      </>,
+    );
+    act(() => sync.set(60_000));
+    expect(container.querySelectorAll('line.chart-hover')).toHaveLength(2);
+    expect(screen.getByText(/b 4/)).toBeInTheDocument();
+    act(() => sync.set(null));
+    expect(container.querySelectorAll('line.chart-hover')).toHaveLength(0);
   });
 
   it('rounds chart maxima up to 1, 2 or 5 times a power of ten', () => {

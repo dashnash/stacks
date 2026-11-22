@@ -344,7 +344,7 @@ emails the first production platform admin at 80% of actual and 100% of forecast
   prefix there), so a new app joins them on the next platform deploy.
 - **Portal page** (#81): `auth.<domain>/#/admin/monitoring`, platform admins only (API 403 for
   anyone else, no tab). Each portal shows its own environment: a per-app health table (requests,
-  server and browser errors, p95, a red/amber/green dot), the dashboard's seven graphs, the Latest
+  server and browser errors, p95, a red/amber/green dot), the dashboard's seven graphs (drag to zoom; the hover line shows on all), the Latest
   errors, Browser errors and Slowest requests tables, Find by ref, One user's trail and, with an app
   selected, One app's requests; ranges 1h/24h/7d/30d, Refresh plus an optional 60 s auto refresh.
   The Platform API reads CloudWatch (`GET /api/admin/monitoring/metrics`, `POST
