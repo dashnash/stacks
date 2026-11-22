@@ -120,20 +120,17 @@ enum NativeHandlers {
             if let text = args["text"]?.stringValue { items.append(text) }
             if let raw = args["url"]?.stringValue, let url = URL(string: raw) { items.append(url) }
             guard !items.isEmpty else { throw BridgeError(.failed, "Nothing to share") }
-            guard let shell, let presenter = shell.presenter else { throw BridgeError(.failed, "Nothing to show the share sheet on") }
-            let sheet = UIActivityViewController(activityItems: items, applicationActivities: nil)
-            if let title = args["title"]?.stringValue { sheet.title = title }
+            guard let shell else { throw BridgeError(.failed, "Nothing to show the share sheet on") }
             // iPad: the sheet is a popover; anchor it mid-screen.
-            if let popover = sheet.popoverPresentationController {
-                popover.sourceView = shell.webView
-                popover.sourceRect = CGRect(x: shell.webView.bounds.midX, y: shell.webView.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            let completed: Bool = await withCheckedContinuation { done in
-                sheet.completionWithItemsHandler = { _, completed, _, _ in done.resume(returning: completed) }
-                presenter.present(sheet, animated: true)
-            }
+            let middle = CGRect(x: shell.webView.bounds.midX, y: shell.webView.bounds.midY, width: 0, height: 0)
+            let completed = try await shell.presentShareSheet(items: items, title: args["title"]?.stringValue, anchor: middle, arrows: [])
             return .object(["completed": .bool(completed)])
+        }
+
+        // What the Share button shares on this page, or whether it shows (#61).
+        router.register("share.page") { @MainActor [weak shell] args in
+            try shell?.setPageShare(args)
+            return .object([:])
         }
     }
 }

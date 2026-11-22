@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useShare } from '@stacks/web';
 import { useApi } from '../lib/auth';
 import { timeAgo } from '../lib/format';
 import type { CommentView, ThreadKind } from '../lib/types';
@@ -11,6 +12,16 @@ export interface ThreadRef {
   /** Tab label, e.g. "The book". */
   label: string;
 }
+
+/** Links to single comments (the Share button). Only threads with a page of their own have them. */
+export interface CommentLinks {
+  href: (commentId: string) => string;
+  /** What the shared link is about, e.g. the book's title. */
+  title: string;
+}
+
+/** How long a comment opened from a link stays highlighted. */
+export const HIGHLIGHT_MS = 2000;
 
 /** Replies are indented this many levels deep; deeper replies line up with the last level. */
 const MAX_INDENT = 3;
@@ -106,16 +117,31 @@ function CommentNode({
   depth,
   thread,
   onChanged,
+  links,
+  highlighted,
 }: {
   node: Node;
   depth: number;
   thread: ThreadRef;
   onChanged: () => Promise<void>;
+  links?: CommentLinks;
+  highlighted: string | null;
 }) {
   const api = useApi();
+  const { available: canShare, share } = useShare();
   const { comment } = node;
   const [mode, setMode] = useState<'view' | 'reply' | 'edit' | 'confirm-delete'>('view');
   const [error, setError] = useState<Error | null>(null);
+
+  async function shareComment() {
+    if (!links) return;
+    setError(null);
+    try {
+      await share({ url: links.href(comment.id), title: `${comment.author?.name ?? 'A member'} on ${links.title}` });
+    } catch (err) {
+      setError(err as Error);
+    }
+  }
 
   async function remove() {
     setError(null);
@@ -130,7 +156,11 @@ function CommentNode({
 
   return (
     <li className={depth > 0 && depth <= MAX_INDENT ? 'ml-4 border-l-2 border-ink/15 pl-4 sm:ml-6' : ''}>
-      <article className="py-3" aria-label={comment.deleted ? 'Deleted comment' : `Comment by ${comment.author?.name}`}>
+      <article
+        id={`comment-${comment.id}`}
+        className={`-mx-2 scroll-mt-24 rounded px-2 py-3 transition-colors duration-700 ${highlighted === comment.id ? 'bg-sun/40' : ''}`}
+        data-highlighted={highlighted === comment.id ? 'true' : undefined}
+        aria-label={comment.deleted ? 'Deleted comment' : `Comment by ${comment.author?.name}`}>
         {comment.deleted ? (
           <p className="voice text-base text-ink/50">Comment deleted</p>
         ) : (
@@ -167,6 +197,11 @@ function CommentNode({
                 <button type="button" className="kicker hover:text-coral" onClick={() => setMode(mode === 'reply' ? 'view' : 'reply')}>
                   Reply
                 </button>
+                {links && canShare && (
+                  <button type="button" className="kicker hover:text-coral" onClick={() => void shareComment()}>
+                    Share
+                  </button>
+                )}
                 {comment.canEdit && (
                   <button type="button" className="kicker hover:text-coral" onClick={() => setMode('edit')}>
                     Edit
@@ -213,7 +248,15 @@ function CommentNode({
       {node.replies.length > 0 && (
         <ul>
           {node.replies.map((child) => (
-            <CommentNode key={child.comment.id} node={child} depth={depth + 1} thread={thread} onChanged={onChanged} />
+            <CommentNode
+              key={child.comment.id}
+              node={child}
+              depth={depth + 1}
+              thread={thread}
+              onChanged={onChanged}
+              links={links}
+              highlighted={highlighted}
+            />
           ))}
         </ul>
       )}
@@ -221,11 +264,36 @@ function CommentNode({
   );
 }
 
-/** One thread: a composer and the comments with their replies. */
-export function Thread({ thread, onChanged }: { thread: ThreadRef; onChanged?: () => void }) {
+/**
+ * One thread: a composer and the comments with their replies. With `links`, comments have a
+ * Share button (where there's a share sheet); `focus` scrolls to one comment and highlights it.
+ */
+export function Thread({
+  thread,
+  onChanged,
+  links,
+  focus,
+}: {
+  thread: ThreadRef;
+  onChanged?: () => void;
+  links?: CommentLinks;
+  focus?: string;
+}) {
   const api = useApi();
   const comments = useAsync(() => api.thread(thread.kind, thread.id), [thread.kind, thread.id]);
   const tree = comments.data ? buildThread(comments.data.comments) : [];
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const loaded = !!comments.data;
+  const focused = focus ? comments.data?.comments.find((c) => c.id === focus && !c.deleted) : undefined;
+  const missing = !!focus && loaded && !focused;
+
+  useEffect(() => {
+    if (!focus || !loaded || missing) return;
+    document.getElementById(`comment-${focus}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    setHighlighted(focus);
+    const done = setTimeout(() => setHighlighted(null), HIGHLIGHT_MS);
+    return () => clearTimeout(done);
+  }, [focus, loaded, missing]);
 
   const refresh = async () => {
     await comments.reload();
@@ -243,6 +311,11 @@ export function Thread({ thread, onChanged }: { thread: ThreadRef; onChanged?: (
           await refresh();
         }}
       />
+      {missing && (
+        <p role="status" className="voice border-l-4 border-coral pl-3 text-base text-ink/70">
+          That comment is no longer here.
+        </p>
+      )}
       <ErrorNote error={comments.error} />
       {comments.loading && !comments.data && <Spinner />}
       {comments.data && tree.length === 0 && (
@@ -251,7 +324,15 @@ export function Thread({ thread, onChanged }: { thread: ThreadRef; onChanged?: (
       {tree.length > 0 && (
         <ul aria-label="Comments" className="divide-y divide-ink/10 border-t-2 border-ink">
           {tree.map((node) => (
-            <CommentNode key={node.comment.id} node={node} depth={0} thread={thread} onChanged={refresh} />
+            <CommentNode
+              key={node.comment.id}
+              node={node}
+              depth={0}
+              thread={thread}
+              onChanged={refresh}
+              links={links}
+              highlighted={highlighted}
+            />
           ))}
         </ul>
       )}

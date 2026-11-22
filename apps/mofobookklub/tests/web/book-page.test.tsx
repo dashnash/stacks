@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { installFakeNative } from '@stacks/native';
 import { describe, expect, it, vi } from 'vitest';
 import { bookChanges } from '../../web/src/components/BookEditor';
 import type { BookDetails } from '../../web/src/lib/types';
@@ -68,6 +69,25 @@ describe('BookView', () => {
     // Members can't edit; the book's thread is on the page.
     expect(screen.queryByRole('button', { name: /Edit book/ })).not.toBeInTheDocument();
     await waitFor(() => expect(api.thread).toHaveBeenCalledWith('book', PHM));
+  });
+
+  it("titles the app's Share button with the book, and opens a shared comment in its thread", async () => {
+    const fake = installFakeNative({ share: () => ({ completed: true }), 'share.page': () => ({}) });
+    try {
+      const api = fakeApi({
+        bookDetails: vi.fn().mockResolvedValue(details()),
+        thread: vi.fn().mockResolvedValue({
+          comments: [{ id: 'c1', parentId: null, createdAt: '2026-01-01T00:00:00Z', editedAt: null, deleted: false, body: 'Rocky!', author: { id: 'u_a', name: 'Ann' }, canEdit: false, canDelete: false }],
+        }),
+      });
+      renderWithApi(<BookView isbn={PHM} commentId="c1" />, api);
+      const c1 = await screen.findByRole('article', { name: 'Comment by Ann' });
+      await waitFor(() => expect(c1).toHaveAttribute('data-highlighted', 'true'));
+      expect(within(c1).getByRole('button', { name: 'Share' })).toBeInTheDocument();
+      await waitFor(() => expect(fake.log.map((l) => l.args)).toContainEqual({ page: window.location.href, title: 'Project Hail Mary · MOFO Book Klub' }));
+    } finally {
+      fake.remove();
+    }
   });
 
   it('votes from the book page', async () => {

@@ -1,5 +1,8 @@
-import { screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { createClient, StacksProvider } from '@stacks/web';
 import { describe, expect, it, vi } from 'vitest';
+import { ApiContext } from '../../web/src/lib/auth';
 import { PublicHeadliner, PublicShelf } from '../../web/src/components/PublicShelf';
 import { PublicBookView } from '../../web/src/views/PublicBookView';
 import { fakeApi, renderWithApi } from './fakes';
@@ -82,5 +85,26 @@ describe('PublicBookView', () => {
     const page = screen.getByRole('article');
     expect(within(page).queryByRole('button')).not.toBeInTheDocument();
     expect(api.publicBook).toHaveBeenCalledWith('9780593135204');
+  });
+
+  it('asks someone who opened a shared comment to sign in, and comes back to the same link', async () => {
+    const api = fakeApi({
+      publicBook: vi.fn().mockResolvedValue({
+        book: { isbn: '9780593135204', title: 'Project Hail Mary', author: 'Andy Weir', amazonUrl: 'https://www.amazon.com/dp/0593135202' },
+        readOn: [],
+        meetsOn: null,
+      }),
+    });
+    const fetch = vi.fn(async () => new Response('{}', { status: 401 }));
+    const nav = { visited: [] as string[], assign: (u: string) => void nav.visited.push(u), current: () => '/#/book/9780593135204/comment/c1' };
+    render(
+      <StacksProvider client={createClient({ fetch: fetch as unknown as typeof globalThis.fetch })} navigator={nav}>
+        <ApiContext.Provider value={api}>
+          <PublicBookView isbn="9780593135204" commentId="c1" />
+        </ApiContext.Provider>
+      </StacksProvider>,
+    );
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Sign in to see the discussion' }));
+    expect(nav.visited).toEqual([`/api/auth/login?return=${encodeURIComponent('/#/book/9780593135204/comment/c1')}`]);
   });
 });

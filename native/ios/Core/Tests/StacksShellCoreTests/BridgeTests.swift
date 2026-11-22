@@ -117,7 +117,7 @@ final class BridgeRouterTests: XCTestCase {
         let js = BridgeRouter.injectedScript(appVersion: "1.2.3")
         XCTAssertTrue(js.contains("protocol: 1"))
         XCTAssertTrue(js.contains("version: \"1.2.3\""))
-        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.apple\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"haptics.impact\",\"haptics.notification\",\"haptics.pattern\",\"motion.start\",\"motion.stop\",\"push.register\",\"push.saveDevice\",\"push.status\",\"screen.immersive\",\"screen.keepAwake\",\"screen.lockOrientation\",\"share\"])"))
+        XCTAssertTrue(js.contains("calls: Object.freeze([\"app.info\",\"auth.apple\",\"auth.google\",\"auth.signedOut\",\"badge.set\",\"haptics.impact\",\"haptics.notification\",\"haptics.pattern\",\"motion.start\",\"motion.stop\",\"push.register\",\"push.saveDevice\",\"push.status\",\"screen.immersive\",\"screen.keepAwake\",\"screen.lockOrientation\",\"share\",\"share.page\"])"))
         XCTAssertTrue(js.contains("messageHandlers.stacks"))
         XCTAssertTrue(js.contains("listen: function (channel, fn)"))
         XCTAssertTrue(js.contains("_emit: function (channel, payload)"))

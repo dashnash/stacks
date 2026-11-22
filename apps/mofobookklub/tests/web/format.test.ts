@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatPublished } from '../../web/src/lib/format';
-import { bookHref, parseRoute } from '../../web/src/lib/route';
+import { bookCommentHref, bookHref, parseRoute } from '../../web/src/lib/route';
 
 describe('formatPublished', () => {
   it('formats ISO-style dates and leaves free text alone', () => {
@@ -18,5 +18,11 @@ describe('routes', () => {
     expect(parseRoute('#/')).toEqual({ name: 'home' });
     expect(parseRoute('')).toEqual({ name: 'home' });
     expect(parseRoute('#/book/<script>')).toEqual({ name: 'home', anchor: 'book/<script>' });
+  });
+
+  it('reads links to one comment on a book page', () => {
+    expect(parseRoute(bookCommentHref('9780593135204', 'c_01J-x'))).toEqual({ name: 'book', isbn: '9780593135204', commentId: 'c_01J-x' });
+    expect(parseRoute('#/book/9780593135204/comment/')).toEqual({ name: 'home', anchor: 'book/9780593135204/comment/' });
+    expect(parseRoute('#/book/9780593135204/comment/<b>')).toEqual({ name: 'home', anchor: 'book/9780593135204/comment/<b>' });
   });
 });

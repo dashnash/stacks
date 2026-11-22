@@ -12,7 +12,6 @@ struct DashyHQApp: App {
     var body: some Scene {
         WindowGroup {
             ShellView(shell: shell)
-                .ignoresSafeArea(.container, edges: .bottom)
                 // Google's sign-in comes back through its URL scheme; any other URL is a link to open.
                 .onOpenURL { url in
                     if !GIDSignIn.sharedInstance.handle(url) { shell.open(url) }

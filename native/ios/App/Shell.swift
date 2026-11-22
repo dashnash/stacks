@@ -34,6 +34,13 @@ final class Shell: NSObject, ObservableObject {
     var orientationMask: UIInterfaceOrientationMask
     let defaultOrientationMask: UIInterfaceOrientationMask
     private var refreshControl: UIRefreshControl?
+    /// The Share button (ShellShare.swift): what this page shares, and whether to show it now.
+    var pageShare: PageShare
+    @Published var shareAvailable = false
+    @Published var scrolling = false
+    @Published var keyboardUp = false
+    var shareObservers: [NSKeyValueObservation] = []
+    var scrollSettle: Task<Void, Never>?
 
     private var lastLoaded: URL?
     private static let lastURLKey = "stacks.lastURL"
@@ -41,6 +48,7 @@ final class Shell: NSObject, ObservableObject {
 
     init(settings: ShellSettings) {
         self.settings = settings
+        pageShare = PageShare(policy: settings.policy)
         push = PushRegistrar(environment: settings.pushEnvironment)
         let nativeConfig = NativeConfigStore(url: settings.nativeConfigURL)
         self.nativeConfig = nativeConfig
@@ -56,6 +64,7 @@ final class Shell: NSObject, ObservableObject {
         config.allowsInlineMediaPlayback = true
         let content = WKUserContentController()
         content.addUserScript(WKUserScript(source: BridgeRouter.injectedScript(appVersion: settings.appVersion), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        content.addUserScript(WKUserScript(source: Shell.shareInsetScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = content
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
@@ -73,6 +82,7 @@ final class Shell: NSObject, ObservableObject {
         refreshControl = refresh
 
         NativeHandlers.register(on: router, shell: self)
+        observeForShare()
         // Back in the app: read /native/config again. (A SwiftUI app has scenes, so UIKit doesn't
         // call the app delegate's applicationDidBecomeActive; the notification still comes.)
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -185,6 +195,8 @@ extension Shell: WKNavigationDelegate, WKUIDelegate {
     /// A new page (or a reload) replaced the old one: whatever the old one turned on stops.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         gameKit.reset()
+        pageShare.clear()
+        refreshShare()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

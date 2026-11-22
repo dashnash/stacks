@@ -20,3 +20,5 @@ export type { GameRoomHandle, UseGameRoomOptions } from './useGameRoom';
 export { PREWARM_POLL_MS, PREWARM_RETRY_MS, usePrewarmRoom, type PrewarmRoom, type PrewarmStatus } from './usePrewarmRoom';
 export { createStateBuffer, GAME_DEVICE_LABEL, GameRoomClient, hubSignaling, interpolate } from './gameRoom';
 export type { ChannelLike, GamePlayerInfo, GameRoomClientOptions, GameRoomSnapshot, GameRoomStatus, GameSignaling, PeerLike, StateMeta } from './gameRoom';
+export { absoluteUrl, useShare, useShareTarget } from './share';
+export type { ShareHandle, ShareTarget } from './share';

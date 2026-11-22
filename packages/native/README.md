@@ -9,6 +9,8 @@ import { native, NativeError } from '@stacks/native';
 native.available;            // true inside the app
 native.has('share');         // this app version understands the call
 await native.share({ url, text, title }); // share sheet in the app, navigator.share elsewhere
+native.canShare;             // a share sheet here (the app, or navigator.share): else hide share buttons
+await native.setPageShare({ title }); // what the app's Share button sends on this page; { hidden: true }; null = default
 const info = await native.call('app.info'); // { version, build, platform, protocol }
 ```
 
@@ -17,6 +19,9 @@ const info = await native.call('app.info'); // { version, build, platform, proto
 - `auth.google`, `auth.apple`, `auth.signedOut`, `push.*` and `badge.set` are for the portal only: the app refuses
   them from apps. Apps get push for free: whatever they send with `deps.platform.notify` reaches
   people's phones (the portal registers the device; people mute apps in Settings).
+- The app (1.1.0+) has a Share button on every page that shares the page's URL and title.
+  `setPageShare` changes that for the current URL only (it lapses when the URL changes); in React use
+  `useShareTarget` from `@stacks/web`, which re-sends it after hash changes.
 - Tests and demos: `installFakeNative({ share: () => ({ completed: true }) })` puts a pretend app
   on the page (`remove()` takes it away); `getNative(globalLike)` builds a client for a given global.
 - `versionAtLeast(native.version, '1.2.0')` when a feature needs a newer app.
