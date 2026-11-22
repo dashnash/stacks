@@ -28,7 +28,7 @@ failed or left stacks on different commits: [ROLLBACK.md](ROLLBACK.md).
 | Latest errors | What has been failing, newest first | nothing |
 | Browser errors | Crashes in people's browsers | nothing |
 | Slowest requests | What is slow | nothing |
-| One user's trail | Everything one person did, in order | `u_PASTE-USER-ID` |
+| One user's trail | Everything one person did, latest 500 lines, newest first | `u_PASTE-USER-ID` |
 | One app's requests | One app's traffic | `APP-SLUG` |
 
 ## "A user sent me ref 3f9a2c1b"
@@ -55,7 +55,7 @@ purpose (validation, no access); the message the person saw is the explanation.
    theirs (`message.userId`). Logs never hold emails or names, so you cannot search by those.
 2. Run **One user's trail** with the id in place of `u_PASTE-USER-ID`.
 3. You get every request they made (route pattern, status, duration) and every error, across all
-   apps and the portal, oldest first. A `ref` on a line leads to the rest of that request
+   apps and the portal, newest first (the latest 500 lines; the Monitoring page shows them oldest first). A `ref` on a line leads to the rest of that request
    (**Find by ref**).
 
 ## Browser errors

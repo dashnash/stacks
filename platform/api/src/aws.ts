@@ -1,6 +1,6 @@
 import { log } from '@stacks/api';
 import { CloudWatchClient, GetMetricDataCommand } from '@aws-sdk/client-cloudwatch';
-import { CloudWatchLogsClient, DescribeLogGroupsCommand, GetQueryResultsCommand, StartQueryCommand } from '@aws-sdk/client-cloudwatch-logs';
+import { CloudWatchLogsClient, DescribeLogGroupsCommand, GetQueryResultsCommand, StartQueryCommand, StopQueryCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -136,7 +136,7 @@ export class CloudWatchMonitor implements Monitor {
     return this.groups.names;
   }
 
-  async startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string> {
+  async startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string | null> {
     try {
       return await this.start(q);
     } catch (err) {
@@ -144,8 +144,13 @@ export class CloudWatchMonitor implements Monitor {
       if (!(err instanceof Error && err.name === 'ResourceNotFoundException')) throw err;
       this.groups = undefined;
       const live = new Set(await this.listApiLogGroups());
-      return this.start({ ...q, logGroupNames: q.logGroupNames.filter((n) => live.has(n)) });
+      const logGroupNames = q.logGroupNames.filter((n) => live.has(n));
+      return logGroupNames.length ? this.start({ ...q, logGroupNames }) : null;
     }
+  }
+
+  async stopQuery(queryId: string): Promise<void> {
+    await this.logs.send(new StopQueryCommand({ queryId }));
   }
 
   private async start(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string> {

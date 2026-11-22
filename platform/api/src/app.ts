@@ -49,7 +49,7 @@ import {
   userForIdentity,
   userIdForEmail,
 } from './core';
-import { monitoringMetrics, pollMonitoringQuery, startMonitoringQuery } from './monitoring';
+import { monitoringMetrics, pollMonitoringQuery, startMonitoringQuery, stopMonitoringQuery } from './monitoring';
 import { linkGoogle, linkProvider, mergeWithTicket, unlinkIdentity } from './merge';
 import { badges, deviceView, handlePushAction, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
@@ -601,6 +601,14 @@ export function createPlatformApp(deps: PlatformDeps) {
       signedIn(async (req, user) => {
         requireAdmin(user);
         return { body: await pollMonitoringQuery(deps, req.params.queryId!) };
+      }),
+    )
+    .add(
+      'DELETE',
+      '/admin/monitoring/query/:queryId',
+      signedIn(async (req, user) => {
+        requireAdmin(user);
+        return { body: await stopMonitoringQuery(deps, req.params.queryId!) };
       }),
     )
     .add(

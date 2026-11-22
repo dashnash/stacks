@@ -114,6 +114,7 @@ export function createPortalApi(client: Client = createClient()) {
     monitoringMetrics: (range: MonitoringRange) => client.get<MonitoringMetrics>(`/admin/monitoring/metrics?range=${range}`),
     monitoringQuery: (body: QueryRequest) => client.post<QueryAnswer>('/admin/monitoring/query', body),
     monitoringQueryResult: (queryId: string) => client.get<QueryAnswer>(`/admin/monitoring/query/${encodeURIComponent(queryId)}`),
+    stopMonitoringQuery: (queryId: string) => client.del(`/admin/monitoring/query/${encodeURIComponent(queryId)}`),
   };
 }
 export type PortalApi = ReturnType<typeof createPortalApi>;
@@ -156,6 +157,8 @@ export interface QueryAnswer {
   status: string;
   rows?: LogRow[];
   people?: Record<string, { name: string; email: string }>;
+  /** The saved query's limit was reached: there may be more. */
+  limited?: boolean;
 }
 export interface QueryRequest {
   query: MonitoringQueryId;
@@ -174,7 +177,11 @@ export async function runQuery(api: PortalApi, body: QueryRequest, o: { pollMs?:
   while ((res.status === 'Running' || res.status === 'Scheduled') && res.queryId) {
     if (Date.now() - started > (o.maxMs ?? 60_000)) throw new Error('The query took too long; try a shorter range.');
     await wait(o.pollMs ?? 1000);
-    if (o.signal?.aborted) throw new DOMException('Stopped', 'AbortError');
+    if (o.signal?.aborted) {
+      // Logs Insights runs a limited number of queries at once: stop the one nobody waits for.
+      void api.stopMonitoringQuery(res.queryId).catch(() => undefined);
+      throw new DOMException('Stopped', 'AbortError');
+    }
     res = await api.monitoringQueryResult(res.queryId);
   }
   if (res.status !== 'Complete') throw new Error(`The query ended ${res.status.toLowerCase()}; try again.`);

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
 import { runQuery, type PortalApi } from '../src/api';
@@ -9,13 +10,16 @@ import { PortalProvider } from '../src/portal';
 import { healthOf, shortResource } from '../src/views/Monitoring';
 import { LineChart, niceMax } from '../src/views/LineChart';
 
+// StrictMode, as in main.tsx: it runs state updates twice, which catches updates that mutate state.
 function renderPortal(hash = '#/') {
   window.location.hash = hash;
   const { api } = createDemoPortal();
   render(
-    <PortalProvider api={api} signInMethod={{ kind: 'personas', personas: DEMO_PEOPLE }}>
-      <App />
-    </PortalProvider>,
+    <StrictMode>
+      <PortalProvider api={api} signInMethod={{ kind: 'personas', personas: DEMO_PEOPLE }}>
+        <App />
+      </PortalProvider>
+    </StrictMode>,
   );
   return api;
 }
@@ -85,6 +89,17 @@ describe('Monitoring page', () => {
     expect(screen.getByRole('textbox', { name: /Someone sent you a ref/ })).toHaveValue(DEMO_REF);
   });
 
+  it('opens and closes a row\'s stack trace on click', async () => {
+    await openMonitoring();
+    const table = await screen.findByRole('table', { name: 'browserErrors' });
+    const row = (await within(table).findAllByRole('row')).find((r) => r.getAttribute('aria-expanded') === 'false')!;
+    await userEvent.click(within(row).getAllByRole('cell')[3]!);
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(within(table).getByText(/assets\/index-BqT3k9\.js/)).toBeInTheDocument();
+    await userEvent.click(within(row).getAllByRole('cell')[3]!);
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('checks a typed ref before asking', async () => {
     await openMonitoring();
     await userEvent.type(screen.getByRole('textbox', { name: /Someone sent you a ref/ }), 'nope');
@@ -146,9 +161,12 @@ describe('helpers', () => {
     const stopped = new AbortController();
     stopped.abort();
     const poll = vi.fn(async () => answers[1]);
-    const running = { monitoringQuery: vi.fn(async () => answers[0]), monitoringQueryResult: poll } as unknown as PortalApi;
+    const stop = vi.fn(async () => undefined);
+    const running = { monitoringQuery: vi.fn(async () => answers[0]), monitoringQueryResult: poll, stopMonitoringQuery: stop } as unknown as PortalApi;
     await expect(runQuery(running, { query: 'latestErrors', range: '24h' }, { pollMs: 1, signal: stopped.signal })).rejects.toThrow('Stopped');
     expect(poll).not.toHaveBeenCalled();
+    // …and stops the query on the server, which runs only so many at once.
+    expect(stop).toHaveBeenCalledWith('q');
   });
 
   it('marks health red for server errors, amber for browser errors or slowness', () => {

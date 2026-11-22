@@ -6,7 +6,7 @@ import { createPlatformHarness } from './helpers';
 const QID = '0a1b2c3d-1111-2222-3333-444455556666';
 
 function fakeMonitor(o: { series?: (q: MetricQuery[]) => MetricSeries[]; status?: QueryStatus[]; rows?: Record<string, string>[]; groups?: string[]; fail?: boolean } = {}) {
-  const calls = { metrics: [] as { queries: MetricQuery[]; start: Date; end: Date }[], queries: [] as { logGroupNames: string[]; queryString: string; start: Date; end: Date }[], polls: 0 };
+  const calls = { metrics: [] as { queries: MetricQuery[]; start: Date; end: Date }[], queries: [] as { logGroupNames: string[]; queryString: string; start: Date; end: Date }[], polls: 0, stopped: [] as string[] };
   const statuses = [...(o.status ?? ['Complete'])];
   const err = () => Object.assign(new Error('nope'), { name: 'AccessDeniedException' });
   const monitor: Monitor = {
@@ -21,6 +21,9 @@ function fakeMonitor(o: { series?: (q: MetricQuery[]) => MetricSeries[]; status?
       if (o.fail) throw err();
       calls.queries.push(q);
       return QID;
+    },
+    stopQuery: async (id) => {
+      calls.stopped.push(id);
     },
     getQueryResults: async () => {
       calls.polls++;
@@ -48,6 +51,7 @@ describe('monitoring access', () => {
       ['GET', '/admin/monitoring/metrics'],
       ['POST', '/admin/monitoring/query', { query: 'latestErrors' }],
       ['GET', `/admin/monitoring/query/${QID}`],
+      ['DELETE', `/admin/monitoring/query/${QID}`],
     ];
     for (const [method, path, body] of routes) {
       expect((await h.call(method, path, { body })).status).toBe(401);
@@ -59,6 +63,7 @@ describe('monitoring access', () => {
     expect(h.calls.metrics).toHaveLength(0);
     expect(h.calls.queries).toHaveLength(0);
     expect(h.calls.polls).toBe(0);
+    expect(h.calls.stopped).toEqual([]);
   });
 
   it('needs the CSRF header to start a query', async () => {
@@ -236,14 +241,47 @@ describe('POST /admin/monitoring/query', () => {
     const start = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
     expect(start.body).toEqual({ queryId: QID, status: 'Running' });
     const poll = await h.call('GET', `/admin/monitoring/query/${QID}`, { as: ADMIN });
-    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {} });
+    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {}, limited: false });
     expect((await h.call('GET', '/admin/monitoring/query/not-an-id', { as: ADMIN })).status).toBe(400);
+  });
+
+  it('polls and stops only queries this portal started, for an hour', async () => {
+    const h = setup({ status: ['Running'] });
+    const other = '99999999-1111-2222-3333-444455556666';
+    expect((await h.call('GET', `/admin/monitoring/query/${other}`, { as: ADMIN })).status).toBe(404);
+    expect((await h.call('DELETE', `/admin/monitoring/query/${other}`, { as: ADMIN })).status).toBe(404);
+    expect(h.calls.polls).toBe(0);
+    await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
+    const stop = await h.call('DELETE', `/admin/monitoring/query/${QID}`, { as: ADMIN });
+    expect(stop.status).toBe(200);
+    expect(h.calls.stopped).toEqual([QID]);
+    h.advance(3_601_000);
+    expect((await h.call('GET', `/admin/monitoring/query/${QID}`, { as: ADMIN })).status).toBe(404);
+  });
+
+  it('keeps the latest trail lines and shows them oldest first, saying when the limit was reached', async () => {
+    const rows = Array.from({ length: 500 }, (_, i) => ({ '@timestamp': `t${String(500 - i).padStart(3, '0')}`, 'message.userId': 'u_abc123' }));
+    const h = setup({ rows });
+    const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'userTrail', userId: 'u_abc123' } });
+    expect(h.calls.queries[0]!.queryString).toContain('sort @timestamp desc\n| limit 500');
+    expect(res.body.rows[0].ts).toBe('t001');
+    expect(res.body.rows.at(-1).ts).toBe('t500');
+    expect(res.body.limited).toBe(true);
+    const few = setup({ rows: rows.slice(0, 3) });
+    expect((await few.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'userTrail', userId: 'u_abc123' } })).body.limited).toBe(false);
+  });
+
+  it('answers empty when every log group it knew has gone', async () => {
+    const h = setup();
+    h.monitor.startQuery = async () => null;
+    const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
+    expect(res.body).toMatchObject({ queryId: null, status: 'Complete', rows: [] });
   });
 
   it('answers empty when the environment has no log groups yet', async () => {
     const h = setup({ groups: [] });
     const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
-    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {} });
+    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {}, limited: false });
     expect(h.calls.queries).toHaveLength(0);
   });
 
@@ -261,5 +299,9 @@ describe('appOfResource', () => {
     expect(appOfResource('prod', 'stacks-prod-app-sky-ApiHandler1', slugs)).toBe('sky');
     expect(appOfResource('prod', 'stacks-test-app-hello-ApiHandler1', slugs)).toBeUndefined();
     expect(appOfResource('prod', 'stacks-prod-app-unknown-Fn', slugs)).toBeUndefined();
+    // A 30-character slug cut short in a 64-character generated name.
+    const long = 'a-very-long-app-slug-of-thirty';
+    expect(appOfResource('prod', `stacks-prod-app-${long.slice(0, 20)}-ApiHandl-AbC123XyZ`, [...slugs, long])).toBe(long);
+    expect(appOfResource('prod', 'stacks-prod-app-sk-Fn', slugs)).toBeUndefined();
   });
 });

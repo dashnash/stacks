@@ -172,7 +172,7 @@ describe('PlatformStack monitoring', () => {
       'fields @timestamp, message.type, message.app, message.method, message.route, message.status, message.durationMs, message.userId, message.message, message.error.name, message.error.message, message.error.stack\n| filter message.ref = "PASTE-REF"\n| sort @timestamp asc\n| limit 200',
     );
     expect(byName['Browser errors']).toContain('filter message.type = "client-error"');
-    expect(byName["One user's trail"]).toContain('filter message.userId = "u_PASTE-USER-ID"\n| sort @timestamp asc');
+    expect(byName["One user's trail"]).toContain('filter message.userId = "u_PASTE-USER-ID"\n| sort @timestamp desc');
     expect(byName["One app's requests"]).toContain('filter message.type = "request" and message.app = "APP-SLUG"');
     expect(Object.keys(SAVED_QUERIES)).toHaveLength(6);
   });

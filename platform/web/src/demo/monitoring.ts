@@ -178,6 +178,9 @@ export function createDemoMonitor(o: { userIds: () => Promise<string[]> }): Moni
       pending.set(id, { status: 'Complete', rows: await rowsFor(queryString, start.getTime(), end.getTime()) });
       return id;
     },
+    async stopQuery(queryId) {
+      pending.delete(queryId);
+    },
     async getQueryResults(queryId) {
       return pending.get(queryId) ?? { status: 'Unknown', rows: [] };
     },

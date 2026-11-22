@@ -164,7 +164,7 @@ function MonitoringPage() {
         <p className="small muted mon-note">
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
             ? `Tables cover the last ${metrics.logRetentionDays} days: logs here are kept that long. Graphs go back further.`
-            : 'Tables show the newest rows the saved queries return (50 or 100).'}
+            : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
         </p>
       )}
     </section>
@@ -361,7 +361,12 @@ function QueryTable({ request, range, tick, ...links }: { request: Omit<QueryReq
   useEffect(() => setOpen(new Set()), [answer]);
   if (error) return <ErrorNote error={error} className="error" />;
   if (!answer) return <Spinner />;
-  const toggle = (i: number) => setOpen((s) => (s.has(i) ? (s.delete(i), new Set(s)) : new Set(s.add(i))));
+  const toggle = (i: number) =>
+    setOpen((s) => {
+      const next = new Set(s);
+      if (!next.delete(i)) next.add(i);
+      return next;
+    });
   return (
     <div className={`grid-scroll${loading ? ' stale' : ''}`} aria-busy={loading}>
       <table className="grid mon-table" aria-label={request.query}>
@@ -476,6 +481,9 @@ function LookupResult({ lookup, range, ...links }: { lookup: Lookup; range: Moni
       {loading && <Spinner />}
       {answer && !loading && !answer.rows.length && (
         <p className="muted">{lookup.kind === 'ref' ? `No lines with this ref in the last ${range}. Try a longer range.` : `Nothing from this person in the last ${range}.`}</p>
+      )}
+      {answer && !loading && answer.limited && (
+        <p className="small muted">{lookup.kind === 'user' ? `The latest ${answer.rows.length} lines; older ones are left out.` : `The first ${answer.rows.length} lines.`}</p>
       )}
       {answer && !loading && !!answer.rows.length && (
         <div className="grid-scroll">

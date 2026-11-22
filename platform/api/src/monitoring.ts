@@ -1,4 +1,4 @@
-import { badRequest, HttpError, log } from '@stacks/api';
+import { badRequest, HttpError, log, notFound } from '@stacks/api';
 import { apiLogRetentionDays, appMetricSearch, awsMetricSearch, dashboardName, queryText, SAVED_QUERIES, type SavedQueryId } from '@stacks/manifest/monitoring';
 import { shownName, type PlatformDeps } from './model';
 import { getUserRecord } from './core';
@@ -41,7 +41,10 @@ export interface Monitor {
   getMetricData(q: { queries: MetricQuery[]; start: Date; end: Date }): Promise<MetricSeries[]>;
   /** Names of this environment's API log groups (`/stacks/<tag>/<slug>/api`) that exist. */
   listApiLogGroups(): Promise<string[]>;
-  startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string>;
+  /** The query id, or null when none of the log groups exists any more (nothing to search). */
+  startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string | null>;
+  /** Stops a query nobody waits for any more (Logs Insights runs a limited number at once). */
+  stopQuery(queryId: string): Promise<void>;
   /** Rows keep Logs Insights' field names (`@timestamp`, `message.route`, …). */
   getQueryResults(queryId: string): Promise<{ status: QueryStatus; rows: Record<string, string>[] }>;
   /**
@@ -120,7 +123,16 @@ export function appOfResource(tag: string, name: string, slugs: string[]): strin
   if (name.startsWith(`stacks-${tag}-platform-`)) return 'platform';
   const rest = name.startsWith(`stacks-${tag}-app-`) ? name.slice(`stacks-${tag}-app-`.length) : undefined;
   if (rest === undefined) return undefined;
-  return [...slugs].sort((a, b) => b.length - a.length).find((s) => rest.startsWith(`${s}-`));
+  const whole = [...slugs].sort((a, b) => b.length - a.length).find((s) => rest.startsWith(`${s}-`));
+  if (whole) return whole;
+  // Generated names are cut at 64 characters, which can cut a long slug: the longest piece before a
+  // `-` that starts exactly one slug.
+  for (let k = rest.lastIndexOf('-'); k >= 3; k = rest.lastIndexOf('-', k - 1)) {
+    const matches = slugs.filter((s) => s.startsWith(rest.slice(0, k)));
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return undefined;
+  }
+  return undefined;
 }
 
 export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown, slugs: string[]) {
@@ -218,10 +230,26 @@ async function withPeople(deps: PlatformDeps, rows: Record<string, string>[]) {
   return people;
 }
 
-async function answer(deps: PlatformDeps, queryId: string, res: { status: QueryStatus; rows: Record<string, string>[] }) {
+/** Queries this portal started, so polling and stopping only reach those (1 hour). */
+const startedKey = (queryId: string) => ({ PK: `MONQUERY#${queryId}`, SK: 'MONQUERY' });
+type StartedQuery = { query: SavedQueryId; notAfter: number };
+
+async function startedQuery(deps: PlatformDeps, queryId: string): Promise<StartedQuery> {
+  if (!QUERY_ID.test(queryId)) throw badRequest('Not a query id');
+  const k = startedKey(queryId);
+  const item = await deps.store.get<{ PK: string; SK: string } & StartedQuery>(k.PK, k.SK);
+  if (!item || item.notAfter < deps.now().getTime()) throw notFound('No such query');
+  return item;
+}
+
+const limitOf = (id: SavedQueryId) => Number(/^limit (\d+)$/.exec(SAVED_QUERIES[id].query.at(-1) ?? '')?.[1] ?? 0);
+
+async function answer(deps: PlatformDeps, queryId: string | null, query: SavedQueryId, res: { status: QueryStatus; rows: Record<string, string>[] }) {
   if (res.status !== 'Complete') return { queryId, status: res.status };
-  const rows = res.rows.map(rowOut);
-  return { queryId, status: res.status, rows, people: await withPeople(deps, rows) };
+  let rows = res.rows.map(rowOut);
+  // The trail is fetched newest first so the limit keeps the latest lines; it reads oldest first.
+  if (query === 'userTrail') rows = rows.reverse();
+  return { queryId, status: res.status, rows, people: await withPeople(deps, rows), limited: rows.length >= limitOf(query) };
 }
 
 export async function startMonitoringQuery(deps: PlatformDeps, body: Record<string, unknown>, slugs: string[]) {
@@ -243,19 +271,29 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   const ms = Math.min(MONITORING_RANGES[range].ms, logRetentionDays(tag) * 86_400_000);
   const start = new Date(end.getTime() - ms);
   const logGroupNames = await monitor.listApiLogGroups().catch(upstream);
-  if (!logGroupNames.length) return { queryId: null, status: 'Complete' as const, rows: [], people: {} };
-  const queryId = await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream);
+  const queryId = logGroupNames.length ? await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream) : null;
+  if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] });
+  const now = deps.now().getTime();
+  await deps.store.put({ ...startedKey(queryId), query, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
 
   const deadline = Date.now() + (monitor.waitMs ?? 0);
   for (;;) {
     const res = await monitor.getQueryResults(queryId).catch(upstream);
-    if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return answer(deps, queryId, res);
+    if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return answer(deps, queryId, query, res);
     await new Promise((r) => setTimeout(r, 500));
   }
 }
 
 export async function pollMonitoringQuery(deps: PlatformDeps, queryId: string) {
   const { monitor } = monitorOf(deps);
-  if (!QUERY_ID.test(queryId)) throw badRequest('Not a query id');
-  return answer(deps, queryId, await monitor.getQueryResults(queryId).catch(upstream));
+  const { query } = await startedQuery(deps, queryId);
+  return answer(deps, queryId, query, await monitor.getQueryResults(queryId).catch(upstream));
+}
+
+/** Stops a query the page no longer waits for. A query that already ended is fine. */
+export async function stopMonitoringQuery(deps: PlatformDeps, queryId: string) {
+  const { monitor } = monitorOf(deps);
+  await startedQuery(deps, queryId);
+  await monitor.stopQuery(queryId).catch((err: unknown) => log.info('StopQuery', { queryId, error: err instanceof Error ? err.name : 'Error' }));
+  return { stopped: true };
 }

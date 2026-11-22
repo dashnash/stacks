@@ -109,7 +109,7 @@ describe('PlatformStack', () => {
     const statements = Object.values(synth().findResources('AWS::IAM::Policy')).flatMap((p) => p.Properties.PolicyDocument.Statement as { Sid?: string; Action: string | string[]; Resource: unknown }[]);
     const bySid = (sid: string) => statements.find((s) => s.Sid === sid)!;
     expect(bySid('MonitoringMetrics')).toMatchObject({ Action: 'cloudwatch:GetMetricData', Resource: '*' });
-    expect(bySid('MonitoringQueryResults')).toMatchObject({ Action: ['logs:GetQueryResults', 'logs:DescribeLogGroups'], Resource: '*' });
+    expect(bySid('MonitoringQueryResults')).toMatchObject({ Action: ['logs:GetQueryResults', 'logs:StopQuery', 'logs:DescribeLogGroups'], Resource: '*' });
     const start = bySid('MonitoringStartQuery');
     expect(start.Action).toBe('logs:StartQuery');
     expect(JSON.stringify(start.Resource)).toContain(':log-group:/stacks/test/*');

@@ -84,7 +84,8 @@ export const SAVED_QUERIES = {
     query: [
       'fields @timestamp, message.app, message.type, message.method, message.route, message.status, message.durationMs, message.ref, message.userId, message.message',
       'filter message.userId = "u_PASTE-USER-ID"',
-      'sort @timestamp asc',
+      // Newest first, so the limit keeps the latest lines (the portal shows them oldest first).
+      'sort @timestamp desc',
       'limit 500',
     ],
   },

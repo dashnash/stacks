@@ -83,13 +83,19 @@ Body: `{ query, range, ref?, userId?, app? }`, where `query` is `latestErrors`, 
   `GetQueryResults` once (holding the request open would inflate the platform's own `DurationMs` and
   Slowest requests). Answer: `{ queryId, status: "Running" | "Complete" | "Failed" | …, rows?, people? }`.
 
-### `GET /api/admin/monitoring/query/:queryId`
+### `GET /api/admin/monitoring/query/:queryId`, `DELETE /api/admin/monitoring/query/:queryId`
 
-Polls once: same answer shape. The client polls every second until `Complete` (max 60 s, then "The
+Only for queries this portal started: `POST` records the id in the platform table for an hour
+(`MONQUERY#<id>`, TTL), and any other id is a 404, so a staging admin can't read a production query's
+rows by its id (`GetQueryResults` has no resource-level permission). `GET` polls once: same answer
+shape. `DELETE` stops the query (`StopQuery`); the page calls it when nobody waits for a query any more
+(range, app or page changed), since Logs Insights runs a limited number of queries at once. The client polls every second until `Complete` (max 60 s, then "The
 query took too long; try a shorter range").
 
 Rows are objects keyed by the field name without `message.` (`ts`, `app`, `type`, `route`, `status`,
-`durationMs`, `ref`, `userId`, `error`, `stack`, `path`, `source`, `clientBuild`, …). `people` maps
+`durationMs`, `ref`, `userId`, `error`, `stack`, `path`, `source`, `clientBuild`, …). `limited: true`
+means the saved query's limit was reached. The trail is fetched newest first (so the limit keeps the
+latest 500 lines) and answered oldest first. `people` maps
 each `userId` in the rows to `{ name, email }` (unknown or merged-away ids are left out: a merged id is never shown with the survivor's name; the
 page shows the id only).
 
@@ -120,7 +126,7 @@ page shows the id only).
 - `cloudwatch:GetMetricData` on `*` (it has no resource-level permission).
 - `logs:StartQuery` on `arn:aws:logs:<region>:<account>:log-group:/stacks/<tag>/*` (resource-scoped
   to the environment).
-- `logs:GetQueryResults`, `logs:DescribeLogGroups` on `*` (no resource-level
+- `logs:GetQueryResults`, `logs:StopQuery`, `logs:DescribeLogGroups` on `*` (no resource-level
   permission).
 
 `ci-stack.ts`: add `cloudwatch:GetMetricData` to the staging boundary's `AppRuntime` statement
