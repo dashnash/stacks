@@ -150,6 +150,10 @@ describe('smoke check (#100)', () => {
       expect(r[3]).toMatchObject({ ok: false });
     });
 
+    it('needs exactly one app in the outputs', () => {
+      expect(() => plan(targetsFromOutputs({}, { portal }), { appsOnly: true })).toThrow(/one app in its outputs, found 0/);
+    });
+
     it('still needs a portal: no PortalURL and no --portal fails', () => {
       expect(() => targetsFromOutputs(appOnly)).toThrow(/--portal/);
     });

@@ -139,6 +139,12 @@ describe('deploy-changes against a git history', () => {
     expect(decide(c, d, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('package-lock.json') });
   });
 
+  it('reads non-ASCII paths as they are (no git quoting)', () => {
+    const base = git('rev-parse', 'HEAD');
+    const head = commit({ 'docs/résumé.md': 'x' });
+    expect(decide(base, head, config, dir)).toMatchObject({ mode: 'docs' });
+  });
+
   it('sees a new app, and a move within an app', () => {
     expect(decide(c2, c3, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('apps/pantry is new') });
     expect(decide(c3, c4, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });

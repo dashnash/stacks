@@ -63,7 +63,8 @@ redeploys everything after a failed run).
    review gate, #111, for `packages/infra/`, `.github/` or `platform/api/`).
 3. Merging it deploys the old code to staging and production through the normal Deploy run. The
    smoke check's table should show one commit for every stack it deployed. A revert of a one-app
-   change deploys only that app: the table lists the portal and that app, and the portal stays on
+   change whose run succeeded deploys only that app (after a failed run, the revert's run deploys
+   everything): the table lists the portal and that app, and the portal stays on
    the commit of the last full deploy (no mixed-versions warning for it).
 
 Never deploy an old artifact or run `cdk deploy` by hand; only CI deploys, and `.claude/settings.json`

@@ -41,6 +41,8 @@ export const probeApp = (apps) => apps.find((a) => a.slug === SIGN_IN_PROBE) ?? 
 
 /** The checks to run, in order. Each `run(fetch)` resolves to `{ warnings? }` or throws with the reason. */
 export function plan({ portal, apps }, { maintenance = false, sha, appsOnly = false } = {}) {
+  // An app-only deploy deployed exactly one app: anything else means the outputs aren't what ran.
+  if (appsOnly && apps.length !== 1) throw new Error(`An app-only deploy should have one app in its outputs, found ${apps.length}`);
   const checks = [
     // After an app-only deploy the portal is on an older commit by design: no mixed-versions warning.
     { name: 'portal /api/health', run: (f) => health(f, `${portal}/api/health`, appsOnly ? undefined : sha) },

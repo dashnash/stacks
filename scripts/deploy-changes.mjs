@@ -24,7 +24,8 @@ import { classifyDeploy, lockfileChanges } from './pr-paths.mjs';
 
 // With a `cwd` (tests' fixtures), a hook's GIT_DIR, GIT_INDEX_FILE… mustn't point git elsewhere.
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
-const git = (args, cwd) => execFileSync('git', args, { cwd, env: cwd ? cleanEnv() : process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
+// core.quotePath=false: a non-ASCII path comes out as itself, not quoted ("docs/caf\303\251.md").
+const git = (args, cwd) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { cwd, env: cwd ? cleanEnv() : process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
 
 /**
  * From the newest Deploy runs on main, other than this one: `base`, the head commit of the run that

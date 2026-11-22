@@ -21,15 +21,16 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-main
+  # A hand run from another ref gets its own group: it must never replace main's queued run.
+  group: deploy-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # What this push deploys: docs | app | full (see the top). Diffing against the last green run, not
-  # the merge's parent, keeps the changes of a failed run, or of a queued run a newer push replaced.
+  # What this push deploys: docs | app | full (see the top). Against the last green run, not the
+  # merge's parent: after a failed run, or a queued one a newer push replaced, the next is full.
   changes:
     runs-on: ${{ vars.LINUX_RUNNER && fromJSON(vars.LINUX_RUNNER) || 'ubuntu-latest' }}
     permissions:
@@ -152,7 +153,7 @@ jobs:
           npm run typecheck
           if [[ "$MODE" == app ]]; then
             # Every test except the other apps' (packages, tools and infra read or bundle apps).
-            npm test -w "apps/${APP}" -w packages -w packages/modules -w platform -w tools -w infra
+            npm test --if-present -w "apps/${APP}" -w packages -w packages/modules -w platform -w tools -w infra
           else
             npm test
           fi
