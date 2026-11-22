@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // @ts-expect-error: plain .mjs script, no types
 import { baselineFrom, decide, heldApps, lastGreenDeploy } from '../../../scripts/deploy-changes.mjs';
 // @ts-expect-error: plain .mjs script, no types
@@ -67,7 +67,9 @@ describe('what a push to main deploys (classifyDeploy)', () => {
 describe('deploy-changes against a git history', () => {
   const dir = mkdtempSync(join(tmpdir(), 'deploy-changes-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+  // No global or system git config (hooks, templates, signing) in the fixture.
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, encoding: 'utf8', env }).trim();
   const commit = (files: Record<string, string>, remove: string[] = []) => {
     for (const [f, text] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, f)), { recursive: true });
@@ -78,13 +80,17 @@ describe('deploy-changes against a git history', () => {
     git('-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'c');
     return git('rev-parse', 'HEAD');
   };
-  git('init', '-q');
   const config = { environments: { staging: {}, production: {} } };
-  const c0 = commit({ 'apps/hello/app.manifest.json': '{}', 'apps/hello/a.ts': '1', 'packages/api/x.ts': '1' });
-  const c1 = commit({ 'docs/a.md': 'x' });
-  const c2 = commit({ 'apps/hello/a.ts': '2' });
-  const c3 = commit({ 'apps/pantry/app.manifest.json': '{}' });
-  const c4 = commit({ 'apps/hello/b.ts': 'moved' }, ['apps/hello/a.ts']);
+  let c0 = '', c1 = '', c2 = '', c3 = '', c4 = '';
+  // Built before the tests, not while collecting them: a git failure fails the tests, not the file.
+  beforeAll(() => {
+    git('init', '-q');
+    c0 = commit({ 'apps/hello/app.manifest.json': '{}', 'apps/hello/a.ts': '1', 'packages/api/x.ts': '1' });
+    c1 = commit({ 'docs/a.md': 'x' });
+    c2 = commit({ 'apps/hello/a.ts': '2' });
+    c3 = commit({ 'apps/pantry/app.manifest.json': '{}' });
+    c4 = commit({ 'apps/hello/b.ts': 'moved' }, ['apps/hello/a.ts']);
+  });
 
   it('diffs against the last green deploy, so skipped or failed runs count in the next one', () => {
     expect(decide(c0, c1, config, dir)).toMatchObject({ mode: 'docs', base: c0 });

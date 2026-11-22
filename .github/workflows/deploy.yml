@@ -134,9 +134,11 @@ jobs:
       - run: npm ci --ignore-scripts
       # Typecheck and the import rule too: PR branches needn't be up to date (the ruleset isn't
       # strict), so two green PRs can still break main together; this is where that shows.
-      - name: Typecheck, import rule, test
+      - name: Typecheck, repo checks, test
         run: |
           node scripts/check-imports.mjs
+          node scripts/check-action-pins.mjs
+          node scripts/check-install-scripts.mjs
           if [[ "$MODE" == app ]]; then
             npm run typecheck -w "apps/${APP}"
             # The app's own tests, plus the ones that read every app: conformance, manifests, synth.
@@ -164,6 +166,18 @@ jobs:
           if [[ "$MODE" == app ]]; then only=(-c "app=${APP}"); fi
           npx cdk synth -q -c env=production "${only[@]}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out
           npx cdk synth -q -c env=staging "${only[@]}" -c "hostedZoneIds=${HOSTED_ZONE_IDS}" -c requireZones=true -o ../cdk.out-staging
+      # One app: the deploy jobs run `cdk deploy --all` with the platform step skipped, so each
+      # assembly must hold exactly that app's stack (staging also gets deploy-test.yml's full gate).
+      - name: Check the one-app assemblies
+        if: env.MODE == 'app'
+        run: |
+          node -e '
+            for (const [dir, want] of [["cdk.out-staging", "stacks-test-app-" + process.env.APP], ["cdk.out", "stacks-prod-app-" + process.env.APP]]) {
+              const m = require("./" + dir + "/manifest.json");
+              const got = Object.entries(m.artifacts ?? {}).filter(([, a]) => a.type === "aws:cloudformation:stack").map(([k]) => k);
+              if (got.length !== 1 || got[0] !== want) { console.error(dir + ": expected only " + want + ", got " + got.join(", ")); process.exit(1); }
+            }'
+          npx tsx scripts/check-assembly.ts cdk.out-staging "stacks-test-app-${APP}"
       # One artifact per environment: each deploy job downloads only its own (the runners
       # download slowly).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
