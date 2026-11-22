@@ -1034,7 +1034,8 @@ tr.current td {
 .snap-layer {
   position: fixed;
   inset: 0;
-  z-index: 5;
+  /* Over the fixed header (account badge) and footer (build), which sit in the codes' corners. */
+  z-index: 50;
   pointer-events: none;
 }
 .snap-layer.on {

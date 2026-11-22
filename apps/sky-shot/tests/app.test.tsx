@@ -327,6 +327,9 @@ describe('Whee: camera calibration', () => {
     const phone = await screen.findByTestId('phone');
     const layer = await screen.findByRole('dialog', { name: 'Calibrating with the camera' }, T);
     expect(within(layer).getAllByRole('img', { name: /^Calibration code \d of 4$/ })).toHaveLength(4);
+    // Over the page, not inside it: the header's account badge and the footer sit in the codes' corners.
+    expect(layer.parentElement).toBe(document.body);
+    expect(layer.closest('.app')).toBeNull();
     expect(within(layer).getByText('Player 1 · Snap the screen')).toBeInTheDocument();
     await userEvent.click(await within(phone).findByRole('button', { name: 'Snap the screen' }, T));
     expect(camera.calls[0]!.codes).toHaveLength(4);

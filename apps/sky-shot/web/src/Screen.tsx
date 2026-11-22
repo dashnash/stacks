@@ -4,6 +4,7 @@
  * joins a second seat (device `mouse`) from the same page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ErrorNote, createStateBuffer, useApi, useAsync, useGameRoom } from '@stacks/web';
 import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInput, type RangeKind, type ScreenEvent, type ServerEvent, type Snapshot, type SnapView } from '../../game/protocol';
 import { CODE_MARGIN, CODE_SIZE } from '../../game/snap';
@@ -58,9 +59,10 @@ export function QrCode({ text, label, quiet = 4 }: { text: string; label: string
 
 /**
  * Camera calibration (#167): the four codes the phones look for, at the window's corners (where
- * `codeSpots` says), on a light ground, and each phone's step.
+ * `codeSpots` says), on a light ground, and each phone's step. On the page's body, over everything
+ * (the header's account badge and the footer sit in those corners), so the camera sees every code.
  */
-function SnapCodes({ view, snapping, playerOf }: { view: SnapView; snapping: boolean; playerOf: (seat: string) => number }) {
+function SnapCodes({ view, snapping, playerOf, look }: { view: SnapView; snapping: boolean; playerOf: (seat: string) => number; look: ThemeChoice }) {
   const size = `${CODE_SIZE * 100}vh`;
   const m = `${CODE_MARGIN * 100}vh`;
   const at = [
@@ -69,8 +71,8 @@ function SnapCodes({ view, snapping, playerOf }: { view: SnapView; snapping: boo
     { right: m, bottom: m },
     { left: m, bottom: m },
   ];
-  return (
-    <div className={`snap-layer${snapping ? ' on' : ''}`} role="dialog" aria-label="Calibrating with the camera">
+  return createPortal(
+    <div className={`snap-layer${snapping ? ' on' : ''}`} role="dialog" aria-label="Calibrating with the camera" data-theme={look.id} data-palette={look.palette} style={lookStyle(look)}>
       {snapping &&
         view.codes.map((c, k) => (
           <div key={c} className="snap-code" style={{ ...at[k], width: size, height: size }}>
@@ -89,7 +91,8 @@ function SnapCodes({ view, snapping, playerOf }: { view: SnapView; snapping: boo
         </ul>
         <p className="muted small">Use dots or skip on the phone.</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -748,7 +751,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           </div>
         </div>
       ) : live && snaps && !pointCal ? (
-        <SnapCodes view={snaps} snapping={snapping} playerOf={playerOf} />
+        <SnapCodes view={snaps} snapping={snapping} playerOf={playerOf} look={look} />
       ) : live && pointCal ? (
         <div className="overlay calibrate" role="dialog" aria-label="Calibrating">
           <p className="cal-step">
