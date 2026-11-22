@@ -33,7 +33,8 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 
 ## API (`platform/api`, all `signedIn` + platform admin, else 403)
 
-All three routes live under the existing `/api` router next to `/admin/audit`.
+All four routes (metrics; start, poll and stop a query) live under the existing `/api` router next to
+`/admin/audit`.
 
 ### `GET /api/admin/monitoring/metrics?range=1h|24h|7d|30d`
 
@@ -55,7 +56,7 @@ whole range can't be summed from buckets).
 
 ```jsonc
 {
-  "env": "prod", "range": "24h", "from": "…ISO", "to": "…ISO", "periodSeconds": 300,
+  "env": "prod", "range": "24h", "from": "…ISO", "to": "…ISO", "periodSeconds": 300, "logRetentionDays": 30,
   "consoleUrl": "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards/dashboard/stacks-prod",
   "apps": [ { "app": "platform", "requests": 1820, "serverErrors": 0, "unhandled": 0, "clientErrors": 1, "p95Ms": 212 } ],
   "graphs": [
@@ -94,7 +95,7 @@ query took too long; try a shorter range").
 
 Rows are objects keyed by the field name without `message.` (`ts`, `app`, `type`, `route`, `status`,
 `durationMs`, `ref`, `userId`, `error`, `stack`, `path`, `source`, `clientBuild`, …). `limited: true`
-means the saved query's limit was reached. The trail is fetched newest first (so the limit keeps the
+means the saved query's limit was reached; `searchedDays` is how far back the search went. The trail is fetched newest first (so the limit keeps the
 latest 500 lines) and answered oldest first. `people` maps
 each `userId` in the rows to `{ name, email }` (unknown or merged-away ids are left out: a merged id is never shown with the survivor's name; the
 page shows the id only).
@@ -102,7 +103,7 @@ page shows the id only).
 ### Implementation notes
 
 - New `platform/api/src/monitoring.ts`: the routes' logic behind a small `Monitor` interface in
-  `deps` (`getMetricData`, `startQuery`, `getQueryResults`, `listApiLogGroups`), so tests use a
+  `deps` (`getMetricData`, `listApiLogGroups`, `startQuery`, `getQueryResults`, `stopQuery`, `waitMs`), so tests and the demo use a
   fake. The AWS implementation (`@aws-sdk/client-cloudwatch`, `@aws-sdk/client-cloudwatch-logs`)
   goes in `aws.ts` next to the registry.
 - `SAVED_QUERIES`, `metricNamespace`, `logGroupName`, `dashboardName` move from
@@ -114,7 +115,8 @@ page shows the id only).
   bundle like the others.
 - `SAVED_QUERIES.userTrail` also returns `message.userId`, so the trail's heading can name the person
   (the console query gains a column, nothing else).
-- Every route logs nothing new beyond the normal request line (no query text, no rows).
+- No query text or rows are ever logged. Besides the request line: a `warn` when CloudWatch fails
+  or answers incomplete metrics, and an `info` when stopping a query that had already ended.
 - Errors from CloudWatch become a 424 `{ error: "CloudWatch didn't answer: <AWS error name>" }` (not a
   5xx: the request line would count as a platform server error and turn the platform red on this page),
   logged with `log.warn`.

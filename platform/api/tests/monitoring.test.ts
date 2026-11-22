@@ -120,7 +120,10 @@ describe('GET /admin/monitoring/metrics', () => {
         { id: 'tRequests', label: 'club', timestamps: [t], values: [10] },
         { id: 'tServerErrors', label: 'club', timestamps: [t], values: [2] },
         { id: 'tUnhandled', label: 'club', timestamps: [t], values: [1] },
-        { id: 'tP95', label: 'club', timestamps: [t, t + 1], values: [240.6, 2400] },
+        // The whole-range bucket (timestamped at the range's start), then a tiny tail bucket.
+        { id: 'tP95', label: 'club', timestamps: [Date.parse('2026-02-28T00:00:00Z'), t], values: [240.6, 2400] },
+        // Data only in the tiny tail bucket: no p95 rather than a misleading one.
+        { id: 'tP95', label: 'hello', timestamps: [Date.parse('2026-03-01T23:59:30Z')], values: [2400] },
         { id: 'tRequests', label: 'platform', timestamps: [t], values: [3] },
         // An app no longer registered: not offered (the query route would refuse it).
         { id: 'tRequests', label: 'retired', timestamps: [t], values: [7] },
@@ -243,7 +246,7 @@ describe('POST /admin/monitoring/query', () => {
     const start = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
     expect(start.body).toEqual({ queryId: QID, status: 'Running' });
     const poll = await h.call('GET', `/admin/monitoring/query/${QID}`, { as: ADMIN });
-    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {}, limited: false });
+    expect(poll.body).toEqual({ queryId: QID, status: 'Complete', rows: [{ route: '/api/me' }], people: {}, limited: false, searchedDays: 1 });
     expect((await h.call('GET', '/admin/monitoring/query/not-an-id', { as: ADMIN })).status).toBe(400);
   });
 
@@ -292,7 +295,7 @@ describe('POST /admin/monitoring/query', () => {
   it('answers empty when the environment has no log groups yet', async () => {
     const h = setup({ groups: [] });
     const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
-    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {}, limited: false });
+    expect(res.body).toEqual({ queryId: null, status: 'Complete', rows: [], people: {}, limited: false, searchedDays: 1 });
     expect(h.calls.queries).toHaveLength(0);
   });
 
@@ -314,6 +317,8 @@ describe('appOfResource', () => {
     const long = 'a-very-long-app-slug-of-thirty';
     expect(appOfResource('prod', `stacks-prod-app-${long.slice(0, 20)}-ApiHandl-AbC123XyZ0123456789`, [...slugs, long])).toBe(long);
     expect(appOfResource('prod', 'stacks-prod-app-sk-Fn', slugs)).toBeUndefined();
+    // A retired 'sky' with a long name is not credited to 'sky-shot'.
+    expect(appOfResource('prod', 'stacks-prod-app-sky-RealtimeAuthorizerFunction1A2B3C4D-AbCdEf123456', ['sky-shot'])).toBeUndefined();
     // A retired app's resource is not given to a registered slug that starts the same way.
     expect(appOfResource('prod', 'stacks-prod-app-hello-ApiHandler1A2B3C4D-AbCdEf', ['hello-world'])).toBeUndefined();
   });

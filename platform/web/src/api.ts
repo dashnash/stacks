@@ -159,6 +159,8 @@ export interface QueryAnswer {
   people?: Record<string, { name: string; email: string }>;
   /** The saved query's limit was reached: there may be more. */
   limited?: boolean;
+  /** How far back the search went (the range, capped at the apps' log retention). */
+  searchedDays?: number;
 }
 export interface QueryRequest {
   query: MonitoringQueryId;
@@ -174,18 +176,25 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function runQuery(api: PortalApi, body: QueryRequest, o: { pollMs?: number; maxMs?: number; signal?: AbortSignal } = {}): Promise<Required<Pick<QueryAnswer, 'rows' | 'people'>> & QueryAnswer> {
   const started = Date.now();
   let res = await api.monitoringQuery(body);
+  const stop = (id: string | null) => id && void api.stopMonitoringQuery(id).catch(() => undefined);
   while ((res.status === 'Running' || res.status === 'Scheduled') && res.queryId) {
+    const id = res.queryId;
     if (Date.now() - started > (o.maxMs ?? 60_000)) {
-      void api.stopMonitoringQuery(res.queryId).catch(() => undefined);
+      stop(id);
       throw new Error('The query took too long; try a shorter range.');
     }
     await wait(o.pollMs ?? 1000);
+    // Logs Insights runs a limited number of queries at once: stop the one nobody waits for.
     if (o.signal?.aborted) {
-      // Logs Insights runs a limited number of queries at once: stop the one nobody waits for.
-      void api.stopMonitoringQuery(res.queryId).catch(() => undefined);
+      stop(id);
       throw new DOMException('Stopped', 'AbortError');
     }
-    res = await api.monitoringQueryResult(res.queryId);
+    try {
+      res = await api.monitoringQueryResult(id);
+    } catch (err) {
+      stop(id);
+      throw err;
+    }
   }
   if (res.status !== 'Complete') throw new Error(`The query ended ${res.status.toLowerCase()}; try again.`);
   return { ...res, rows: res.rows ?? [], people: res.people ?? {} };

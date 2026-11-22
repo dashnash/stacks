@@ -130,8 +130,10 @@ export function appOfResource(tag: string, name: string, slugs: string[]): strin
   if (whole) return whole;
   // Generated names are cut at 64 characters, which can cut a long slug: the longest piece before a
   // `-` that starts exactly one slug. Only for names that were cut; a shorter one is another app's.
+  // The cut leaves a long piece of the slug (only slugs of 20+ characters get cut); a short piece
+  // is another (e.g. retired) app's whole slug.
   if (name.length < 60) return undefined;
-  for (let k = rest.lastIndexOf('-'); k >= 3; k = rest.lastIndexOf('-', k - 1)) {
+  for (let k = rest.lastIndexOf('-'); k >= 12; k = rest.lastIndexOf('-', k - 1)) {
     const matches = slugs.filter((s) => s.startsWith(rest.slice(0, k)));
     if (matches.length === 1) return matches[0];
     if (matches.length > 1) return undefined;
@@ -176,8 +178,9 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
   // p95 over the whole range: the first bucket. CloudWatch rounds the start down, so a second,
   // tiny bucket at the end can follow; its p95 says little and must not win.
   const first = (id: string, app: string) => {
-    const v = byId(id).find((r) => r.label === app && r.values.length)?.values[0];
-    return v === undefined ? null : Math.round(v);
+    const r = byId(id).find((x) => x.label === app && x.values.length);
+    const i = r ? r.timestamps.findIndex((t) => t <= start.getTime() + totalPeriod * 500) : -1;
+    return r && i >= 0 ? Math.round(r.values[i]!) : null;
   };
   // Only apps the query route accepts: metrics of an app no longer registered stay in the graphs.
   const apps = [...new Set(known)]
@@ -239,7 +242,7 @@ async function withPeople(deps: PlatformDeps, rows: Record<string, string>[]) {
 
 /** Queries this portal started, so polling and stopping only reach those (1 hour). */
 const startedKey = (queryId: string) => ({ PK: `MONQUERY#${queryId}`, SK: 'MONQUERY' });
-type StartedQuery = { query: SavedQueryId; notAfter: number };
+type StartedQuery = { query: SavedQueryId; notAfter: number; searchedDays?: number };
 
 async function startedQuery(deps: PlatformDeps, queryId: string): Promise<StartedQuery> {
   if (!QUERY_ID.test(queryId)) throw badRequest('Not a query id');
@@ -251,12 +254,12 @@ async function startedQuery(deps: PlatformDeps, queryId: string): Promise<Starte
 
 const limitOf = (id: SavedQueryId) => Number(/^limit (\d+)$/.exec(SAVED_QUERIES[id].query.at(-1) ?? '')?.[1] ?? 0);
 
-async function answer(deps: PlatformDeps, queryId: string | null, query: SavedQueryId, res: { status: QueryStatus; rows: Record<string, string>[] }) {
+async function answer(deps: PlatformDeps, queryId: string | null, query: SavedQueryId, res: { status: QueryStatus; rows: Record<string, string>[] }, searchedDays?: number) {
   if (res.status !== 'Complete') return { queryId, status: res.status };
   let rows = res.rows.map(rowOut);
   // The trail is fetched newest first so the limit keeps the latest lines; it reads oldest first.
   if (query === 'userTrail') rows = rows.reverse();
-  return { queryId, status: res.status, rows, people: await withPeople(deps, rows), limited: rows.length >= limitOf(query) };
+  return { queryId, status: res.status, rows, people: await withPeople(deps, rows), limited: rows.length >= limitOf(query), ...(searchedDays ? { searchedDays } : {}) };
 }
 
 export async function startMonitoringQuery(deps: PlatformDeps, body: Record<string, unknown>, slugs: string[]) {
@@ -279,14 +282,15 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   const start = new Date(end.getTime() - ms);
   const logGroupNames = await monitor.listApiLogGroups().catch(upstream);
   const queryId = logGroupNames.length ? await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream) : null;
-  if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] });
+  const searchedDays = Math.round(ms / 86_400_000 * 100) / 100;
+  if (!queryId) return answer(deps, null, query, { status: 'Complete', rows: [] }, searchedDays);
   try {
     const now = deps.now().getTime();
-    await deps.store.put({ ...startedKey(queryId), query, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
+    await deps.store.put({ ...startedKey(queryId), query, searchedDays, notAfter: now + 3_600_000, expiresAt: Math.floor(now / 1000) + 7_200 });
     const deadline = Date.now() + (monitor.waitMs ?? 0);
     for (;;) {
       const res = await monitor.getQueryResults(queryId).catch(upstream);
-      if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return await answer(deps, queryId, query, res);
+      if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return await answer(deps, queryId, query, res, searchedDays);
       await new Promise((r) => setTimeout(r, 500));
     }
   } catch (err) {
@@ -298,14 +302,14 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
 
 export async function pollMonitoringQuery(deps: PlatformDeps, queryId: string) {
   const { monitor } = monitorOf(deps);
-  const { query } = await startedQuery(deps, queryId);
-  return answer(deps, queryId, query, await monitor.getQueryResults(queryId).catch(upstream));
+  const { query, searchedDays } = await startedQuery(deps, queryId);
+  return answer(deps, queryId, query, await monitor.getQueryResults(queryId).catch(upstream), searchedDays);
 }
 
 /** Stops a query the page no longer waits for. A query that already ended is fine. */
 export async function stopMonitoringQuery(deps: PlatformDeps, queryId: string) {
   const { monitor } = monitorOf(deps);
   await startedQuery(deps, queryId);
-  await monitor.stopQuery(queryId).catch((err: unknown) => log.info('StopQuery', { queryId, error: err instanceof Error ? err.name : 'Error' }));
+  await monitor.stopQuery(queryId).catch((err: unknown) => log.info('StopQuery failed (the query may have ended)', { queryId, errorName: err instanceof Error ? err.name : 'Error' }));
   return { stopped: true };
 }

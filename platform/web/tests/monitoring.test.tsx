@@ -188,6 +188,17 @@ describe('helpers', () => {
     const slow = { monitoringQuery: vi.fn(async () => answers[0]), monitoringQueryResult: vi.fn(async () => answers[0]), stopMonitoringQuery: slowStop } as unknown as PortalApi;
     await expect(runQuery(slow, { query: 'latestErrors', range: '24h' }, { pollMs: 1, maxMs: 5 })).rejects.toThrow(/too long/);
     expect(slowStop).toHaveBeenCalledWith('q');
+    // …and so is one whose poll fails.
+    const failStop = vi.fn(async () => undefined);
+    const broken = {
+      monitoringQuery: vi.fn(async () => answers[0]),
+      monitoringQueryResult: vi.fn(async () => {
+        throw new Error('CloudWatch didn\'t answer: ThrottlingException');
+      }),
+      stopMonitoringQuery: failStop,
+    } as unknown as PortalApi;
+    await expect(runQuery(broken, { query: 'latestErrors', range: '24h' }, { pollMs: 1 })).rejects.toThrow(/Throttling/);
+    expect(failStop).toHaveBeenCalledWith('q');
   });
 
   it('marks health red for server errors, amber for browser errors or slowness', () => {
