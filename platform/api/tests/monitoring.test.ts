@@ -90,10 +90,16 @@ describe('GET /admin/monitoring/metrics', () => {
       expect(req.label).toBe("${PROP('Dim.app')}");
       expect(q.queries.find((x) => x.id === 'lambdaP95')!.expression).toBe(`SEARCH('{AWS/Lambda,FunctionName} MetricName="Duration" stacks prod', 'p95', ${period})`);
       expect(q.queries.find((x) => x.id === 'ddbThrottles')!.expression).toContain('{AWS/DynamoDB,TableName,Operation} MetricName="ThrottledRequests" stacks prod');
-      // Totals: one bucket for the whole range.
+      // The start is rounded down to the minute (5 minutes past 15 days), as CloudWatch does.
       const seconds = { '1h': 3600, '24h': 86400, '7d': 604800, '30d': 2592000 }[range];
-      expect(q.queries.find((x) => x.id === 'tRequests')!.expression).toBe(`SEARCH('{Stacks/prod,app} MetricName="Requests"', 'Sum', ${seconds})`);
-      expect(q.end.getTime() - q.start.getTime()).toBe(seconds * 1000);
+      const step = range === '30d' ? 300_000 : 60_000;
+      expect(q.start.getTime() % step).toBe(0);
+      const span = q.end.getTime() - q.start.getTime();
+      expect(span).toBeGreaterThanOrEqual(seconds * 1000);
+      expect(span).toBeLessThan(seconds * 1000 + step);
+      expect(res.body.from).toBe(q.start.toISOString());
+      // Totals: one bucket for the whole range, a whole number of periods.
+      expect(q.queries.find((x) => x.id === 'tRequests')!.expression).toBe(`SEARCH('{Stacks/prod,app} MetricName="Requests"', 'Sum', ${Math.ceil(span / 1000 / period) * period})`);
     }
     expect(new Set(h.calls.metrics[0]!.queries.map((q) => q.id)).size).toBe(h.calls.metrics[0]!.queries.length);
     for (const q of h.calls.metrics[0]!.queries) expect(q.id).toMatch(/^[a-z][A-Za-z0-9_]*$/);
@@ -128,6 +134,10 @@ describe('GET /admin/monitoring/metrics', () => {
     // The start is rounded down as CloudWatch does: to the minute, or to 5 minutes past 15 days.
     expect((await ask(now - 3_600_000 - 42_000, now)).body.from).toBe(new Date(now - 3_660_000).toISOString());
     expect((await ask(now - 20 * 86_400_000 + 180_000, now - 19 * 86_400_000)).body.from).toBe(new Date(now - 20 * 86_400_000).toISOString());
+    // Just past 15 days by the asked start: a 5-minute period and a start on 5 minutes, not one of each.
+    const edge = await ask(now - 15 * 86_400_000 - 20_000, now - 15 * 86_400_000 + 3_600_000);
+    expect(edge.body.periodSeconds).toBe(300);
+    expect(Date.parse(edge.body.from) % 300_000).toBe(0);
   });
 
   it('refuses a bad, too short or too old window', async () => {

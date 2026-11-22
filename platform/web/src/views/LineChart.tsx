@@ -81,7 +81,9 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
   }, [series.length, store]);
   useEffect(() => () => void (pointingRef.current && store.set(null)), [store]);
   const span = Math.max(1, to - from);
-  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1]))));
+  // Scaled to what is drawn: a bucket the clip hides (before `from`) must not set the scale.
+  const shown = (t: number) => t >= from - periodMs / 2 && t <= to;
+  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.filter((p) => shown(p[0])).map((p) => p[1]))));
   const sx = (t: number) => L + ((t - from) / span) * (W - L - R);
   const sy = (v: number) => T + (1 - v / max) * (H - T - B);
   const day = span > 36 * 3_600_000;
@@ -175,8 +177,8 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
           ))}
           <defs>
             <clipPath id={clip}>
-              {/* The plot, plus room for a dot's radius: CloudWatch's first bucket can start before `from`. */}
-              <rect x={L} y={T - 3} width={W - L - R + 3} height={H - T - B + 6} />
+              {/* The plot, plus room for a dot's radius. Lines from a bucket before `from` stop at its edge. */}
+              <rect x={L - 3} y={T - 3} width={W - L - R + 6} height={H - T - B + 6} />
             </clipPath>
           </defs>
           {series.map((s, i) => (

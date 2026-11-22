@@ -188,15 +188,15 @@ export async function monitoringMetrics(deps: PlatformDeps, params: { range?: un
   const preset = parseRange(params.range);
   const range: MonitoringRange | 'custom' = window ? 'custom' : preset;
   const end = window ? window.end : now;
-  // A zoom starts on the minute (5 minutes past 15 days), as CloudWatch rounds the start down
-  // anyway: `from` then matches the first bucket, and the totals cover no minutes before the window.
-  const align = (t: number) => {
-    const step = (now.getTime() - t > 15 * DAY_MS ? 300 : 60) * 1000;
-    return new Date(Math.floor(t / step) * step);
-  };
-  const start = window ? align(window.start.getTime()) : new Date(now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms);
+  // The start goes on the minute (5 minutes past 15 days), as CloudWatch rounds it down anyway:
+  // `from` then matches the first bucket, and the totals cover no minutes before the window. How
+  // old the start is gets decided once, from the asked start, for the rounding and the period.
+  const asked = window ? window.start.getTime() : now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms;
+  const ago = now.getTime() - asked;
+  const step = (ago > 15 * DAY_MS ? 300 : 60) * 1000;
+  const start = new Date(Math.floor(asked / step) * step);
   const ms = end.getTime() - start.getTime();
-  const periodSeconds = window ? periodFor(ms, now.getTime() - start.getTime()) : MONITORING_RANGES[range as MonitoringRange].periodSeconds;
+  const periodSeconds = window ? periodFor(ms, ago) : MONITORING_RANGES[range as MonitoringRange].periodSeconds;
   // One bucket for the whole window, a multiple of the period (CloudWatch's rule for older starts).
   const totalPeriod = Math.ceil(ms / 1000 / periodSeconds) * periodSeconds;
   const queries: MetricQuery[] = [

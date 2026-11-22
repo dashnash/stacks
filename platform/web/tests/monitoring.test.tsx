@@ -362,6 +362,8 @@ describe('helpers', () => {
     const { container } = render(<LineChart title="Requests" from={600_000} to={1_200_000} periodMs={60_000} series={[{ label: 'a', color: 'red', points: [[540_000, 1], [600_000, 2], [660_000, 3]] }]} />);
     const id = container.querySelector('clipPath')!.id;
     expect(container.querySelector('path')!.closest('g')!.getAttribute('clip-path')).toBe(`url(#${id})`);
+    // A dot on `from` stays whole inside the clip.
+    expect(Number(container.querySelector('clipPath rect')!.getAttribute('x'))).toBeLessThanOrEqual(40 - 2.5);
   });
 
   it('clears the shared hover line when the chart under the pointer stops drawing', () => {
