@@ -4,6 +4,8 @@ export interface ChartSeries {
   label: string;
   color: string;
   points: [number, number][];
+  /** Drawn dashed: a second line of the same app (e.g. unhandled next to 5xx). */
+  dashed?: boolean;
 }
 
 const W = 520;
@@ -45,6 +47,10 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
     }
     return d;
   };
+  /** Points with no joined neighbour: a path draws nothing for them, so they get a dot. Error
+   * metrics exist only for minutes that had an error, so a lone point is the usual case there. */
+  const lonely = (pts: [number, number][]) =>
+    pts.filter(([t], i) => !(i > 0 && t - pts[i - 1]![0] <= periodMs * 1.5) && !(i < pts.length - 1 && pts[i + 1]![0] - t <= periodMs * 1.5));
   const nearest = (pts: [number, number][], t: number) => {
     let best: [number, number] | undefined;
     for (const p of pts) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
@@ -77,7 +83,12 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
             </text>
           ))}
           {series.map((s) => (
-            <path key={s.label} d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" />
+            <g key={s.label}>
+              <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeDasharray={s.dashed ? '4 3' : undefined} />
+              {lonely(s.points).map(([t, v]) => (
+                <circle key={t} className="chart-dot" cx={sx(t)} cy={sy(v)} r={2.5} fill={s.color} />
+              ))}
+            </g>
           ))}
           {hover !== null && <line className="chart-hover" x1={sx(hover)} x2={sx(hover)} y1={T} y2={H - B} />}
           <rect x={L} y={T} width={W - L - R} height={H - T - B} fill="transparent" />
@@ -94,7 +105,7 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
       <div className="chart-legend">
         {series.map((s) => (
           <span key={s.label}>
-            <span className="swatch" style={{ background: s.color }} />
+            <span className={`swatch${s.dashed ? ' dashed' : ''}`} style={s.dashed ? { borderColor: s.color } : { background: s.color }} />
             {s.label}
           </span>
         ))}

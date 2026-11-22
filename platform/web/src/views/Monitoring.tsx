@@ -205,7 +205,8 @@ function HealthTable({ apps, selected, onSelect }: { apps: AppHealth[]; selected
         <tbody>
           {apps.map((a) => {
             const h = healthOf(a);
-            const server = a.serverErrors + a.unhandled;
+            // Every unhandled error is also a 500 request line, so serverErrors already counts it.
+            const server = a.serverErrors;
             return (
               <tr key={a.app} className={`clickable${selected === a.app ? ' selected' : ''}`} onClick={() => onSelect(a.app)}>
                 <td>
@@ -217,7 +218,9 @@ function HealthTable({ apps, selected, onSelect }: { apps: AppHealth[]; selected
                   </button>
                 </td>
                 <td className="num">{a.requests.toLocaleString()}</td>
-                <td className={`num${server ? ' bad' : ''}`}>{server}</td>
+                <td className={`num${server ? ' bad' : ''}`} title={a.unhandled ? `${a.unhandled} unhandled` : undefined}>
+                  {server}
+                </td>
                 <td className="num">{a.clientErrors}</td>
                 <td className="num">{a.p95Ms ?? '–'}</td>
               </tr>
@@ -239,7 +242,7 @@ function Graphs({ metrics, ids, app, colorOf, className, aws = false }: { metric
         if (!g) return null;
         const series = g.series
           .filter((s) => !app || s.app === app)
-          .map((s, i) => ({ label: aws ? shortResource(s.label, metrics.env) : s.label, color: colorOf(s.app, i), points: s.points }));
+          .map((s, i) => ({ label: aws ? shortResource(s.label, metrics.env) : s.label, color: colorOf(s.app, i), points: s.points, dashed: s.label.endsWith(' unhandled') }));
         return <LineChart key={id} title={g.title} unit={g.unit === 'ms' ? 'ms' : undefined} series={series} from={from} to={to} periodMs={metrics.periodSeconds * 1000} />;
       })}
     </div>

@@ -1,7 +1,7 @@
 import { badRequest, HttpError, log } from '@stacks/api';
 import { appMetricSearch, awsMetricSearch, dashboardName, queryText, SAVED_QUERIES, type SavedQueryId } from '@stacks/manifest/monitoring';
 import { shownName, type PlatformDeps } from './model';
-import { getUser } from './core';
+import { getUserRecord } from './core';
 
 /*
  * The portal's Monitoring page (#81, docs/specs/81-admin-monitoring.md): the environment's metrics
@@ -54,10 +54,15 @@ export const parseRange = (value: unknown): MonitoringRange => {
   throw badRequest('"range" must be 1h, 24h, 7d or 30d');
 };
 
+/**
+ * A CloudWatch failure answers 424, not 502: the router logs every request line, and a 5xx would
+ * count as a platform server error, turning the platform red on this very page (e.g. on staging
+ * before the boundary allows GetMetricData).
+ */
 const upstream = (err: unknown): never => {
   log.warn('CloudWatch call failed', err);
   const name = err instanceof Error ? err.name : 'Error';
-  throw new HttpError(502, `CloudWatch didn't answer: ${name}`, 'UPSTREAM');
+  throw new HttpError(424, `CloudWatch didn't answer: ${name}`, 'UPSTREAM');
 };
 
 function monitorOf(deps: PlatformDeps): { monitor: Monitor; tag: string } {
@@ -151,8 +156,8 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
     const v = byId(id).filter((r) => r.label === app).flatMap((r) => r.values);
     return v.length ? Math.round(Math.max(...v)) : null;
   };
-  const seen = new Set([...known, ...TOTALS.flatMap((q) => byId(q.id).map((r) => r.label))].filter(Boolean));
-  const apps = [...seen]
+  // Only apps the query route accepts: metrics of an app no longer registered stay in the graphs.
+  const apps = [...new Set(known)]
     .sort((a, b) => (a === 'platform' ? -1 : b === 'platform' ? 1 : a.localeCompare(b)))
     .map((app) => ({ app, requests: sum('tRequests', app), serverErrors: sum('tServerErrors', app), unhandled: sum('tUnhandled', app), clientErrors: sum('tClientErrors', app), p95Ms: max('tP95', app) }));
 
@@ -199,7 +204,8 @@ function rowOut(raw: Record<string, string>): Record<string, string> {
 async function withPeople(deps: PlatformDeps, rows: Record<string, string>[]) {
   const people: Record<string, { name: string; email: string }> = {};
   for (const id of new Set(rows.map((r) => r.userId).filter((v): v is string => !!v && LOG_USER_ID.test(v)))) {
-    const u = await getUser(deps, id).catch(() => null);
+    // The stored record, not the merge survivor: a merged-away id is shown as the id only.
+    const u = await getUserRecord(deps, id).catch(() => null);
     if (u && !u.mergedInto) people[id] = { name: shownName(u), email: u.email };
   }
   return people;

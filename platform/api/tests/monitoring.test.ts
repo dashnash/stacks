@@ -114,6 +114,8 @@ describe('GET /admin/monitoring/metrics', () => {
         { id: 'tUnhandled', label: 'club', timestamps: [t], values: [1] },
         { id: 'tP95', label: 'club', timestamps: [t, t + 1], values: [180.4, 240.6] },
         { id: 'tRequests', label: 'platform', timestamps: [t], values: [3] },
+        // An app no longer registered: not offered (the query route would refuse it).
+        { id: 'tRequests', label: 'retired', timestamps: [t], values: [7] },
       ],
     });
     const res = await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN });
@@ -133,10 +135,10 @@ describe('GET /admin/monitoring/metrics', () => {
     expect(g.lambdaP95.series[0].app).toBe('platform');
   });
 
-  it('answers 502 when CloudWatch fails', async () => {
+  it('answers 424 (not a 5xx, which would count as a platform server error) when CloudWatch fails', async () => {
     const h = setup({ fail: true });
     const res = await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN });
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(424);
     expect(res.body.error).toBe("CloudWatch didn't answer: AccessDeniedException");
   });
 });
@@ -204,10 +206,13 @@ describe('POST /admin/monitoring/query', () => {
     const h = setup();
     await h.signIn('ana@test.dev', 'Ana Silva');
     const ana = await h.idOf('ana@test.dev');
+    // u_merged00 was merged into Ana: shown by id only, never with the survivor's name.
+    await h.store.put({ PK: 'USER#u_merged00', SK: 'PROFILE', id: 'u_merged00', email: 'old@test.dev', name: 'Old', createdAt: '2026-01-01', mergedInto: ana });
     h.deps.monitor = fakeMonitor({
       rows: [
         { '@timestamp': '2026-03-01 00:00:01.000', 'message.type': 'error', 'message.userId': ana, 'message.error.message': 'boom', 'message.error.stack': 'Error: boom\n  at x', 'message.error.name': 'Error', '@ptr': 'abc' },
         { '@timestamp': '2026-03-01 00:00:02.000', 'message.type': 'request', 'message.userId': 'u_gone00', 'message.status': '500' },
+        { '@timestamp': '2026-03-01 00:00:03.000', 'message.type': 'request', 'message.userId': 'u_merged00', 'message.status': '200' },
       ],
     }).monitor;
     const res = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
@@ -215,6 +220,7 @@ describe('POST /admin/monitoring/query', () => {
     expect(res.body.rows).toEqual([
       { ts: '2026-03-01 00:00:01.000', type: 'error', userId: ana, error: 'boom', stack: 'Error: boom\n  at x', errorName: 'Error' },
       { ts: '2026-03-01 00:00:02.000', type: 'request', userId: 'u_gone00', status: '500' },
+      { ts: '2026-03-01 00:00:03.000', type: 'request', userId: 'u_merged00', status: '200' },
     ]);
     expect(res.body.people).toEqual({ [ana]: { name: 'Ana', email: 'ana@test.dev' } });
   });
@@ -235,9 +241,9 @@ describe('POST /admin/monitoring/query', () => {
     expect(h.calls.queries).toHaveLength(0);
   });
 
-  it('answers 502 when CloudWatch fails', async () => {
+  it('answers 424 when CloudWatch fails', async () => {
     const h = setup({ fail: true });
-    expect((await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } })).status).toBe(502);
+    expect((await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } })).status).toBe(424);
   });
 });
 

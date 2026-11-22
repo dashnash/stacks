@@ -128,12 +128,27 @@ export class CloudWatchMonitor implements Monitor {
       for (const g of res.logGroups ?? []) if (g.logGroupName && /^\/stacks\/[^/]+\/[^/]+\/api$/.test(g.logGroupName)) names.push(g.logGroupName);
       token = res.nextToken;
     } while (token);
-    // Logs Insights takes at most 50 log groups per query.
-    this.groups = { at: Date.now(), names: names.sort().slice(0, 50) };
+    // Logs Insights takes at most 50 log groups per query; the platform's always stays in.
+    const platform = `/stacks/${this.envTag}/platform/api`;
+    const sorted = [...names.filter((n) => n === platform), ...names.filter((n) => n !== platform).sort()];
+    if (sorted.length > 50) log.warn('More than 50 API log groups: the monitoring queries leave some out', { leftOut: sorted.slice(50) });
+    this.groups = { at: Date.now(), names: sorted.slice(0, 50) };
     return this.groups.names;
   }
 
   async startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string> {
+    try {
+      return await this.start(q);
+    } catch (err) {
+      // A log group deleted since the list was cached (an app stack destroyed): refresh and retry once.
+      if (!(err instanceof Error && err.name === 'ResourceNotFoundException')) throw err;
+      this.groups = undefined;
+      const live = new Set(await this.listApiLogGroups());
+      return this.start({ ...q, logGroupNames: q.logGroupNames.filter((n) => live.has(n)) });
+    }
+  }
+
+  private async start(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string> {
     const res = await this.logs.send(
       new StartQueryCommand({ logGroupNames: q.logGroupNames, queryString: q.queryString, startTime: Math.floor(q.start.getTime() / 1000), endTime: Math.ceil(q.end.getTime() / 1000) }),
     );

@@ -255,7 +255,7 @@ export class PlatformStack extends cdk.Stack {
     this.handler.addToRolePolicy(new iam.PolicyStatement({ sid: 'MonitoringMetrics', actions: ['cloudwatch:GetMetricData'], resources: ['*'] }));
     this.handler.addToRolePolicy(new iam.PolicyStatement({ sid: 'MonitoringStartQuery', actions: ['logs:StartQuery'], resources: [arn('logs', `log-group:/stacks/${tag}/*`)] }));
     this.handler.addToRolePolicy(
-      new iam.PolicyStatement({ sid: 'MonitoringQueryResults', actions: ['logs:GetQueryResults', 'logs:StopQuery', 'logs:DescribeLogGroups'], resources: ['*'] }),
+      new iam.PolicyStatement({ sid: 'MonitoringQueryResults', actions: ['logs:GetQueryResults', 'logs:DescribeLogGroups'], resources: ['*'] }),
     );
 
     const httpApi = new apigw.HttpApi(this, 'HttpApi');

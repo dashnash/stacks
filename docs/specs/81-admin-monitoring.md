@@ -19,7 +19,7 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 | How | A **native portal page**. The platform API reads CloudWatch (`GetMetricData` with the dashboard's `SEARCH` expressions, and Logs Insights `StartQuery`/`GetQueryResults`), and the portal draws the charts and tables itself. No iframe, no CloudWatch dashboard sharing, no Cognito, no CSP change, no new vendor. |
 | Who | **Platform admins only** (`isPlatformAdmin`). Everyone else gets 403 from the API, and the page shows "Platform admins only". App approvers see nothing new. |
 | Which environment | **Each portal shows its own**: `auth.dashnash.ninja` shows `prod`, `auth.test.dashnash.ninja` shows `test`. Each platform Lambda can start queries only on `/stacks/<its tag>/*` log groups. |
-| Content | (1) a per-app **health table**, (2) **graphs** (the dashboard's seven), (3) the **Latest errors**, **Slowest requests** and **Browser errors** tables (Browser errors is its own table), (4) **Find by ref**, (5) **One user's trail** (click a user, or paste an id), (6) **One app's requests** (when an app is selected). |
+| Content | (1) a per-app **health table** (registered apps and the platform only), (2) **graphs** (the dashboard's seven), (3) the **Latest errors**, **Slowest requests** and **Browser errors** tables (Browser errors is its own table), (4) **Find by ref**, (5) **One user's trail** (click a user, or paste an id), (6) **One app's requests** (when an app is selected). |
 | Time range | Presets **1h / 24h / 7d / 30d**, default 24h. No custom from/to. Log tables cover at most the log retention (1 week on staging, 1 month on production); the page says so when the range is longer. |
 | Names | The API resolves user ids in its answers to the person's name and email from the platform table, at read time. **Logs stay as they are** (ids only); names are never written to CloudWatch. |
 | Refresh | Loads once when opened, plus a **Refresh** button. A **"Refresh every 60s"** checkbox (off by default, not remembered) refreshes the health table, the graphs and the three tables while the tab is visible. Find by ref and the user trail never refresh automatically. |
@@ -27,8 +27,8 @@ Mock UI (interactive, made-up data): https://claude.ai/artifact/9TiZNNxa7pn7xZxQ
 | CloudWatch console | **Kept** (dashboards and saved queries unchanged). The page links to the CloudWatch dashboard, and `docs/DEBUGGING.md` starts with the page. |
 | Charts | Hand-drawn inline SVG in `platform/web` (line charts, hover readout). **No new npm dependency.** |
 | Query safety | The client never sends query text. It names one of the six saved queries plus validated parameters; the API builds the query from `SAVED_QUERIES` (moved where both infra and API can read it, see Changes). |
-| Log groups | The API lists `/stacks/<tag>/*/api` log groups with `DescribeLogGroups` (cached 5 min) instead of a fixed list. A new app's logs show up on the page with no platform deploy, and an app that was never deployed can't break a query. |
-| Health dot | Red if the app had any server error (5xx or unhandled) in the range; amber if it had browser errors or p95 > 1,500 ms; else green. It is a hint for the eye, not an alert. |
+| Log groups | The API lists `/stacks/<tag>/*/api` log groups with `DescribeLogGroups` (cached 5 min) instead of a fixed list. A new app's logs show up on the page with no platform deploy, and an app that was never deployed can't break a query (a group deleted since the cache: the list is refreshed and the query retried once). At most 50 (Logs Insights' limit), the platform's always included; more logs a warning. |
+| Health dot | The Server errors column is `ServerErrors` (5xx request lines, which include every unhandled error; hover shows how many were unhandled). Red if the app had any server error in the range; amber if it had browser errors or p95 > 1,500 ms; else green. It is a hint for the eye, not an alert. |
 | Alerts | Still none. Nothing new pushes, emails or alarms. |
 
 ## API (`platform/api`, all `signedIn` + platform admin, else 403)
@@ -89,7 +89,7 @@ query took too long; try a shorter range").
 
 Rows are objects keyed by the field name without `message.` (`ts`, `app`, `type`, `route`, `status`,
 `durationMs`, `ref`, `userId`, `error`, `stack`, `path`, `source`, `clientBuild`, …). `people` maps
-each `userId` in the rows to `{ name, email }` (unknown or merged-away ids are left out, and the
+each `userId` in the rows to `{ name, email }` (unknown or merged-away ids are left out: a merged id is never shown with the survivor's name; the
 page shows the id only).
 
 ### Implementation notes
@@ -108,7 +108,8 @@ page shows the id only).
 - `SAVED_QUERIES.userTrail` also returns `message.userId`, so the trail's heading can name the person
   (the console query gains a column, nothing else).
 - Every route logs nothing new beyond the normal request line (no query text, no rows).
-- Errors from CloudWatch become a 502 `{ error: "CloudWatch didn't answer: <AWS error name>" }`,
+- Errors from CloudWatch become a 424 `{ error: "CloudWatch didn't answer: <AWS error name>" }` (not a
+  5xx: the request line would count as a platform server error and turn the platform red on this page),
   logged with `log.warn`.
 
 ## IAM (`packages/infra`)
@@ -118,7 +119,7 @@ page shows the id only).
 - `cloudwatch:GetMetricData` on `*` (it has no resource-level permission).
 - `logs:StartQuery` on `arn:aws:logs:<region>:<account>:log-group:/stacks/<tag>/*` (resource-scoped
   to the environment).
-- `logs:GetQueryResults`, `logs:StopQuery`, `logs:DescribeLogGroups` on `*` (no resource-level
+- `logs:GetQueryResults`, `logs:DescribeLogGroups` on `*` (no resource-level
   permission).
 
 `ci-stack.ts`: add `cloudwatch:GetMetricData` to the staging boundary's `AppRuntime` statement
@@ -165,7 +166,7 @@ code only asks for its own. Logs, which hold user ids, are scoped.
   results into `apps`/`graphs`; every bad `ref`/`userId`/`app`/`query` is a 400 and nothing reaches
   the fake; good parameters produce exactly the saved query text with the value substituted; the
   range is clamped to retention; `people` resolves names and skips unknown ids; a CloudWatch failure
-  is a 502.
+  is a 424.
 - `packages/infra/tests/platform-stack.test.ts`: the handler's policy has the four statements, and
   `StartQuery` is scoped to `/stacks/<tag>/*` (both envs). `ci-stack` test: the boundary allows
   `cloudwatch:GetMetricData`.

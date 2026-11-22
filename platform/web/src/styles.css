@@ -192,6 +192,7 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 .dot.warn { background: var(--warn); }
 .dot.bad { background: var(--danger); }
 .swatch { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.swatch.dashed { height: 0; border-top: 2px dashed; border-radius: 0; }
 .monitoring h2 { margin: 24px 0 8px; }
 .mon-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; justify-content: space-between; }
 .mon-head p { margin: 4px 0 0; max-width: 65ch; }

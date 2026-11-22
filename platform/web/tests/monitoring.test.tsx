@@ -7,7 +7,7 @@ import { createDemoPortal, DEMO_PEOPLE } from '../src/demo/backend';
 import { DEMO_REF } from '../src/demo/monitoring';
 import { PortalProvider } from '../src/portal';
 import { healthOf, shortResource } from '../src/views/Monitoring';
-import { niceMax } from '../src/views/LineChart';
+import { LineChart, niceMax } from '../src/views/LineChart';
 
 function renderPortal(hash = '#/') {
   window.location.hash = hash;
@@ -156,6 +156,14 @@ describe('helpers', () => {
     expect(shortResource('stacks-prod-app-hello-ApiHandler5D2B1F4C-AbCdEf123456 errors', 'prod')).toBe('hello-ApiHandler errors');
     expect(shortResource('stacks-prod-platform-Table8A1B2C3D-1XYZ9ABCDEF0 PutItem', 'prod')).toBe('platform-Table PutItem');
     expect(shortResource('something-else', 'prod')).toBe('something-else');
+  });
+
+  it('marks a lone point (one error in the range) with a dot, which a path alone would not draw', () => {
+    const { container } = render(
+      <LineChart title="Errors" from={0} to={3_600_000} periodMs={60_000} series={[{ label: 'club', color: 'red', points: [[600_000, 1], [1_800_000, 2], [1_860_000, 1]] }]} />,
+    );
+    // The first point stands alone; the other two are joined by the line.
+    expect(container.querySelectorAll('circle.chart-dot')).toHaveLength(1);
   });
 
   it('rounds chart maxima up to 1, 2 or 5 times a power of ten', () => {
