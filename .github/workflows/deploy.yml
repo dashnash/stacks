@@ -148,7 +148,7 @@ jobs:
           if [[ "$MODE" == app ]]; then
             npm run typecheck -w "apps/${APP}"
             # Every test except the other apps' (packages, tools and infra read or bundle apps).
-            npm test -w "apps/${APP}" -w packages -w platform -w tools -w infra
+            npm test -w "apps/${APP}" -w packages -w packages/modules -w platform -w tools -w infra
           else
             npm run typecheck
             npm test

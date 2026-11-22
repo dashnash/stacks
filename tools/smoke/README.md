@@ -14,4 +14,4 @@ Each health answer names its commit (`build`), shown in the table; with `--sha` 
 commit it deployed) a stack on another commit, or one that doesn't say, is a warning: that's how
 mixed versions after a partly failed deploy show (`docs/ROLLBACK.md`). After a one-app deploy
 (#47) the outputs have no `PortalURL`: Deploy passes `--portal https://auth.<domain>`, and the
-catalog then only has to list some app (the one app may be archived). Results go to the log and the job summary. Tests: `npm test -w tools/smoke`.
+catalog then only has to list some app (the one app may be archived; missing, it's a warning). Results go to the log and the job summary. Tests: `npm test -w tools/smoke`.

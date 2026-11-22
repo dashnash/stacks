@@ -37,7 +37,8 @@ export function baselineFrom(runs, runId) {
   const unsettled = done.filter((r) => r.conclusion !== 'success').map((r) => r.head_sha);
   const green = done.filter((r) => r.conclusion === 'success').sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))[0];
   if (!green) return { base: undefined, unsettled };
-  const olderRerun = (r) => (r.run_attempt ?? 1) > 1 && runs.some((o) => String(o.id) !== String(runId) && o.id !== r.id && String(o.created_at ?? '') > String(r.created_at ?? ''));
+  // Against finished runs only: a newer run still queued or running hasn't deployed anything yet.
+  const olderRerun = (r) => (r.run_attempt ?? 1) > 1 && done.some((o) => o.id !== r.id && String(o.created_at ?? '') > String(r.created_at ?? ''));
   const back = done.find((r) => olderRerun(r) && (r.id === green.id || String(r.updated_at ?? '') > String(green.updated_at ?? '')));
   if (back) return { base: undefined, unsettled, reason: `a re-run of an older Deploy run (${String(back.head_sha).slice(0, 7)}, ${back.conclusion}) may have put its old commit back` };
   return { base: green.head_sha, unsettled };
@@ -87,6 +88,9 @@ const lockAt = (sha, cwd) => {
  */
 export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
   if (!base) return { mode: 'full', reason: noBaseReason ?? 'no earlier successful Deploy run found' };
+  // One-app smoke checks the portal at https://auth.<rootDomain>, which needs the domain.
+  const noZone = Object.entries(config.environments ?? {}).find(([, e]) => !e.hostedZoneId)?.[0];
+  if (noZone) return { mode: 'full', reason: `${noZone} has no hostedZoneId (its portal is on the CloudFront domain)` };
   if (base === head) return { mode: 'full', reason: `the last green Deploy run is for ${head.slice(0, 7)} itself (a second run for one commit deploys everything)` };
   if (!isAncestor(base, head, cwd)) return { mode: 'full', reason: `the last green deploy (${base.slice(0, 7)}) isn't an ancestor of ${head.slice(0, 7)}` };
   // Failed runs at or before the baseline are settled by it; the rest must lie between it and HEAD.
@@ -116,6 +120,7 @@ async function main() {
       ({ base, unsettled, reason } = await lastGreenDeploy({ repo: process.env.GITHUB_REPOSITORY || 'dashnash/stacks', token: process.env.GITHUB_TOKEN, runId: process.env.GITHUB_RUN_ID }));
     } catch (err) {
       console.log(`::warning title=Deploy changes::${err.message}; deploying everything`);
+      reason = `listing Deploy runs failed (${err.message})`;
     }
   }
   const v = decide(base, head, JSON.parse(readFileSync('stacks.config.json', 'utf8')), undefined, unsettled, reason);

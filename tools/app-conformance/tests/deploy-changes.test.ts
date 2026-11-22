@@ -80,7 +80,7 @@ describe('deploy-changes against a git history', () => {
     git('-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'c');
     return git('rev-parse', 'HEAD');
   };
-  const config = { environments: { staging: {}, production: {} } };
+  const config = { environments: { staging: { hostedZoneId: 'lookup' }, production: { hostedZoneId: 'Z1' } } };
   let c0 = '', c1 = '', c2 = '', c3 = '', c4 = '';
   // Built before the tests, not while collecting them: a git failure fails the tests, not the file.
   beforeAll(() => {
@@ -112,6 +112,8 @@ describe('deploy-changes against a git history', () => {
     expect(decide(c4, c6, config, dir, [c2])).toMatchObject({ mode: 'docs' });
     // One that isn't an ancestor of HEAD: full.
     expect(decide(c2, c4, config, dir, [c6])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
+    // An environment without a zone: its portal URL isn't https://auth.<rootDomain>, so full.
+    expect(decide(c1, c2, { environments: { staging: {}, production: { hostedZoneId: 'Z1' } } }, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('staging has no hostedZoneId') });
     // No baseline, with the reason why.
     expect(decide(undefined, c6, config, dir, [], 'x')).toEqual({ mode: 'full', reason: 'x' });
   });
@@ -156,6 +158,8 @@ describe('deploy-changes against a git history', () => {
     expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, failedRerun], 9)).toMatchObject({ base: undefined, reason: expect.stringContaining('c1, failure') });
     // ...but not when it finished before the green run (that run was already full because of it).
     expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, { ...failedRerun, updated_at: '2026-11-22T07:30:00Z' }], 9)).toMatchObject({ base: 'c2' });
+    // A newer run that is only queued doesn't make the newest green re-run an "older" one.
+    expect(baselineFrom([run(10, 'c3', null, 10, 'queued'), { ...run(8, 'c2', 'success', 9), run_attempt: 2, created_at: '2026-11-22T08:00:00Z' }], 11)).toEqual({ base: 'c2', unsettled: [] });
     // Re-running the newest run's failed jobs (a flake) is an ordinary baseline.
     expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), run_attempt: 2, created_at: '2026-11-22T08:00:00Z' }, { ...run(7, 'c1', 'success', 7), created_at: '2026-11-22T07:00:00Z' }], 9)).toEqual({ base: 'c2', unsettled: [] });
     // Failed runs count whenever they finished; decide drops those at or before the baseline.

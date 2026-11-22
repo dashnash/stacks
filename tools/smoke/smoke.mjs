@@ -91,6 +91,8 @@ async function catalog(f, url, slugs, anyApp = false) {
   const listed = new Set(body.apps.map((a) => a?.slug).filter((s) => typeof s === 'string' && s));
   if (anyApp) {
     if (!listed.size) throw new Error(`${url}: lists no apps`);
+    const missing = slugs.filter((s) => !listed.has(s));
+    return { warnings: missing.length ? [`not in the catalog: ${missing.join(', ')} (archived, or its registry entry broke)`] : [] };
   } else if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
   return { warnings: [] };
 }

@@ -126,7 +126,7 @@ describe('smoke check (#100)', () => {
     it('accepts a catalog without the one app (it may be archived), never an empty one', async () => {
       const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
       const without = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
-      expect(without[2]).toMatchObject({ ok: true });
+      expect(without[2]).toMatchObject({ ok: true, warnings: [expect.stringContaining('not in the catalog: pantry')] });
       const empty = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [] } } });
       expect(empty[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
     });

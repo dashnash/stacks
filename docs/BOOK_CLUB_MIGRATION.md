@@ -35,8 +35,8 @@ and `stacks-prod-app-mofobookklub` (after step 4).
 
 ## 2. Rehearse on staging (no downtime)
 
-Every merge to `main` deploys it to staging. If it isn't there yet (no merge since this runbook
-landed), deploy it once by hand:
+A merge to `main` that changes it, or any full deploy (#47), deploys it to staging. If it isn't
+there yet, deploy it once by hand:
 
 ```bash
 gh workflow run deploy-test.yml -f app=mofobookklub -f ref=main
