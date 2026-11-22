@@ -1,5 +1,6 @@
 import type { AppManifest } from '@stacks/manifest';
 import type { Item, Store } from '@stacks/api';
+import type { Monitor } from './monitoring';
 
 /** A person with a portal account. Anyone with a verified Google account can have one. */
 export interface PlatformUser {
@@ -161,6 +162,8 @@ export interface PlatformConfig {
   iosBundleId?: string;
   /** Sign in with Apple on the web: the Services ID the portal's Apple JS uses (unset: no web button). */
   appleServicesId?: string;
+  /** `prod` or `test`: whose metrics and logs the Monitoring page reads (#81). */
+  envTag?: string;
 }
 
 export interface PlatformDeps {
@@ -173,6 +176,8 @@ export interface PlatformDeps {
   verifyApple?(credential: string): Promise<{ sub: string; email: string; name: string }>;
   /** Push to the iOS app; without it (tests, before setup) notifications only fill the inbox. */
   push?: PushSender;
+  /** CloudWatch for the Monitoring page (#81); without it the routes answer 404. */
+  monitor?: Monitor;
   now(): Date;
   newId(): string;
 }

@@ -42,6 +42,7 @@ import {
 } from './config';
 import { buildCsp } from './csp';
 import { bundleGameServer, gameBootstrapCommand, GAME_SERVER_IMAGE } from './game-bundle';
+import { apiLogRetentionDays } from '@stacks/manifest/monitoring';
 import { addApiMetricFilters, logGroupName } from './monitoring';
 import { addRouteThrottles, APP_ROUTE_THROTTLES } from './throttles';
 
@@ -166,7 +167,8 @@ export class AppStack extends cdk.Stack {
     });
     const apiLogs = new logs.LogGroup(this, 'ApiLogs', {
       logGroupName: logGroupName(tag, slug),
-      retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
+      // RetentionDays' values are the day counts (ONE_MONTH = 30, ONE_WEEK = 7).
+      retention: apiLogRetentionDays(tag) as number as logs.RetentionDays,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
     addApiMetricFilters(this, apiLogs, tag);

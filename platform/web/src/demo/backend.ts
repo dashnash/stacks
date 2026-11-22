@@ -4,6 +4,7 @@ import type { AppManifest } from '@stacks/manifest';
 import { createPlatformApp, requestAccess, setGrant, userForIdentity, type PlatformDeps } from '@stacks/platform-api';
 import { createClient } from '@stacks/web';
 import { createPortalApi } from '../api';
+import { createDemoMonitor } from './monitoring';
 
 const role = (id: string, label: string, manage = false, approvers = false) => ({ id, label, ...(manage ? { canManageAccess: true } : {}), ...(approvers ? { canManageApprovers: true } : {}) });
 
@@ -71,10 +72,13 @@ export const DEMO_PEOPLE = [
 /** The real Platform API in the browser: in-memory data, persona sign-in instead of Google. */
 export function createDemoPortal() {
   const store = new MemoryStore();
+  const demoUserIds: string[] = [];
   let id = 0;
   const deps: PlatformDeps = {
     store,
-    config: { rootDomain: 'demo.stacks', authOrigin: location.origin, googleClientId: 'demo', platformAdmins: ['dash@demo.stacks'], iosBundleId: DEMO_IOS_BUNDLE_ID },
+    config: { rootDomain: 'demo.stacks', authOrigin: location.origin, googleClientId: 'demo', platformAdmins: ['dash@demo.stacks'], iosBundleId: DEMO_IOS_BUNDLE_ID, envTag: 'demo' },
+    // Made-up CloudWatch for the Monitoring page (#81), naming the demo's people.
+    monitor: createDemoMonitor({ userIds: async () => demoUserIds }),
     registry: { list: async () => DEMO_APPS.map((manifest) => ({ manifest, credential: async () => 'demo' })) },
     appSessions: { endUserSessions: async () => undefined },
     verifyGoogle: async (credential) => {
@@ -95,7 +99,11 @@ export function createDemoPortal() {
   let portalCookie: string | null = null;
 
   const seeded = (async () => {
-    const person = (p: { email: string; name: string }) => userForIdentity(deps, { sub: `demo-${p.email}`, ...p });
+    const person = async (p: { email: string; name: string }) => {
+      const u = await userForIdentity(deps, { sub: `demo-${p.email}`, ...p });
+      if (!demoUserIds.includes(u.id)) demoUserIds.push(u.id);
+      return u;
+    };
     const [dash, priya, sam] = await Promise.all(DEMO_PEOPLE.map(person));
     const byApp = Object.fromEntries(DEMO_APPS.map((m) => [m.slug, m]));
     await setGrant(deps, dash!, byApp['mofobookklub']!, priya!.id, 'ADMIN');

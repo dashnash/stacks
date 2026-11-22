@@ -49,6 +49,7 @@ import {
   userForIdentity,
   userIdForEmail,
 } from './core';
+import { monitoringMetrics, pollMonitoringQuery, startMonitoringQuery, stopMonitoringQuery } from './monitoring';
 import { linkGoogle, linkProvider, mergeWithTicket, unlinkIdentity } from './merge';
 import { badges, deviceView, handlePushAction, listDevices, notificationSettings, registerDevice, removeDevice } from './push';
 import { appOrigin, BLOCKED, holdsRole, isPlatformAdmin, MAX_DISPLAY_NAME, PENDING, shownName, type PlatformAuditEvent, type PlatformDeps, type PlatformUser, type RegisteredApp } from './model';
@@ -89,6 +90,11 @@ export function createPlatformApp(deps: PlatformDeps) {
   }
   const signedIn = (handler: (req: RequestContext, user: PlatformUser) => Promise<RouteResult>) => async (req: RequestContext) =>
     handler(req, await requireUser(req));
+
+  const requireAdmin = (user: PlatformUser) => {
+    if (!isPlatformAdmin(deps, user)) throw forbidden('Platform admins only');
+  };
+  const appSlugs = async () => (await listApps(deps, { includeArchived: true })).map((a) => a.manifest.slug);
 
   /** Apps call the platform with their credential as a Bearer token. */
   async function requireAppCaller(req: RequestContext): Promise<AppEntry> {
@@ -570,6 +576,39 @@ export function createPlatformApp(deps: PlatformDeps) {
         await deps.store.put({ PK: `APP#${app.manifest.slug}`, SK: 'APP', slug: app.manifest.slug, status, registeredAt: deps.now().toISOString() });
         await audit(deps, user, app.manifest.slug, { action: `app.${status === 'live' ? 'restore' : 'archive'}`, label: app.manifest.name });
         return { body: { status } };
+      }),
+    )
+    /* ---------- Monitoring (#81): platform admins only ---------- */
+    .add(
+      'GET',
+      '/admin/monitoring/metrics',
+      signedIn(async (req, user) => {
+        requireAdmin(user);
+        return { body: await monitoringMetrics(deps, req.query.range, await appSlugs()) };
+      }),
+    )
+    .add(
+      'POST',
+      '/admin/monitoring/query',
+      signedIn(async (req, user) => {
+        requireAdmin(user);
+        return { body: await startMonitoringQuery(deps, req.body, await appSlugs()) };
+      }),
+    )
+    .add(
+      'GET',
+      '/admin/monitoring/query/:queryId',
+      signedIn(async (req, user) => {
+        requireAdmin(user);
+        return { body: await pollMonitoringQuery(deps, req.params.queryId!) };
+      }),
+    )
+    .add(
+      'DELETE',
+      '/admin/monitoring/query/:queryId',
+      signedIn(async (req, user) => {
+        requireAdmin(user);
+        return { body: await stopMonitoringQuery(deps, req.params.queryId!) };
       }),
     )
     .add(

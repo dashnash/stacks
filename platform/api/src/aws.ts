@@ -1,10 +1,13 @@
 import { log } from '@stacks/api';
+import { CloudWatchClient, GetMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchLogsClient, DescribeLogGroupsCommand, GetQueryResultsCommand, StartQueryCommand, StopQueryCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { GetParametersByPathCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { parseManifest } from '@stacks/manifest';
 import type { AppRegistry, AppSessionRevoker, RegisteredApp } from './model';
+import type { MetricQuery, MetricSeries, Monitor, QueryStatus } from './monitoring';
 
 interface Entry extends RegisteredApp {
   tableName?: string;
@@ -72,5 +75,98 @@ export class SsmAppRegistry implements AppRegistry, AppSessionRevoker {
       new QueryCommand({ TableName: table, IndexName: 'GSI1', KeyConditionExpression: 'GSI1PK = :pk', ExpressionAttributeValues: { ':pk': `USERSESSIONS#${userId}` } }),
     );
     await Promise.all((res.Items ?? []).map((i) => this.doc.send(new DeleteCommand({ TableName: table, Key: { PK: i.PK, SK: i.SK } }))));
+  }
+}
+
+/**
+ * CloudWatch for the Monitoring page (#81): metrics with `GetMetricData`, logs with Logs Insights.
+ * The Lambda may start queries only on `/stacks/<tag>/*` log groups (packages/infra).
+ */
+export class CloudWatchMonitor implements Monitor {
+  private readonly cw = new CloudWatchClient({});
+  private readonly logs = new CloudWatchLogsClient({});
+  private groups?: { at: number; names: string[] };
+
+  constructor(private readonly envTag: string) {}
+
+  async getMetricData(q: { queries: MetricQuery[]; start: Date; end: Date }): Promise<MetricSeries[]> {
+    const out: MetricSeries[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.cw.send(
+        new GetMetricDataCommand({
+          StartTime: q.start,
+          EndTime: q.end,
+          ScanBy: 'TimestampAscending',
+          MetricDataQueries: q.queries.map((m) => ({ Id: m.id, Expression: m.expression, Label: m.label, ReturnData: true })),
+          NextToken: token,
+        }),
+      );
+      // A SEARCH that failed or was cut short still answers; say so rather than show it as no data.
+      for (const m of res.Messages ?? []) log.warn('GetMetricData message', { code: m.Code, value: m.Value });
+      for (const r of res.MetricDataResults ?? []) {
+        if (r.StatusCode && r.StatusCode !== 'Complete' && !(r.StatusCode === 'PartialData' && res.NextToken)) log.warn('GetMetricData result incomplete', { id: r.Id, status: r.StatusCode, messages: r.Messages?.map((m) => m.Value) });
+        const id = r.Id ?? '';
+        const label = r.Label ?? '';
+        const timestamps = (r.Timestamps ?? []).map((t) => t.getTime());
+        const values = r.Values ?? [];
+        // A later page continues the same series.
+        const same = out.find((s) => s.id === id && s.label === label);
+        if (same) {
+          same.timestamps.push(...timestamps);
+          same.values.push(...values);
+        } else out.push({ id, label, timestamps, values: [...values] });
+      }
+      token = res.NextToken;
+    } while (token);
+    return out;
+  }
+
+  async listApiLogGroups(): Promise<string[]> {
+    if (this.groups && Date.now() - this.groups.at < 300_000) return this.groups.names;
+    const names: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.logs.send(new DescribeLogGroupsCommand({ logGroupNamePrefix: `/stacks/${this.envTag}/`, nextToken: token }));
+      for (const g of res.logGroups ?? []) if (g.logGroupName && /^\/stacks\/[^/]+\/[^/]+\/api$/.test(g.logGroupName)) names.push(g.logGroupName);
+      token = res.nextToken;
+    } while (token);
+    // Logs Insights takes at most 50 log groups per query; the platform's always stays in.
+    const platform = `/stacks/${this.envTag}/platform/api`;
+    const sorted = [...names.filter((n) => n === platform), ...names.filter((n) => n !== platform).sort()];
+    if (sorted.length > 50) log.warn('More than 50 API log groups: the monitoring queries leave some out', { leftOut: sorted.slice(50) });
+    this.groups = { at: Date.now(), names: sorted.slice(0, 50) };
+    return this.groups.names;
+  }
+
+  async startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string | null> {
+    try {
+      return await this.start(q);
+    } catch (err) {
+      // A log group deleted since the list was cached (an app stack destroyed): refresh and retry once.
+      if (!(err instanceof Error && err.name === 'ResourceNotFoundException')) throw err;
+      this.groups = undefined;
+      const live = new Set(await this.listApiLogGroups());
+      const logGroupNames = q.logGroupNames.filter((n) => live.has(n));
+      return logGroupNames.length ? this.start({ ...q, logGroupNames }) : null;
+    }
+  }
+
+  async stopQuery(queryId: string): Promise<void> {
+    await this.logs.send(new StopQueryCommand({ queryId }));
+  }
+
+  private async start(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string> {
+    const res = await this.logs.send(
+      new StartQueryCommand({ logGroupNames: q.logGroupNames, queryString: q.queryString, startTime: Math.floor(q.start.getTime() / 1000), endTime: Math.ceil(q.end.getTime() / 1000) }),
+    );
+    if (!res.queryId) throw new Error('StartQuery returned no query id');
+    return res.queryId;
+  }
+
+  async getQueryResults(queryId: string): Promise<{ status: QueryStatus; rows: Record<string, string>[] }> {
+    const res = await this.logs.send(new GetQueryResultsCommand({ queryId }));
+    const rows = (res.results ?? []).map((fields) => Object.fromEntries(fields.filter((f) => f.field && f.value !== undefined).map((f) => [f.field!, f.value!])));
+    return { status: (res.status ?? 'Unknown') as QueryStatus, rows };
   }
 }

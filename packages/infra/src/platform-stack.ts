@@ -249,6 +249,15 @@ export class PlatformStack extends cdk.Stack {
       }),
     );
 
+    // The portal's Monitoring page (#81): metrics (GetMetricData can't be scoped to a namespace;
+    // the code only asks for `Stacks/<tag>` and this environment's stacks) and Logs Insights,
+    // which can only start on this environment's log groups.
+    this.handler.addToRolePolicy(new iam.PolicyStatement({ sid: 'MonitoringMetrics', actions: ['cloudwatch:GetMetricData'], resources: ['*'] }));
+    this.handler.addToRolePolicy(new iam.PolicyStatement({ sid: 'MonitoringStartQuery', actions: ['logs:StartQuery'], resources: [arn('logs', `log-group:/stacks/${tag}/*`)] }));
+    this.handler.addToRolePolicy(
+      new iam.PolicyStatement({ sid: 'MonitoringQueryResults', actions: ['logs:GetQueryResults', 'logs:StopQuery', 'logs:DescribeLogGroups'], resources: ['*'] }),
+    );
+
     const httpApi = new apigw.HttpApi(this, 'HttpApi');
     const stage = httpApi.defaultStage!.node.defaultChild as apigw.CfnStage;
     stage.defaultRouteSettings = { throttlingRateLimit: API_RATE_LIMIT * 2, throttlingBurstLimit: API_BURST_LIMIT * 2 };

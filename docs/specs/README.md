@@ -40,3 +40,9 @@ A desktop-screen + iPhone light-gun game, built on game rooms and the Game kit.
 | Order | Spec | Touches | Needs the owner after merge |
 | --- | --- | --- | --- |
 | 1 | [#61 Sharing flows](61-sharing-flows.md) | `native/ios`, `native/protocol`, `packages/native`, `packages/web`, every app's `vite.config.ts`, `apps/mofobookklub/` | yes: try 1.1.0 from TestFlight |
+
+## Monitoring page (November 2026)
+
+| Order | Spec | Touches | Needs the owner after merge |
+| --- | --- | --- | --- |
+| 1 | [#81 Monitoring on the admin pages](81-admin-monitoring.md) | `platform/api`, `platform/web`, `packages/infra` (IAM, staging boundary), `packages/manifest` | yes: redeploy `stacks-ci`, check the page |

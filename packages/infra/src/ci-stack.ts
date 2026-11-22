@@ -133,6 +133,8 @@ export class CiStack extends cdk.Stack {
             'dynamodb:*', 'logs:*', 'secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret',
             'kms:Decrypt', 'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation',
             'lambda:InvokeFunction', 'lambda:GetFunction', 'events:PutEvents', 'xray:PutTraceSegments', 'xray:PutTelemetryRecords',
+            // The portal's Monitoring page (#81); its logs access is `logs:*` above.
+            'cloudwatch:GetMetricData',
           ],
           resources: ['*'],
         }),
