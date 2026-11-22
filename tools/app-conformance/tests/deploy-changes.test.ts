@@ -72,7 +72,8 @@ describe('deploy-changes against a git history', () => {
   const dir = mkdtempSync(join(tmpdir(), 'deploy-changes-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
   // No global or system git config (hooks, templates, signing) in the fixture.
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  // Nor GIT_DIR, GIT_INDEX_FILE… from a hook: the fixture must never touch the real repository.
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, encoding: 'utf8', env }).trim();
   const commit = (files: Record<string, string>, remove: string[] = []) => {
     for (const [f, text] of Object.entries(files)) {
@@ -117,7 +118,10 @@ describe('deploy-changes against a git history', () => {
     // One that isn't an ancestor of HEAD: full.
     expect(decide(c2, c4, config, dir, [c6])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
     // An environment without a zone: its portal URL isn't https://auth.<rootDomain>, so full.
-    expect(decide(c1, c2, { environments: { staging: {}, production: { hostedZoneId: 'Z1' } } }, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('staging has no hostedZoneId') });
+    const noZone = { environments: { staging: {}, production: { hostedZoneId: 'Z1' } } };
+    expect(decide(c1, c2, noZone, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('staging has no hostedZoneId') });
+    // ...which doesn't matter for docs.
+    expect(decide(c0, c1, noZone, dir)).toMatchObject({ mode: 'docs' });
     // No baseline, with the reason why.
     expect(decide(undefined, c6, config, dir, [], 'x')).toEqual({ mode: 'full', reason: 'x' });
   });
@@ -174,7 +178,7 @@ describe('deploy-changes against a git history', () => {
       return { ok: true, json: async () => ({ workflow_runs: runs }) };
     };
     expect(await lastGreenDeploy({ repo: 'o/r', runId: '9', fetch })).toEqual({ base: 'green', unsettled: ['cancelled', 'failed', 'older'] });
-    expect(calls[0]).toContain('/repos/o/r/actions/workflows/deploy.yml/runs?branch=main&event=push&per_page=50');
+    expect(calls[0]).toContain('/repos/o/r/actions/workflows/deploy.yml/runs?branch=main&per_page=50');
     await expect(lastGreenDeploy({ repo: 'o/r', fetch: async () => ({ ok: false, status: 403 }) })).rejects.toThrow('403');
   });
 });

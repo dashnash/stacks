@@ -46,7 +46,7 @@ export function baselineFrom(runs, runId) {
 
 /** `baselineFrom` for the repo's recent Deploy runs. */
 export async function lastGreenDeploy({ repo, token, runId, fetch: f = globalThis.fetch, api = 'https://api.github.com' }) {
-  const res = await f(`${api}/repos/${repo}/actions/workflows/deploy.yml/runs?branch=main&event=push&per_page=50`, {
+  const res = await f(`${api}/repos/${repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=50`, {
     headers: { accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...(token ? { authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) throw new Error(`listing Deploy runs: ${res.status}`);
@@ -88,9 +88,6 @@ const lockAt = (sha, cwd) => {
  */
 export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
   if (!base) return { mode: 'full', reason: noBaseReason ?? 'no earlier successful Deploy run found' };
-  // One-app smoke checks the portal at https://auth.<rootDomain>, which needs the domain.
-  const noZone = Object.entries(config.environments ?? {}).find(([, e]) => !e.hostedZoneId)?.[0];
-  if (noZone) return { mode: 'full', reason: `${noZone} has no hostedZoneId (its portal is on the CloudFront domain)` };
   if (base === head) return { mode: 'full', reason: `the last green Deploy run is for ${head.slice(0, 7)} itself (a second run for one commit deploys everything)` };
   if (!isAncestor(base, head, cwd)) return { mode: 'full', reason: `the last green deploy (${base.slice(0, 7)}) isn't an ancestor of ${head.slice(0, 7)}` };
   // Failed runs at or before the baseline are settled by it; the rest must lie between it and HEAD.
@@ -104,14 +101,17 @@ export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
   // A lockfile that can't be read at any side leaves `lockfile` undefined: classifyDeploy goes full.
   const locks = changed.includes('package-lock.json') ? [base, ...tips].map((s) => lockAt(s, cwd)) : [];
   const lockfile = locks.length && locks.every(Boolean) ? [...new Set(locks.slice(1).flatMap((l) => lockfileChanges(locks[0], l)))] : undefined;
-  const v = classifyDeploy(changed, { appsBefore: appsAt(base, cwd), appsAfter, heldApps: heldApps(config), lockfile });
+  let v = classifyDeploy(changed, { appsBefore: appsAt(base, cwd), appsAfter, heldApps: heldApps(config), lockfile });
+  // One-app smoke checks the portal at https://auth.<rootDomain>, which needs the domain.
+  const noZone = Object.entries(config.environments ?? {}).find(([, e]) => !e.hostedZoneId)?.[0];
+  if (v.mode === 'app' && noZone) v = { mode: 'full', reason: `${noZone} has no hostedZoneId (its portal is on the CloudFront domain)` };
   return { ...v, base, changed: changed.length, ...(others.length ? { unsettled: others.length } : {}) };
 }
 
 async function main() {
   const head = git(['rev-parse', 'HEAD']).trim();
   let base = process.argv[2];
-  // Actions → Deploy → Run workflow: the way to redeploy everything (a re-run repeats its mode).
+  // Actions → Deploy → Run workflow: the way to redeploy everything ("Re-run all jobs" works the mode out again).
   if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
     const line = 'Deploying everything: started by hand (Run workflow).';
     console.log(line);
