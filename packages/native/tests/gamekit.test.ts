@@ -21,7 +21,7 @@ afterEach(() => vi.useRealTimers());
 describe('the Game kit in the protocol file', () => {
   it('names a capability for every app call, and only for those', () => {
     for (const [name, call] of Object.entries<{ origins: string; capability?: string }>(protocol.calls)) {
-      if (call.origins === 'app') expect(['haptics', 'motion', 'screen'], name).toContain(call.capability);
+      if (call.origins === 'app') expect(['camera', 'haptics', 'motion', 'screen'], name).toContain(call.capability);
       else expect(call.capability, name).toBeUndefined();
     }
     expect(Object.keys(protocol.origins).sort()).toEqual(['any', 'app', 'auth']);

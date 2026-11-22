@@ -49,6 +49,7 @@ describe('validateManifest', () => {
 
   it('takes a list of known native capabilities, once each', () => {
     expect(errorsFor({ native: ['haptics', 'motion', 'screen'] })).toEqual([]);
+    expect(errorsFor({ native: ['camera', 'motion'] })).toEqual([]);
     expect(errorsFor({ native: [] })).toEqual([]);
     expect(errorsFor({ native: 'motion' })).toEqual(['"native" must be a list of capabilities']);
     expect(errorsFor({ native: ['gyro'] })[0]).toMatch(/unknown native capability "gyro".*motion/);

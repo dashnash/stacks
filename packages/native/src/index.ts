@@ -13,8 +13,10 @@ import {
   type MotionGlobal,
   type MotionSensor,
 } from './motion';
+import type { CameraLocateArgs, CameraLocateResult } from './camera';
 
 export * from './motion';
+export * from './camera';
 
 /** The protocol this package speaks (native/protocol/v1.json). */
 export const PROTOCOL = 1;
@@ -71,6 +73,8 @@ export interface Calls {
   /** Apps that declare `motion`: CoreMotion batches on `channel` (use `native.motion.start`). */
   'motion.start': { args: { hz: number; sensors?: MotionSensor[] }; result: { channel: string; hz: number } };
   'motion.stop': { args: { channel: string }; result: Record<string, never> };
+  /** Apps that declare `camera` (sensitive): find codes with the back camera (use `native.camera.locate`). */
+  'camera.locate': { args: CameraLocateArgs; result: CameraLocateResult };
   /** Apps that declare `haptics`. */
   'haptics.impact': { args: { style: ImpactStyle }; result: Record<string, never> };
   'haptics.notification': { args: { type: NotificationType }; result: Record<string, never> };
@@ -182,6 +186,17 @@ export interface Native {
      * when you pass `source: 'web'`). `auto` (default) asks for whichever `start` would use.
      */
     requestPermission(opts?: { source?: 'auto' | 'native' | 'web' }): Promise<'granted' | 'denied' | 'unsupported'>;
+  };
+  camera: {
+    /** Can this app version find codes with the camera? (False in a browser and in older apps.) */
+    readonly available: boolean;
+    /**
+     * Find `codes` with the back camera: the app shows its own camera view and answers with each
+     * code's direction from the phone once they all hold steady. Start motion first (the answer's
+     * attitude is the stream's). Throws `unsupported` (a browser or an older app), `forbidden`
+     * (not declared, or camera access off), `cancelled` (Cancel) or `failed` (timed out).
+     */
+    locate(args: CameraLocateArgs): Promise<CameraLocateResult>;
   };
   /** Felt in the app; `navigator.vibrate` where the browser has it; otherwise nothing (never throws for lack of support). */
   haptics: {
@@ -315,6 +330,15 @@ export function getNative(g: Global = globalThis as Global): Native {
         if (want === 'native') return auto === 'native' ? 'granted' : 'unsupported';
         if (want === 'auto' && auto === 'native') return 'granted';
         return requestWebMotionPermission(g);
+      },
+    },
+    camera: {
+      get available() {
+        return native.has('camera.locate');
+      },
+      async locate(args) {
+        if (!native.has('camera.locate')) throw new NativeError('unsupported', 'Finding codes with the camera needs a newer Stacks app');
+        return native.call('camera.locate', args);
       },
     },
     haptics: {

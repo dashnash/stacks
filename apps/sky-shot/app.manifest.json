@@ -13,7 +13,7 @@
   "defaultRole": "SHOOTER",
   "publicRoutes": ["/"],
   "modules": ["realtime", "gameServer"],
-  "native": ["motion", "haptics", "screen"],
+  "native": ["motion", "camera", "haptics", "screen"],
   "gameServer": { "maxRooms": 4, "maxPlayers": 3, "idleMinutes": 10, "maxHours": 1 },
   "accountMenu": "standard",
   "owners": ["dashiell.nash@gmail.com"]

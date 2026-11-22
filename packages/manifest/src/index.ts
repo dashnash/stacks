@@ -8,12 +8,12 @@ export const MODULES = ['comments', 'votes', 'contentPacks', 'uploads', 'notific
 export type ModuleName = (typeof MODULES)[number];
 
 /**
- * What an app may ask of the Stacks iOS app (`@stacks/native`). `motion` is sensitive: adding it is
+ * What an app may ask of the Stacks iOS app (`@stacks/native`). `motion` and `camera` are sensitive: adding one is
  * a platform decision (CI marks the PR for code-owner review, like `needsEmail`).
  */
-export const NATIVE_CAPABILITIES = ['haptics', 'motion', 'screen'] as const;
+export const NATIVE_CAPABILITIES = ['camera', 'haptics', 'motion', 'screen'] as const;
 export type NativeCapability = (typeof NATIVE_CAPABILITIES)[number];
-/** Capabilities whose addition needs code-owner review (later kits: camera, microphone, location). */
+/** Capabilities whose addition needs code-owner review (later kits: microphone, location). */
 export const SENSITIVE_NATIVE_CAPABILITIES: readonly string[] = ['motion', 'camera', 'microphone', 'location'];
 
 export const CSP_DIRECTIVES = ['imgSrc', 'connectSrc', 'scriptSrc', 'styleSrc', 'fontSrc', 'frameSrc', 'mediaSrc'] as const;

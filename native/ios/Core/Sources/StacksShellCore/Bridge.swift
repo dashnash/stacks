@@ -19,6 +19,7 @@ public enum BridgeProtocol {
         "auth.google": .auth,
         "auth.signedOut": .auth,
         "badge.set": .auth,
+        "camera.locate": .app,
         "push.register": .auth,
         "push.saveDevice": .auth,
         "push.status": .auth,
@@ -36,6 +37,7 @@ public enum BridgeProtocol {
 
     /// The manifest capability each `.app` call needs.
     public static let capabilities: [String: String] = [
+        "camera.locate": "camera",
         "haptics.impact": "haptics",
         "haptics.notification": "haptics",
         "haptics.pattern": "haptics",

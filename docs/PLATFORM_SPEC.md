@@ -210,7 +210,7 @@ Every app is described by `apps/<slug>/app.manifest.json`, validated by a JSON S
 - `csp` extends the platform's default Content-Security-Policy; anything not listed stays blocked.
 - `accountMenu`: `standard` (the app renders `<AccountMenu />`) or `custom` (it draws its own from `useAccountMenu()`). The old `portalBar` field is accepted and ignored.
 - `needsEmail` (default off) gives the app people's email addresses on `v.user`, members and its access page. Turning it on is platform work: CI marks the PR for code-owner review and refuses it on an `app/<slug>/` branch. No app uses it today.
-- `native` (optional) lists what the app asks of the iOS app: `haptics`, `motion`, `screen` (`docs/NATIVE_APP_SPEC.md`, "Native capabilities"). The shell refuses undeclared calls. Adding a sensitive one (`motion`; later `camera`, `microphone`, `location`) is platform work, like `needsEmail`.
+- `native` (optional) lists what the app asks of the iOS app: `camera`, `haptics`, `motion`, `screen` (`docs/NATIVE_APP_SPEC.md`, "Native capabilities"). The shell refuses undeclared calls. Adding a sensitive one (`camera`, `motion`; later `microphone`, `location`) is platform work, like `needsEmail`.
 - `secrets` names the keys the app's server needs (at most 10, upper case). Values never go in git, CI or
   Lambda environment variables: an admin stores each as an SSM SecureString at
   `/stacks/<prod|test>/secrets/<slug>/<NAME>` from their own machine. That path is outside
