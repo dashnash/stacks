@@ -34,9 +34,21 @@ export const CAMERA_MAX_CODES = 8;
 /** CoreMotion's attitude as a matrix taking the phone's frame to the reference frame: Rz(yaw) · Rx(pitch) · Ry(roll). */
 export function attitudeMatrix(a: Attitude): number[][] {
   const [cr, sr, cp, sp, cy, sy] = [Math.cos(a.roll), Math.sin(a.roll), Math.cos(a.pitch), Math.sin(a.pitch), Math.cos(a.yaw), Math.sin(a.yaw)];
-  const rz = [[cy, -sy, 0], [sy, cy, 0], [0, 0, 1]];
-  const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
-  const ry = [[cr, 0, sr], [0, 1, 0], [-sr, 0, cr]];
+  const rz = [
+    [cy, -sy, 0],
+    [sy, cy, 0],
+    [0, 0, 1],
+  ];
+  const rx = [
+    [1, 0, 0],
+    [0, cp, -sp],
+    [0, sp, cp],
+  ];
+  const ry = [
+    [cr, 0, sr],
+    [0, 1, 0],
+    [-sr, 0, cr],
+  ];
   const mul = (m: number[][], k: number[][]) => m.map((row) => [0, 1, 2].map((j) => row[0]! * k[0]![j]! + row[1]! * k[1]![j]! + row[2]! * k[2]![j]!));
   return mul(mul(rz, rx), ry);
 }
@@ -110,7 +122,13 @@ export interface FakeCameraOptions {
  */
 export function fakeCamera(opts: FakeCameraOptions = {}) {
   const calls: CameraLocateArgs[] = [];
-  const spots = [[0.06, 0.1], [0.94, 0.1], [0.94, 0.9], [0.06, 0.9], [0.5, 0.5]] as const;
+  const spots = [
+    [0.06, 0.1],
+    [0.94, 0.1],
+    [0.94, 0.9],
+    [0.06, 0.9],
+    [0.5, 0.5],
+  ] as const;
   const fallback = (args: CameraLocateArgs) =>
     screenRays(
       { yaw: 0, pitch: 0, widthRad: Math.PI / 6, aspect: 16 / 9 },
