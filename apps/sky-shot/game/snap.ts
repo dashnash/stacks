@@ -14,16 +14,24 @@ import { applyTune, type Tuning } from './tuning';
 export const CORNERS = ['tl', 'tr', 'br', 'bl'] as const;
 export type Corner = (typeof CORNERS)[number];
 
-/** Each code's side and its margin from the window's edge, in screen heights. */
-export const CODE_SIZE = 0.16;
+/**
+ * Each code's side, in screen heights: as big as fits (a TV across the room is a small target for
+ * the phone's camera), but never wider than 40% of a narrow screen, so two codes and the card in
+ * between still fit. And the codes' margin from the window's edge.
+ */
+export const CODE_SIZE = 0.3;
 export const CODE_MARGIN = 0.03;
+export const codeSize = (aspect: number): number => Math.min(CODE_SIZE, 0.4 * aspect);
 
-/** The codes' payloads for a room: `whee-cal:<nonce>:<corner>`. */
-export const codePayloads = (nonce: string): string[] => CORNERS.map((c) => `whee-cal:${nonce}:${c}`);
+/**
+ * The codes' payloads for a room: `whee:<nonce>:<corner>`, 14 bytes, the most a version 1 code
+ * (21 modules) holds, so each module is as big as the code allows.
+ */
+export const codePayloads = (nonce: string): string[] => CORNERS.map((c) => `whee:${nonce}:${c}`);
 
 /** Where each code's centre is drawn: x in screen widths, y in heights (top left, top right, bottom right, bottom left). */
 export function codeSpots(aspect: number): [number, number][] {
-  const c = CODE_MARGIN + CODE_SIZE / 2;
+  const c = CODE_MARGIN + codeSize(aspect) / 2;
   const x = c / aspect;
   return [
     [x, c],

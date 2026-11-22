@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { createPortal } from 'react-dom';
 import { ErrorNote, createStateBuffer, useApi, useAsync, useGameRoom } from '@stacks/web';
 import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInput, type RangeKind, type ScreenEvent, type ServerEvent, type Snapshot, type SnapView } from '../../game/protocol';
-import { CODE_MARGIN, CODE_SIZE } from '../../game/snap';
+import { CODE_MARGIN, codeSize } from '../../game/snap';
 import { configId, DEFAULT_TUNING, type Tuning } from '../../game/tuning';
 import { drawFrame, EFFECT_MS, HIT_COPY_MS, Layers, type Effect, type HitCopy } from './draw';
 import { useLook } from './Look';
@@ -57,13 +57,26 @@ export function QrCode({ text, label, quiet = 4 }: { text: string; label: string
   );
 }
 
+/** The window's width over its height, as the server is told it (and as the snap codes are sized). */
+const windowAspect = () => Math.max(0.5, Math.min(3, window.innerWidth / Math.max(1, window.innerHeight)));
+
+function useAspect(): number {
+  const [aspect, setAspect] = useState(windowAspect);
+  useEffect(() => {
+    const on = () => setAspect(windowAspect());
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return aspect;
+}
+
 /**
  * Camera calibration (#167): the four codes the phones look for, at the window's corners (where
  * `codeSpots` says), on a light ground, and each phone's step. On the page's body, over everything
  * (the header's account badge and the footer sit in those corners), so the camera sees every code.
  */
 function SnapCodes({ view, snapping, playerOf, look }: { view: SnapView; snapping: boolean; playerOf: (seat: string) => number; look: ThemeChoice }) {
-  const size = `${CODE_SIZE * 100}vh`;
+  const size = `${codeSize(useAspect()) * 100}vh`;
   const m = `${CODE_MARGIN * 100}vh`;
   const at = [
     { left: m, top: m },
@@ -296,7 +309,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   const modeSent = useRef(false);
   useEffect(() => {
     if (!live) return;
-    const view = () => sendEvent({ view: { aspect: Math.max(0.5, Math.min(3, window.innerWidth / Math.max(1, window.innerHeight))) } });
+    const view = () => sendEvent({ view: { aspect: windowAspect() } });
     view();
     if (!modeSent.current) {
       modeSent.current = true;
