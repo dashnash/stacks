@@ -34,6 +34,7 @@ A desktop-screen + iPhone light-gun game, built on game rooms and the Game kit.
 | 2 | [#132 Sky Shot](132-sky-shot.md) | `apps/sky-shot/` (app task; `motion` needs code-owner review) | no |
 | 3 | [#133 Volume buttons (draft)](133-volume-buttons.md) | `native/ios`, `native/protocol`, `packages/native` | open questions first |
 | 4 | [#144 Themes](144-sky-shot-themes.md) | `apps/sky-shot/` (app task) | no |
+| 5 | [#167 Camera calibration](167-whee-camera-calibration.md) | `native/ios`, `native/protocol`, `packages/native`, then `apps/sky-shot/` | yes: an iOS build with the camera |
 
 ## Sharing (November 2026)
 
