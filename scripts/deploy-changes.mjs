@@ -21,7 +21,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { classifyDeploy, lockfileChanges } from './pr-paths.mjs';
 
-const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
 
 /**
  * From the newest Deploy runs on main, other than this one, ordered by when they **finished**
@@ -92,7 +92,9 @@ export function decide(base, head, config, cwd, unsettled = []) {
   const changed = [...new Set(tips.flatMap((s) => diff(base, s, cwd)))].sort();
   // The app set at every tip: an app that a failed run added or removed is new or removed too.
   const appsAfter = tips.map((s) => appsAt(s, cwd)).reduce((a, b) => a.filter((x) => b.includes(x)));
-  const lockfile = changed.includes('package-lock.json') ? [...new Set(tips.flatMap((s) => lockfileChanges(lockAt(base, cwd), lockAt(s, cwd))))] : undefined;
+  // A lockfile that can't be read at any side leaves `lockfile` undefined: classifyDeploy goes full.
+  const locks = changed.includes('package-lock.json') ? [base, ...tips].map((s) => lockAt(s, cwd)) : [];
+  const lockfile = locks.length && locks.every(Boolean) ? [...new Set(locks.slice(1).flatMap((l) => lockfileChanges(locks[0], l)))] : undefined;
   const v = classifyDeploy(changed, { appsBefore: appsAt(base, cwd), appsAfter, heldApps: heldApps(config), lockfile });
   return { ...v, base, changed: changed.length, ...(others.length ? { unsettled: others.length } : {}) };
 }

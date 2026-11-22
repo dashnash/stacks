@@ -112,6 +112,9 @@ describe('deploy-changes against a git history', () => {
     const c = commit({ 'package-lock.json': l('2', '4'), 'apps/hello/c.ts': '2' });
     expect(decide(a, b, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });
     expect(decide(b, c, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('node_modules/zod') });
+    // Unreadable on one side (here: not JSON): in doubt, full.
+    const d = commit({ 'package-lock.json': 'not json', 'apps/hello/c.ts': '3' });
+    expect(decide(c, d, config, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('package-lock.json') });
   });
 
   it('sees a new app, and a move within an app', () => {
