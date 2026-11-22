@@ -86,6 +86,8 @@ function MonitoringPage() {
   const loadedZoom = useRef<Zoom | null>(null);
   /** The server's clock minus the browser's, from the last preset answer (whose `to` is its now). */
   const clockSkew = useRef(0);
+  /** Set when a fallback already holds the preset's answer: the zoom change then needs no fetch. */
+  const skipFetch = useRef(false);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
   const [tick, setTick] = useState(0);
@@ -97,6 +99,11 @@ function MonitoringPage() {
   const lookupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (skipFetch.current) {
+      skipFetch.current = false;
+      setLoading(false);
+      return;
+    }
     let live = true;
     setLoading(true);
     api
@@ -105,10 +112,11 @@ function MonitoringPage() {
         if (!live) return;
         // An API from before zooming (a mixed deploy) ignores from/to and answers the preset.
         if (zoom && m.range !== 'custom') {
+          skipFetch.current = true;
           setZoom(null);
           setZoomFailed("This Platform API can't zoom yet; showing the preset.");
         }
-        loadedZoom.current = zoom;
+        loadedZoom.current = m.range === 'custom' ? zoom : null;
         if (m.range !== 'custom') clockSkew.current = Date.parse(m.to) - Date.now();
         setMetrics(m);
         setError(null);
@@ -230,7 +238,7 @@ function MonitoringPage() {
 
           <h2>Requests and errors per app</h2>
           <p className="small muted mon-note">
-            Drag across a graph to zoom in{zoom ? `; the tables below still cover the last ${range}` : ''}.
+            Drag across a graph to zoom in{zoom ? `. Refresh reloads the same window; the tables below still cover the last ${range}` : ''}.
           </p>
           {zoomFailed && <p className="error small">{zoomFailed}</p>}
           <Graphs metrics={metrics} ids={['requests', 'serverErrors', 'clientErrors', 'p95']} {...graphProps} className="mon-graphs" />

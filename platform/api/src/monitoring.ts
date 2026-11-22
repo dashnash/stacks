@@ -59,6 +59,12 @@ export interface Monitor {
 }
 
 const DAY_MS = 86_400_000;
+/**
+ * A start older than this is treated as past CloudWatch's 15 days of 1-minute points: 10 minutes
+ * short of it, so rounding the start down (up to 5 minutes) and CloudWatch reading its clock a
+ * little later can't carry a start the 1-minute rules were chosen for over the line.
+ */
+const OLD_START_MS = 15 * DAY_MS - 10 * 60_000;
 /** The shortest zoomed window the metrics route serves. */
 export const MIN_WINDOW_MS = 5 * 60_000;
 const PERIODS = [60, 300, 900, 3_600, 10_800];
@@ -70,7 +76,7 @@ const PERIODS = [60, 300, 900, 3_600, 10_800];
  * days ago today; the 63-day floor is there in case that limit grows.)
  */
 export function periodFor(ms: number, startAgoMs: number): number {
-  const floor = startAgoMs > 63 * DAY_MS ? 3_600 : startAgoMs > 15 * DAY_MS ? 300 : 60;
+  const floor = startAgoMs > 63 * DAY_MS ? 3_600 : startAgoMs > OLD_START_MS ? 300 : 60;
   return PERIODS.find((p) => p >= floor && ms / 1000 / p <= 360) ?? PERIODS.at(-1)!;
 }
 
@@ -193,7 +199,7 @@ export async function monitoringMetrics(deps: PlatformDeps, params: { range?: un
   // old the start is gets decided once, from the asked start, for the rounding and the period.
   const asked = window ? window.start.getTime() : now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms;
   const ago = now.getTime() - asked;
-  const step = (ago > 15 * DAY_MS ? 300 : 60) * 1000;
+  const step = (ago > OLD_START_MS ? 300 : 60) * 1000;
   const start = new Date(Math.floor(asked / step) * step);
   const ms = end.getTime() - start.getTime();
   const periodSeconds = window ? periodFor(ms, ago) : MONITORING_RANGES[range as MonitoringRange].periodSeconds;

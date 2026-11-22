@@ -134,10 +134,12 @@ describe('GET /admin/monitoring/metrics', () => {
     // The start is rounded down as CloudWatch does: to the minute, or to 5 minutes past 15 days.
     expect((await ask(now - 3_600_000 - 42_000, now)).body.from).toBe(new Date(now - 3_660_000).toISOString());
     expect((await ask(now - 20 * 86_400_000 + 180_000, now - 19 * 86_400_000)).body.from).toBe(new Date(now - 20 * 86_400_000).toISOString());
-    // Just past 15 days by the asked start: a 5-minute period and a start on 5 minutes, not one of each.
-    const edge = await ask(now - 15 * 86_400_000 - 20_000, now - 15 * 86_400_000 + 3_600_000);
-    expect(edge.body.periodSeconds).toBe(300);
-    expect(Date.parse(edge.body.from) % 300_000).toBe(0);
+    // Near 15 days, on either side: a 5-minute period and a start on 5 minutes, never one of each.
+    for (const off of [-20_000, 20_000, 9 * 60_000]) {
+      const edge = await ask(now - 15 * 86_400_000 + off, now - 15 * 86_400_000 + 3_600_000);
+      expect(edge.body.periodSeconds).toBe(300);
+      expect(Date.parse(edge.body.from) % 300_000).toBe(0);
+    }
   });
 
   it('refuses a bad, too short or too old window', async () => {

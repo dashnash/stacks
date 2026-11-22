@@ -339,6 +339,23 @@ describe('helpers', () => {
     expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('falls back to the preset with one call when the API ignores from/to (a mixed deploy)', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const real = api.monitoringMetrics.bind(api);
+    const spy = vi.spyOn(api, 'monitoringMetrics').mockImplementation((range) => real(range));
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerUp', chart!, 99);
+    expect(await screen.findByText("This Platform API can't zoom yet; showing the preset.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Zoomed:/)).toBeNull();
+    await waitFor(() => expect(screen.getByText(/^Updated/)).toBeInTheDocument());
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a zoom that has loaded when a later refresh fails, showing the error', async () => {
     const api = renderPortal();
     await signInAs('Dash Nash');

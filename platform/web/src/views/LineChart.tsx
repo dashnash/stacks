@@ -140,7 +140,10 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     setDrag(null);
     // Released outside the chart: the leave already happened during the capture.
     const box = svg.current?.getBoundingClientRect();
-    if (box && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) store.set(null);
+    if (box && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) {
+      setPointing(false);
+      store.set(null);
+    }
   };
 
   return (
@@ -156,7 +159,11 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
           onPointerMove={onMove}
           onPointerDown={onDown}
           onPointerUp={onUp}
-          onPointerCancel={() => setDrag(null)}
+          onPointerCancel={() => {
+            setDrag(null);
+            setPointing(false);
+            store.set(null);
+          }}
           onPointerLeave={() => {
             setPointing(false);
             if (!drag) store.set(null);
