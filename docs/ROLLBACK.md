@@ -3,9 +3,8 @@
 Every merge to `main` runs **Deploy** (`.github/workflows/deploy.yml`): staging (platform, then
 every app with `cdk deploy --all --concurrency 4`), a smoke check, then production the same way and
 the same smoke check. A merge that changed only one app deploys only that app's stack, and a
-docs-only merge deploys nothing (the `changes` job says which in the run summary). Either way the
-next run diffs against the last **green** run, so whatever a failed run didn't deploy, the next one
-does. To redeploy everything regardless, run Deploy by hand on `main` (Actions → Deploy → Run
+docs-only merge deploys nothing (the `changes` job says which in the run summary). Either way, the
+run after a failed one deploys everything, so whatever a failed run left behind is redeployed. To redeploy everything regardless, run Deploy by hand on `main` (Actions → Deploy → Run
 workflow), but not while a merge's run is queued: it would replace it. "Re-run failed jobs" keeps a run's mode; "Re-run all jobs" works it out again (for an older run usually full, at that run's old commit). CloudFormation rolls back **each stack on its own**, so a failed run can leave
 the platform and some apps on the new commit and the rest on the old one. That is safe by design
 (the Platform API stays compatible with the previous SDK for one release: `docs/PLATFORM_SPEC.md`,
@@ -54,7 +53,7 @@ CloudFormation skips the stacks that already succeeded. Deploy runs one at a tim
 deploy-main`), so a re-run waits while another run is in progress.
 
 After 7 days the artifacts are gone; revert, or merge a no-op change, instead (even a docs-only one
-redeploys: the next run counts the files of every run since the last green one that didn't succeed).
+redeploys everything after a failed run).
 
 ## 4. Revert (roll forward to the old code)
 

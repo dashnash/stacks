@@ -106,17 +106,18 @@ describe('deploy-changes against a git history', () => {
     expect(decide(c0, c2, config, dir)).toMatchObject({ mode: 'app', app: 'hello' });
   });
 
-  it('redeploys what a failed run touched, even when a revert undid it (no diff against the baseline)', () => {
+  it('deploys everything after a run that didn\'t succeed, even when a revert undid its change', () => {
     // c5 changes the platform and its run fails; c6 reverts it.
     const c5 = commit({ 'packages/api/x.ts': '2' });
     const c6 = commit({ 'packages/api/x.ts': '1' });
     expect(decide(c4, c6, config, dir)).toMatchObject({ mode: 'docs', reason: 'nothing changed' });
-    expect(decide(c4, c6, config, dir, [c5])).toMatchObject({ mode: 'full', unsettled: 1 });
+    expect(decide(c4, c6, config, dir, [c5])).toMatchObject({ mode: 'full', reason: expect.stringContaining("didn't succeed") });
+    // The same for a failed one-app run (say an archived app's smoke): the next run is full, not
+    // that app again, so later merges don't repeat the failure.
     // A failed run at or before the baseline is settled by it.
     expect(decide(c5, c6, config, dir, [c2, c5])).toMatchObject({ mode: 'full', reason: '1 file(s) outside apps/ changed' });
     expect(decide(c4, c6, config, dir, [c2])).toMatchObject({ mode: 'docs' });
-    // One that isn't an ancestor of HEAD: full.
-    expect(decide(c2, c4, config, dir, [c6])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
+    expect(decide(c1, c3, config, dir, [c2])).toMatchObject({ mode: 'full', reason: expect.stringContaining("didn't succeed") });
     // An environment without a zone: its portal URL isn't https://auth.<rootDomain>, so full.
     const noZone = { environments: { staging: {}, production: { hostedZoneId: 'Z1' } } };
     expect(decide(c1, c2, noZone, dir)).toMatchObject({ mode: 'full', reason: expect.stringContaining('staging has no hostedZoneId') });

@@ -8,10 +8,11 @@
  *
  * The baseline is the commit of the last **successful** Deploy run (not the merge's first parent):
  * a failed run, or a queued run that a newer push replaced, may have deployed nothing or only part,
- * so its changes must count in the next run. The files of every run since the baseline that didn't
- * succeed count too: a revert of a failed change has no diff against the baseline, but the stacks
- * the failed run touched still need redeploying. Without a baseline (none found, the API failed,
- * not an ancestor of HEAD, or HEAD itself) it deploys everything.
+ * so its changes must count in the next run. And after any run since the baseline that didn't
+ * succeed, the next one deploys everything: the failed run may have left stacks on its commit (a
+ * revert of it has no diff of its own), and a narrow run repeating the same failure (say an
+ * archived app's one-app smoke) would fail every merge after it. Without a baseline (none found,
+ * the API failed, not an ancestor of HEAD, or HEAD itself) it deploys everything too.
  *
  * Env: GITHUB_REPOSITORY, GITHUB_TOKEN (actions: read), GITHUB_RUN_ID (this run, skipped),
  * GITHUB_OUTPUT, GITHUB_STEP_SUMMARY. Needs the full history (checkout fetch-depth: 0).
@@ -85,29 +86,25 @@ const lockAt = (sha, cwd) => {
 };
 
 /**
- * The verdict for `head` against `base` (undefined: full), also counting the files `base`..`sha`
- * for every commit in `unsettled` (runs since `base` that didn't succeed). Reads git in `cwd`.
+ * The verdict for `head` against `base` (undefined: full); full too when `unsettled` (the commits
+ * of runs that didn't succeed) has one after `base`. Reads git in `cwd`.
  */
 export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
   if (!base) return { mode: 'full', reason: noBaseReason ?? 'no earlier successful Deploy run found' };
   if (base === head) return { mode: 'full', reason: `the last green Deploy run is for ${head.slice(0, 7)} itself (a second run for one commit deploys everything)` };
   if (!isAncestor(base, head, cwd)) return { mode: 'full', reason: `the last green deploy (${base.slice(0, 7)}) isn't an ancestor of ${head.slice(0, 7)}` };
-  // Failed runs at or before the baseline are settled by it; the rest must lie between it and HEAD.
-  const others = [...new Set(unsettled)].filter((s) => s !== head && s !== base && !isAncestor(s, base, cwd));
-  const stray = others.find((s) => !isAncestor(base, s, cwd) || !isAncestor(s, head, cwd));
-  if (stray) return { mode: 'full', reason: `a failed run's commit (${stray.slice(0, 7)}) isn't between the last green deploy and ${head.slice(0, 7)}` };
-  const tips = [head, ...others];
-  const changed = [...new Set(tips.flatMap((s) => diff(base, s, cwd)))].sort();
-  // The app set at every tip: an app that a failed run added or removed is new or removed too.
-  const appsAfter = tips.map((s) => appsAt(s, cwd)).reduce((a, b) => a.filter((x) => b.includes(x)));
-  // A lockfile that can't be read at any side leaves `lockfile` undefined: classifyDeploy goes full.
-  const locks = changed.includes('package-lock.json') ? [base, ...tips].map((s) => lockAt(s, cwd)) : [];
-  const lockfile = locks.length && locks.every(Boolean) ? [...new Set(locks.slice(1).flatMap((l) => lockfileChanges(locks[0], l)))] : undefined;
-  let v = classifyDeploy(changed, { appsBefore: appsAt(base, cwd), appsAfter, heldApps: heldApps(config), lockfile });
+  // Failed runs at or before the baseline are settled by it; any other means a full deploy.
+  const failed = [...new Set(unsettled)].find((s) => s !== base && !isAncestor(s, base, cwd));
+  if (failed) return { mode: 'full', reason: `a Deploy run since the last green one (${base.slice(0, 7)}) didn't succeed (${failed.slice(0, 7)})`, base };
+  const changed = diff(base, head, cwd);
+  // A lockfile that can't be read at either side leaves `lockfile` undefined: classifyDeploy goes full.
+  const [before, after] = changed.includes('package-lock.json') ? [lockAt(base, cwd), lockAt(head, cwd)] : [];
+  const lockfile = before && after ? lockfileChanges(before, after) : undefined;
+  let v = classifyDeploy(changed, { appsBefore: appsAt(base, cwd), appsAfter: appsAt(head, cwd), heldApps: heldApps(config), lockfile });
   // One-app smoke checks the portal at https://auth.<rootDomain>, which needs the domain.
   const noZone = Object.entries(config.environments ?? {}).find(([, e]) => !e.hostedZoneId)?.[0];
   if (v.mode === 'app' && noZone) v = { mode: 'full', reason: `${noZone} has no hostedZoneId (its portal is on the CloudFront domain)` };
-  return { ...v, base, changed: changed.length, ...(others.length ? { unsettled: others.length } : {}) };
+  return { ...v, base, changed: changed.length };
 }
 
 async function main() {
@@ -137,7 +134,7 @@ async function main() {
   }
   const v = decide(base, head, JSON.parse(readFileSync('stacks.config.json', 'utf8')), undefined, unsettled, reason);
   if (!['docs', 'app', 'full'].includes(v.mode)) throw new Error(`unknown mode ${v.mode}`);
-  const since = v.base ? ` since ${v.base.slice(0, 7)} (${source}${v.unsettled ? `, plus ${v.unsettled} run(s) since that didn't succeed` : ''})` : '';
+  const since = v.base ? ` since ${v.base.slice(0, 7)} (${source})` : '';
   const line = `${v.mode === 'docs' ? 'Nothing to deploy' : v.mode === 'app' ? `Deploying only ${v.app}` : 'Deploying everything'}: ${v.reason}${since}.`;
   console.log(line);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `mode=${v.mode}\napp=${v.app ?? ''}\nbase=${v.base ?? ''}\n`);

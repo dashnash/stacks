@@ -1,8 +1,8 @@
 name: Deploy
 
 # Every merge to main. The changes job first decides what it has to deploy (#47), from the files changed
-# since the last green Deploy run, plus those of any failed run since (scripts/deploy-changes.mjs,
-# rules in scripts/pr-paths.mjs):
+# since the last green Deploy run; after any run since then that didn't succeed, full
+# (scripts/deploy-changes.mjs, rules in scripts/pr-paths.mjs):
 #   docs  only docs/ and Markdown outside apps: every other job is skipped and the run ends green.
 #   app   only apps/<slug>/ (and that app's own package-lock.json entries): just that app's stack,
 #         staging then production.
@@ -149,12 +149,11 @@ jobs:
           node scripts/check-imports.mjs
           node scripts/check-action-pins.mjs
           node scripts/check-install-scripts.mjs
+          npm run typecheck
           if [[ "$MODE" == app ]]; then
-            npm run typecheck -w "apps/${APP}"
             # Every test except the other apps' (packages, tools and infra read or bundle apps).
             npm test -w "apps/${APP}" -w packages -w packages/modules -w platform -w tools -w infra
           else
-            npm run typecheck
             npm test
           fi
       - name: Build (stamps the commit into every app's and the portal's footer)
