@@ -102,6 +102,40 @@ describe('smoke check (#100)', () => {
     expect(noHello.at(-1).name).toBe('pantry sign-in redirects to the portal');
   });
 
+  describe('after an app-only deploy (--portal)', () => {
+    const appOnly = { 'stacks-test-app-pantry': { SiteURL: 'https://pantry.test.example' } };
+    const runAppOnly = (routes: Record<string, Reply | Reply[]>) => {
+      const s = stub(routes);
+      return runChecks(plan(targetsFromOutputs(appOnly, { portal: `${portal}/` }), { appsOnly: true }), { fetch: s.fetch, sleep: async () => {}, delayMs: 0 });
+    };
+
+    it('checks the given portal, the one app and its sign-in', async () => {
+      expect(targetsFromOutputs(appOnly, { portal: `${portal}/` })).toEqual({ portal, apps: [{ slug: 'pantry', url: 'https://pantry.test.example' }] });
+      const results = await runAppOnly({
+        ...green(),
+        'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` },
+      });
+      expect(results.map((r: any) => [r.name, r.ok])).toEqual([
+        ['portal /api/health', true],
+        ['pantry /api/health', true],
+        ['portal /api/public/catalog', true],
+        ['pantry sign-in redirects to the portal', true],
+      ]);
+    });
+
+    it('accepts a catalog without the one app (it may be archived), never an empty one', async () => {
+      const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
+      const without = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
+      expect(without[2]).toMatchObject({ ok: true });
+      const empty = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [] } } });
+      expect(empty[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
+    });
+
+    it('still needs a portal: no PortalURL and no --portal fails', () => {
+      expect(() => targetsFromOutputs(appOnly)).toThrow(/--portal/);
+    });
+  });
+
   it('escapes workflow command messages', () => {
     expect(escapeCommand('next=%2Fa\nline')).toBe('next=%252Fa%0Aline');
   });

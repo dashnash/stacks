@@ -76,7 +76,8 @@ node scripts/merge-train.mjs wait-deploy <merge commit sha>
 It finds the `Deploy` run for that commit (push to `main`), waits until it completes and prints
 its conclusion and every smoke-check step.
 
-- Exit 0 (run `success` and every **Smoke check** green) → back to step 2 for the next PR.
+- Exit 0 (run `success` and every **Smoke check** green, or a docs-only merge: "nothing to deploy",
+  every deploy job skipped on purpose) → back to step 2 for the next PR.
 - Exit 5 (failed, cancelled or a red smoke check) → **stop** (section 4), unless it was cancelled
   only because a newer run replaced it (below).
 - Exit 6 → start it again.

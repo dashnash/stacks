@@ -2,7 +2,10 @@
 
 Every merge to `main` runs **Deploy** (`.github/workflows/deploy.yml`): staging (platform, then
 every app with `cdk deploy --all --concurrency 4`), a smoke check, then production the same way and
-the same smoke check. CloudFormation rolls back **each stack on its own**, so a failed run can leave
+the same smoke check. A merge that changed only one app deploys only that app's stack, and a
+docs-only merge deploys nothing (the `changes` job says which in the run summary). Either way the
+next run diffs against the last **green** run, so whatever a failed run didn't deploy, the next one
+does. CloudFormation rolls back **each stack on its own**, so a failed run can leave
 the platform and some apps on the new commit and the rest on the old one. That is safe by design
 (the Platform API stays compatible with the previous SDK for one release: `docs/PLATFORM_SPEC.md`,
 "Compatibility across a deploy"), but it shouldn't stay that way. This page is what to do.
