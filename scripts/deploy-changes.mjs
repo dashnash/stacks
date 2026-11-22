@@ -24,19 +24,21 @@ import { classifyDeploy, lockfileChanges } from './pr-paths.mjs';
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
 
 /**
- * From the newest Deploy runs on main, other than this one, ordered by when they **finished**
- * (`updated_at`; a re-run of an old run deploys its old commit last): `base`, the head commit of
- * the run that last finished green (undefined if none in the page), and `unsettled`, the commits of
- * the completed runs that finished after it without succeeding.
+ * From the newest Deploy runs on main, other than this one: `base`, the head commit of the run that
+ * last **finished** green (`updated_at`), and `unsettled`, the commits of every completed run in the
+ * page that didn't succeed (decide keeps those after `base`). If that green run is a re-run of a
+ * run older than another one in the page, it put an old commit back over newer ones: no baseline
+ * (`reason` says why), so the next run deploys everything. Re-runs of runs older than the page
+ * aren't seen (the spec notes it).
  */
 export function baselineFrom(runs, runId) {
-  const done = runs.filter((r) => String(r.id) !== String(runId) && r.status === 'completed').sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')));
-  const unsettled = [];
-  for (const r of done) {
-    if (r.conclusion === 'success') return { base: r.head_sha, unsettled };
-    unsettled.push(r.head_sha);
-  }
-  return { base: undefined, unsettled };
+  const done = runs.filter((r) => String(r.id) !== String(runId) && r.status === 'completed');
+  const unsettled = done.filter((r) => r.conclusion !== 'success').map((r) => r.head_sha);
+  const green = done.filter((r) => r.conclusion === 'success').sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))[0];
+  if (!green) return { base: undefined, unsettled };
+  const newer = runs.some((r) => String(r.id) !== String(runId) && r.id !== green.id && String(r.created_at ?? '') > String(green.created_at ?? ''));
+  if ((green.run_attempt ?? 1) > 1 && newer) return { base: undefined, unsettled, reason: `the last green run re-ran an older run (${String(green.head_sha).slice(0, 7)}), deploying its old commit` };
+  return { base: green.head_sha, unsettled };
 }
 
 /** `baselineFrom` for the repo's recent Deploy runs. */
@@ -81,11 +83,12 @@ const lockAt = (sha, cwd) => {
  * The verdict for `head` against `base` (undefined: full), also counting the files `base`..`sha`
  * for every commit in `unsettled` (runs since `base` that didn't succeed). Reads git in `cwd`.
  */
-export function decide(base, head, config, cwd, unsettled = []) {
-  if (!base) return { mode: 'full', reason: 'no earlier successful Deploy run found' };
+export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
+  if (!base) return { mode: 'full', reason: noBaseReason ?? 'no earlier successful Deploy run found' };
   if (base === head) return { mode: 'full', reason: `the last green Deploy run is for ${head.slice(0, 7)} itself (a second run for one commit deploys everything)` };
   if (!isAncestor(base, head, cwd)) return { mode: 'full', reason: `the last green deploy (${base.slice(0, 7)}) isn't an ancestor of ${head.slice(0, 7)}` };
-  const others = [...new Set(unsettled)].filter((s) => s !== head);
+  // Failed runs at or before the baseline are settled by it; the rest must lie between it and HEAD.
+  const others = [...new Set(unsettled)].filter((s) => s !== head && s !== base && !isAncestor(s, base, cwd));
   const stray = others.find((s) => !isAncestor(base, s, cwd) || !isAncestor(s, head, cwd));
   if (stray) return { mode: 'full', reason: `a failed run's commit (${stray.slice(0, 7)}) isn't between the last green deploy and ${head.slice(0, 7)}` };
   const tips = [head, ...others];
@@ -104,15 +107,17 @@ async function main() {
   let base = process.argv[2];
   let source = 'given';
   let unsettled = [];
+  let reason;
   if (!base) {
     source = 'last green Deploy';
     try {
-      ({ base, unsettled } = await lastGreenDeploy({ repo: process.env.GITHUB_REPOSITORY || 'dashnash/stacks', token: process.env.GITHUB_TOKEN, runId: process.env.GITHUB_RUN_ID }));
+      ({ base, unsettled, reason } = await lastGreenDeploy({ repo: process.env.GITHUB_REPOSITORY || 'dashnash/stacks', token: process.env.GITHUB_TOKEN, runId: process.env.GITHUB_RUN_ID }));
     } catch (err) {
       console.log(`::warning title=Deploy changes::${err.message}; deploying everything`);
     }
   }
-  const v = decide(base, head, JSON.parse(readFileSync('stacks.config.json', 'utf8')), undefined, unsettled);
+  const v = decide(base, head, JSON.parse(readFileSync('stacks.config.json', 'utf8')), undefined, unsettled, reason);
+  if (!['docs', 'app', 'full'].includes(v.mode)) throw new Error(`unknown mode ${v.mode}`);
   const since = v.base ? ` since ${v.base.slice(0, 7)} (${source}${v.unsettled ? `, plus ${v.unsettled} run(s) since that didn't succeed` : ''})` : '';
   const line = `${v.mode === 'docs' ? 'Nothing to deploy' : v.mode === 'app' ? `Deploying only ${v.app}` : 'Deploying everything'}: ${v.reason}${since}.`;
   console.log(line);

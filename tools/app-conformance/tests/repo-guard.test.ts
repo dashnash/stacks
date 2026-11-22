@@ -171,7 +171,8 @@ describe('Deploy path filtering (#47)', () => {
   it('deploys the platform only in a full run, and points smoke at the live portal otherwise', () => {
     for (const env of ['staging', 'production']) {
       const body = deploy.find((j) => j.id === env)!.body;
-      expect(body, env).toMatch(/- name: Platform first.*\n {8}if: needs\.changes\.outputs\.mode == 'full'\n/);
+      // Anything but a one-app run (even an unexpected mode) deploys the platform first.
+      expect(body, env).toMatch(/- name: Platform first.*\n {8}if: needs\.changes\.outputs\.mode != 'app'\n/);
       expect(body, env).toMatch(/--portal/);
     }
   });

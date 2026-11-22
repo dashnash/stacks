@@ -107,8 +107,13 @@ describe('deploy-changes against a git history', () => {
     const c6 = commit({ 'packages/api/x.ts': '1' });
     expect(decide(c4, c6, config, dir)).toMatchObject({ mode: 'docs', reason: 'nothing changed' });
     expect(decide(c4, c6, config, dir, [c5])).toMatchObject({ mode: 'full', unsettled: 1 });
-    // A failed run that isn't between the baseline and HEAD: full.
-    expect(decide(c5, c6, config, dir, [c2])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
+    // A failed run at or before the baseline is settled by it.
+    expect(decide(c5, c6, config, dir, [c2, c5])).toMatchObject({ mode: 'full', reason: '1 file(s) outside apps/ changed' });
+    expect(decide(c4, c6, config, dir, [c2])).toMatchObject({ mode: 'docs' });
+    // One that isn't an ancestor of HEAD: full.
+    expect(decide(c2, c4, config, dir, [c6])).toMatchObject({ mode: 'full', reason: expect.stringContaining("isn't between") });
+    // No baseline, with the reason why.
+    expect(decide(undefined, c6, config, dir, [], 'x')).toEqual({ mode: 'full', reason: 'x' });
   });
 
   it('reads the lockfile at each side for an app deploy', () => {
@@ -139,18 +144,23 @@ describe('deploy-changes against a git history', () => {
     // `at`: when the run finished (updated_at), an hour per step.
     const run = (id: number, head_sha: string, conclusion: string | null, at = id, status = 'completed') => ({ id, head_sha, status, conclusion, updated_at: `2026-11-22T${String(at).padStart(2, '0')}:00:00Z` });
     const runs = [run(9, 'this', null, 9, 'in_progress'), run(8, 'cancelled', 'cancelled'), run(7, 'failed', 'failure'), run(6, 'green', 'success'), run(5, 'older', 'failure')];
-    expect(baselineFrom(runs, 9)).toEqual({ base: 'green', unsettled: ['cancelled', 'failed'] });
+    expect(baselineFrom(runs, 9)).toEqual({ base: 'green', unsettled: ['cancelled', 'failed', 'older'] });
     // A re-run keeps its id: it skips itself, even once green.
     expect(baselineFrom([run(6, 'green', 'success'), run(5, 'prev', 'success')], '6')).toEqual({ base: 'prev', unsettled: [] });
     expect(baselineFrom([run(5, 'older', 'failure')], 9)).toEqual({ base: undefined, unsettled: ['older'] });
-    // An old run re-run green after a newer one: what it deployed (its old commit) is the baseline.
-    expect(baselineFrom([run(8, 'c2', 'success', 8), run(7, 'c1', 'success', 10)], 9)).toEqual({ base: 'c1', unsettled: [] });
+    // An old run re-run green after a newer one put its old commit back over newer ones: no baseline.
+    const rerun = { ...run(7, 'c1', 'success', 10), run_attempt: 2, created_at: '2026-11-22T07:00:00Z' };
+    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), created_at: '2026-11-22T08:00:00Z' }, rerun], 9)).toMatchObject({ base: undefined, reason: expect.stringContaining('re-ran an older run') });
+    // Re-running the newest run's failed jobs (a flake) is an ordinary baseline.
+    expect(baselineFrom([{ ...run(8, 'c2', 'success', 8), run_attempt: 2, created_at: '2026-11-22T08:00:00Z' }, { ...run(7, 'c1', 'success', 7), created_at: '2026-11-22T07:00:00Z' }], 9)).toEqual({ base: 'c2', unsettled: [] });
+    // Failed runs count whenever they finished; decide drops those at or before the baseline.
+    expect(baselineFrom([run(8, 'g', 'success', 8), run(7, 'f', 'failure', 7)], 9)).toEqual({ base: 'g', unsettled: ['f'] });
     const calls: string[] = [];
     const fetch = async (url: string) => {
       calls.push(url);
       return { ok: true, json: async () => ({ workflow_runs: runs }) };
     };
-    expect(await lastGreenDeploy({ repo: 'o/r', runId: '9', fetch })).toEqual({ base: 'green', unsettled: ['cancelled', 'failed'] });
+    expect(await lastGreenDeploy({ repo: 'o/r', runId: '9', fetch })).toEqual({ base: 'green', unsettled: ['cancelled', 'failed', 'older'] });
     expect(calls[0]).toContain('/repos/o/r/actions/workflows/deploy.yml/runs?branch=main&event=push&per_page=50');
     await expect(lastGreenDeploy({ repo: 'o/r', fetch: async () => ({ ok: false, status: 403 }) })).rejects.toThrow('403');
   });
