@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ErrorNote, createStateBuffer, useApi, useAsync, useGameRoom } from '@stacks/web';
-import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInput, type RangeKind, type ScreenEvent, type ServerEvent, type Snapshot } from '../../game/protocol';
+import { DEVICE, type ConfigStats, type GameMode, type GameSummary, type GunInput, type RangeKind, type ScreenEvent, type ServerEvent, type Snapshot, type SnapView } from '../../game/protocol';
+import { CODE_MARGIN, CODE_SIZE } from '../../game/snap';
 import { configId, DEFAULT_TUNING, type Tuning } from '../../game/tuning';
 import { drawFrame, EFFECT_MS, HIT_COPY_MS, Layers, type Effect, type HitCopy } from './draw';
 import { useLook } from './Look';
@@ -45,14 +46,50 @@ type Flow =
 /** The link the phone opens: the controller page for this room. */
 export const gunLink = (roomId: string, base = `${window.location.origin}${window.location.pathname}`) => `${base}#/gun/${encodeURIComponent(roomId)}`;
 
-export function QrCode({ text, label }: { text: string; label: string }) {
+export function QrCode({ text, label, quiet = 4 }: { text: string; label: string; quiet?: number }) {
   const qr = useMemo(() => encodeQr(text), [text]);
-  const quiet = 4;
   return (
     <svg className="qr" viewBox={`${-quiet} ${-quiet} ${qr.size + quiet * 2} ${qr.size + quiet * 2}`} role="img" aria-label={label} shapeRendering="crispEdges">
       <rect x={-quiet} y={-quiet} width={qr.size + quiet * 2} height={qr.size + quiet * 2} fill="#fff" />
       <path d={qrPath(qr.modules)} fill="#000" />
     </svg>
+  );
+}
+
+/**
+ * Camera calibration (#167): the four codes the phones look for, at the window's corners (where
+ * `codeSpots` says), on a light ground, and each phone's step.
+ */
+function SnapCodes({ view, snapping, playerOf }: { view: SnapView; snapping: boolean; playerOf: (seat: string) => number }) {
+  const size = `${CODE_SIZE * 100}vh`;
+  const m = `${CODE_MARGIN * 100}vh`;
+  const at = [
+    { left: m, top: m },
+    { right: m, top: m },
+    { right: m, bottom: m },
+    { left: m, bottom: m },
+  ];
+  return (
+    <div className={`snap-layer${snapping ? ' on' : ''}`} role="dialog" aria-label="Calibrating with the camera">
+      {snapping &&
+        view.codes.map((c, k) => (
+          <div key={c} className="snap-code" style={{ ...at[k], width: size, height: size }}>
+            <QrCode text={c} label={`Calibration code ${k + 1} of 4`} quiet={1} />
+          </div>
+        ))}
+      <div className="overlay snap-card">
+        <h2>{snapping ? 'Hold your phone up and snap this screen' : 'Now aim at the dot in your own grip, and tap'}</h2>
+        <p className="muted">{snapping ? "From where you'll play: all four corners in view for two seconds." : 'This sets where your phone points.'}</p>
+        <ul className="snap-list">
+          {view.guns.map((g) => (
+            <li key={g.gun}>
+              Player {playerOf(g.gun)} · {g.st === 'snap' ? 'Snap the screen' : 'Centre tap'}
+            </li>
+          ))}
+        </ul>
+        <p className="muted small">Use dots or skip on the phone.</p>
+      </div>
+    </div>
   );
 }
 
@@ -199,6 +236,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
         // The first phone's fit is the room's tuning: save it as your default once step 2 is done.
         const first = !c.seat || c.seat === latest.current?.ctl;
         if (c.stage === 'init') show('Step 1 done. Now with the crosshair.', 2000);
+        else if (c.stage === 'snap' && c.poor) show(`Calibrated, but the snap was a bit off (by ${off}). Re-calibrate?`, 4000);
         else if (c.poor) show(`Calibrated, but the dots didn't line up (off by ${off}). Re-calibrate?`, 4000);
         else if (first) {
           show(`Calibrated: ${c.gain.toFixed(2)} widths/rad, off by ${off}. Saved as your default.`, 3500);
@@ -309,6 +347,9 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
   }, [live, mine.data, sendEvent]);
   const training = snap?.m === 'training';
   const pointCal = snap?.cal;
+  // Camera calibrations: the codes stay up while any phone is snapping; the centre dot while any taps.
+  const snaps = snap?.sn;
+  const snapping = !!snaps?.guns.some((g) => g.st === 'snap');
   const phone = !!snap?.g.some((g) => !g.m);
   const lobby = !!snap && snap.g.length > 0 && snap.ph === 'ready' && !training && !pointCal;
   const inGame = !!snap && (snap.ph === 'playing' || snap.ph === 'roundEnd');
@@ -330,6 +371,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
         }
         ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
         const cal = latest.current?.cal;
+        const centreTap = !cal && !!latest.current?.sn?.guns.some((g) => g.st === 'tap');
         const guns = latest.current?.g;
         if (!still)
           for (const g of guns ?? []) {
@@ -344,7 +386,7 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
           h,
           buffer.sample(),
           effects.current,
-          { now: performance.now(), theme: lookNow.current, overlay, calibrate: false, guns, cal, hits: hits.current, hitboxes: hitboxes ? hitboxScale : undefined, reducedMotion: still, training: latest.current?.tr, trails: trails.current, dpr: devicePixelRatio },
+          { now: performance.now(), theme: lookNow.current, overlay, calibrate: centreTap, guns, cal, hits: hits.current, hitboxes: hitboxes ? hitboxScale : undefined, reducedMotion: still, training: latest.current?.tr, trails: trails.current, dpr: devicePixelRatio },
           layers,
         );
       }
@@ -705,6 +747,8 @@ export function Screen({ roomId, mode: startMode, autostart = false, openPanel =
             </button>
           </div>
         </div>
+      ) : live && snaps && !pointCal ? (
+        <SnapCodes view={snaps} snapping={snapping} playerOf={playerOf} />
       ) : live && pointCal ? (
         <div className="overlay calibrate" role="dialog" aria-label="Calibrating">
           <p className="cal-step">

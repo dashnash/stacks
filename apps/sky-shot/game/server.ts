@@ -5,9 +5,10 @@
  * compensation: a shot is tested against the targets as the screen showed them when it was fired.
  */
 import { defineGame, type GamePlayer, type GameRoom } from '@stacks/game-server';
-import { Aim, qnorm, toEuler } from './aim';
+import { Aim, AIM_HISTORY_MS, qnorm, toEuler } from './aim';
 import { CAL_POINTS, CAL_POOR, fitCalibration, meanPose, POSE_FROM_MS, POSE_TO_MS } from './calibrate';
 import { fitTraining, type FitReport } from './fit';
+import { codePayloads, fitSnap, NO_NUDGE, nudge, NUDGE_NEAR, readSnapped, snapChange, withNudge, type Nudge, type SnapFit } from './snap';
 import {
   MAX_RESULTS_BYTES,
   MAX_SAMPLES_PER_INPUT,
@@ -93,6 +94,15 @@ interface Gun {
   lastShotAt: number;
   /** A second phone's own calibration (the first phone's goes into the room's tuning). */
   fit: Partial<Tuning> | null;
+  /** The quiet correction from near misses since the last calibration (on top of its tuning). */
+  nudge: Nudge | null;
+}
+
+/** A phone's camera calibration: snap the screen (`snap`), then the centre tap (`tap`). `dots`: the step to fall back to. */
+interface SnapCal {
+  st: 'snap' | 'tap';
+  dots: CalStage;
+  fit?: SnapFit;
 }
 
 interface PendingShot {
@@ -147,6 +157,10 @@ export interface State {
   calQueue: { gun: string; stage: CalStage }[];
   /** A calibration paused the game in progress: it goes on once the last one is done. */
   calPaused: boolean;
+  /** Camera calibrations in progress, any number at once (the dots go one phone at a time). */
+  snaps: Map<string, SnapCal>;
+  /** This room's part of the codes' payloads (so a snap can't read another room's screen). */
+  nonce: string;
   /** The choice the screen has put to the controller. */
   prompt: Prompt | null;
   /** Training starts once the calibration before it (both passes) is done or skipped. */
@@ -203,7 +217,10 @@ export const activeTuning = (state: State): Tuning => (state.mode === 'training'
 export const primaryGun = (state: State): Gun | undefined => [...state.guns.values()].find((g) => !g.mouse);
 
 /** What maps this gun's motion: the room's tuning, with a second phone's own calibration on top. */
-const tuningFor = (state: State, gun: Gun): Tuning => (gun.fit ? applyTune(activeTuning(state), gun.fit) : activeTuning(state));
+const tuningFor = (state: State, gun: Gun): Tuning => withNudge(gun.fit ? applyTune(activeTuning(state), gun.fit) : activeTuning(state), state.mode === 'training' ? null : gun.nudge);
+
+/** A calibration is on: dots or a camera one. Shots don't fire, the game waits. */
+export const calibrating = (state: State): boolean => !!state.cal || state.snaps.size > 0;
 
 /** Sender time (s) → server time (ms): the minimum (arrival − send) over recent inputs, less half the round trip. */
 function serverTime(gun: Gun, t: number, now: number): number {
@@ -314,7 +331,7 @@ function publicStats(state: State): Record<string, ConfigStats> {
  * rewind is capped (`maxRewindMs`), so a lagging connection can't hit targets long gone.
  */
 function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger']): void {
-  if (state.phase !== 'playing' || state.paused || state.cal || state.mode === 'training') return;
+  if (state.phase !== 'playing' || state.paused || calibrating(state) || state.mode === 'training') return;
   const now = state.room.elapsedMs;
   if (state.mode === 'rounds' && state.shotsLeft <= 0) {
     state.room.broadcast({ empty: { seat: gun.seat.id } });
@@ -364,6 +381,13 @@ function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger
     stat.missSum += d;
     stat.meanMiss = stat.missSum / (stat.shots - stat.hits);
     state.room.broadcast({ miss: { seat: gun.seat.id, d: r3(d), ...at } });
+    // A near miss nudges this phone's aim a little towards where the target was (capped; reset by calibrating).
+    const past = best && state.history.at(e).find((p) => p.id === best!.target.id);
+    if (past && !gun.mouse && best!.d < (NUDGE_NEAR - 1) * past.r * tuning.hitboxScale) {
+      const before = gun.aim.at(Math.max(now - AIM_HISTORY_MS, aimT - aimLagOf(state) - 300));
+      const err: [number, number] = [(cx - past.x) / state.aspect, cy - past.y];
+      gun.nudge = nudge(gun.nudge ?? NO_NUDGE, tuningFor(state, gun).mode, err, [aim.x - before.x, aim.y - before.y], state.aspect);
+    }
   }
   state.room.broadcast({ stats: publicStats(state) });
   state.configs[state.cfg] = tuning;
@@ -381,6 +405,7 @@ function fire(state: State, gun: Gun, aimT: number, trigger: ShotRecord['trigger
       rewindMs: rewind,
       latency: { gunRtt: lat.gun, screenRtt: lat.screen, shotToPixel: lat.pix },
       theme: themeTag(state.theme),
+      ...(gun.nudge ? { nudge: { dx: sig4(gun.nudge.dx), dy: sig4(gun.nudge.dy), gain: sig4(gun.nudge.gain) } } : {}),
     },
   });
 }
@@ -442,6 +467,69 @@ export function buildResults(state: State): Results {
   return results;
 }
 
+/** A calibration starting pauses a game in progress; it goes on once the last one is done. */
+function pauseForCalibration(state: State): void {
+  if ((state.phase === 'playing' || state.phase === 'roundEnd') && !state.paused) {
+    state.paused = true;
+    state.calPaused = true;
+  }
+}
+
+/**
+ * Calibrate `gun`: the camera first (snap, then the centre tap), the dots' `dots` step if the phone
+ * can't (it says so with `calDots`). Camera calibrations run side by side.
+ */
+function startCalibration(state: State, gun: string, dots: CalStage): void {
+  const g = state.guns.get(gun);
+  if (!g || g.mouse) return;
+  state.calQueue = state.calQueue.filter((c) => c.gun !== gun);
+  if (state.cal?.gun === gun) state.cal = null;
+  state.snaps.set(gun, { st: 'snap', dots });
+  pauseForCalibration(state);
+  nextCalibration(state);
+}
+
+/** The phone snapped the screen: read the screen's size from it, then wait for the centre tap. */
+function snapped(state: State, gun: Gun, raw: unknown): void {
+  const cal = state.snaps.get(gun.seat.id);
+  if (cal?.st !== 'snap') return;
+  const snap = readSnapped(raw);
+  const fit = snap && fitSnap(snap, state.aspect);
+  if (!fit) {
+    state.room.broadcast({ calibrationFailed: { reason: "Couldn't read the screen from that snap. Snap again from where you'll play, or use the dots.", seat: gun.seat.id } });
+    return;
+  }
+  state.snaps.set(gun.seat.id, { ...cal, st: 'tap', fit });
+}
+
+/** The centre tap after a snap: this pose is the centre, and the snap's gain applies. */
+function snapTap(state: State, gun: Gun, raw: unknown): void {
+  const cal = state.snaps.get(gun.seat.id);
+  if (cal?.st !== 'tap' || !cal.fit) return;
+  const now = state.room.elapsedMs;
+  const t = raw && typeof raw === 'object' ? (raw as { t?: unknown }).t : undefined;
+  const at = fin(t) && t >= 0 ? Math.min(now, serverTime(gun, t, now)) : now - gun.rtt / 2;
+  if (at - gun.lastShotAt < TAP_DEBOUNCE_MS) return;
+  gun.lastShotAt = at;
+  const window = gun.samples.filter((s) => s.st >= at - POSE_FROM_MS && s.st <= at - POSE_TO_MS).map((s) => s.s.q);
+  const pose = meanPose(window) ?? gun.aim.q;
+  if (!pose) return;
+  const primary = primaryGun(state) === gun;
+  const change = snapChange(cal.fit, primary ? state.tuning : tuningFor(state, gun));
+  if (primary) {
+    state.tuning = applyTune(state.tuning, change);
+    state.cfg = configId(state.tuning);
+    state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
+  } else gun.fit = { ...gun.fit, ...change };
+  gun.nudge = null;
+  gun.aim.calibrate();
+  gun.aim.ref = pose;
+  const fit = cal.fit;
+  state.room.broadcast({ calibrated: { gain: r3(fit.gain), ratioY: r3(fit.ratioY), offsetX: 0, offsetY: 0, error: r3(fit.error), poor: fit.error > CAL_POOR, seat: gun.seat.id, stage: 'snap' } });
+  state.snaps.delete(gun.seat.id);
+  nextCalibration(state);
+}
+
 /** Start the next calibration waiting (if none is on), pausing a game in progress. */
 function nextCalibration(state: State): void {
   while (!state.cal && state.calQueue.length) {
@@ -449,16 +537,13 @@ function nextCalibration(state: State): void {
     const gun = state.guns.get(next.gun);
     if (!gun || gun.mouse) continue;
     state.cal = { gun: next.gun, stage: next.stage, poses: [] };
-    if ((state.phase === 'playing' || state.phase === 'roundEnd') && !state.paused) {
-      state.paused = true;
-      state.calPaused = true;
-    }
+    pauseForCalibration(state);
   }
-  if (!state.cal && state.calPaused) {
+  if (!calibrating(state) && state.calPaused) {
     state.calPaused = false;
     state.paused = false;
   }
-  if (!state.cal && state.trainAfterCal) {
+  if (!calibrating(state) && state.trainAfterCal) {
     state.trainAfterCal = false;
     if (state.mode === 'training') startTraining(state);
   }
@@ -479,7 +564,7 @@ function beginTraining(state: State): void {
   state.calQueue = state.calQueue.filter((c) => c.gun !== gun.seat.id);
   if (state.cal?.gun === gun.seat.id) state.cal = null;
   state.trainAfterCal = true;
-  queueCalibration(state, gun.seat.id, 'init');
+  startCalibration(state, gun.seat.id, 'init');
 }
 
 /** Queue a calibration step for `gun` (once: a step already waiting or on is not added again). */
@@ -491,6 +576,7 @@ function queueCalibration(state: State, gun: string, stage: CalStage): void {
 
 /** Stop `gun`'s calibration (on now and waiting), and start the next. */
 function dropCalibration(state: State, gun: string): void {
+  state.snaps.delete(gun);
   state.calQueue = state.calQueue.filter((c) => c.gun !== gun);
   if (state.cal?.gun === gun) state.cal = null;
   nextCalibration(state);
@@ -524,6 +610,7 @@ function calibrationPoint(state: State, gun: Gun, raw: unknown): void {
     state.room.broadcast({ tuning: { tuning: state.tuning, id: state.cfg } });
   } else gun.fit = { ...gun.fit, ...fit.change };
   // The centre pose is the reference: the crosshair starts there.
+  gun.nudge = null;
   gun.aim.calibrate();
   gun.aim.ref = cal.poses[0]!;
   state.room.broadcast({
@@ -556,9 +643,17 @@ export function readPrompt(raw: unknown): Prompt | null {
 function onMenu(state: State, gun: Gun, menu: unknown): void {
   if (!menu || typeof menu !== 'object') return;
   const m = menu as Record<string, unknown>;
-  if ('recalibrate' in m) queueCalibration(state, gun.seat.id, 'fine');
-  else if ('calRedo' in m) {
-    if (state.cal?.gun === gun.seat.id) state.cal.poses = [];
+  const snap = state.snaps.get(gun.seat.id);
+  if ('recalibrate' in m) startCalibration(state, gun.seat.id, 'fine');
+  else if ('snapped' in m) snapped(state, gun, m.snapped);
+  else if ('calDots' in m) {
+    // No camera here (or it couldn't see the screen): the dots instead.
+    if (!snap) return;
+    state.snaps.delete(gun.seat.id);
+    queueCalibration(state, gun.seat.id, snap.dots);
+  } else if ('calRedo' in m) {
+    if (snap) state.snaps.set(gun.seat.id, { st: 'snap', dots: snap.dots });
+    else if (state.cal?.gun === gun.seat.id) state.cal.poses = [];
   } else if ('calSkip' in m) dropCalibration(state, gun.seat.id);
   else if (primaryGun(state) !== gun) return;
   else if ('choose' in m && m.choose && typeof m.choose === 'object') {
@@ -575,9 +670,10 @@ function addGun(state: State, seat: GamePlayer, mouse: boolean): void {
   if (state.guns.size >= MAX_GUNS) return;
   const used = new Set([...state.guns.values()].map((g) => g.color));
   const color = [0, 1, 2].find((c) => !used.has(c)) ?? 0;
-  state.guns.set(seat.id, { seat, mouse, color, aim: new Aim(), lastSeq: -1, lastSampleT: -Infinity, clock: [], rtt: 0, samples: [], lastShotAt: -Infinity, fit: null });
-  // Every phone that connects calibrates: step 1 (no crosshair), then step 2 (live crosshair).
-  if (!mouse) queueCalibration(state, seat.id, 'init');
+  state.guns.set(seat.id, { seat, mouse, color, aim: new Aim(), lastSeq: -1, lastSampleT: -Infinity, clock: [], rtt: 0, samples: [], lastShotAt: -Infinity, fit: null, nudge: null });
+  // Every phone that connects calibrates: the camera (snap, centre tap), or else the dots' step 1
+  // (no crosshair) then step 2 (live crosshair).
+  if (!mouse) startCalibration(state, seat.id, 'init');
 }
 
 function onGunInput(state: State, gun: Gun, input: Partial<GunInput>): void {
@@ -651,7 +747,7 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     }
     if (fin(r.speed)) state.range.speed = Math.min(2, Math.max(0.1, r.speed));
   } else if ('start' in event) {
-    if (state.cal) return;
+    if (calibrating(state)) return;
     state.paused = false;
     if (state.mode === 'training') beginTraining(state);
     else startGame(state);
@@ -674,11 +770,12 @@ function onScreenEvent(state: State, event: Record<string, unknown>): void {
     } else if (event.calibrate === 'skip') {
       state.calQueue = [];
       state.cal = null;
+      state.snaps.clear();
       nextCalibration(state);
     } else if (event.calibrate === 'points') {
       const gun = primaryGun(state);
       if (!gun) state.room.broadcast({ calibrationFailed: { reason: 'Pair a phone first.' } });
-      else queueCalibration(state, gun.seat.id, 'fine');
+      else startCalibration(state, gun.seat.id, 'fine');
     }
   } else if ('view' in event && event.view && typeof event.view === 'object') {
     const aspect = (event.view as { aspect?: unknown }).aspect;
@@ -904,6 +1001,8 @@ export function skyShot(opts: SkyShotOptions = {}) {
         cal: null,
         calQueue: [],
         calPaused: false,
+        snaps: new Map(),
+        nonce: '',
         prompt: null,
         trainAfterCal: false,
         guns: new Map(),
@@ -934,6 +1033,9 @@ export function skyShot(opts: SkyShotOptions = {}) {
         trainings: [],
         theme: DEFAULT_THEME,
       };
+      state.nonce = Math.floor(state.random() * 36 ** 6)
+        .toString(36)
+        .padStart(6, '0');
       return state;
     },
 
@@ -972,6 +1074,8 @@ export function skyShot(opts: SkyShotOptions = {}) {
           onMenu(state, gun, e.menu);
         } else if ('shot' in e && state.cal?.gun === gun.seat.id) {
           calibrationPoint(state, gun, e.shot);
+        } else if ('shot' in e && state.snaps.has(gun.seat.id)) {
+          snapTap(state, gun, e.shot);
         } else if ('shot' in e && e.shot && typeof e.shot === 'object' && (gun.mouse || state.tuning.trigger === 'tap')) {
           const t = (e.shot as { t?: unknown }).t;
           const at = fin(t) && t >= 0 ? Math.min(now, serverTime(gun, t, now)) : now - gun.rtt / 2;
@@ -980,6 +1084,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
           fire(state, gun, at, gun.mouse ? 'mouse' : 'tap');
         } else if ('calibrate' in e) {
           if (state.cal?.gun === gun.seat.id) calibrationPoint(state, gun, e.calibrate);
+          else if (state.snaps.has(gun.seat.id)) snapTap(state, gun, e.calibrate);
           else gun.aim.calibrate();
         }
         return;
@@ -997,7 +1102,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         if (state.nextReleaseAt !== null) state.nextReleaseAt += ms;
         state.phaseUntil += ms;
         for (const t of state.targets) t.born += ms;
-      } else if (state.cal && state.mode !== 'training') {
+      } else if (calibrating(state) && state.mode !== 'training') {
         // Calibrating (outside a game): nothing moves.
       } else if (state.mode === 'rounds') tickRounds(state, dt, now);
       else if (state.mode === 'training') tickTraining(state, now);
@@ -1025,6 +1130,7 @@ export function skyShot(opts: SkyShotOptions = {}) {
         cfg: state.cfg,
       };
       if (state.cal) snap.cal = { i: state.cal.poses.length, pts: CAL_POINTS, gun: state.cal.gun, st: state.cal.stage, wait: state.calQueue.length };
+      if (state.snaps.size) snap.sn = { codes: codePayloads(state.nonce), guns: [...state.snaps].map(([gun, c]) => ({ gun, st: c.st })) };
       const ctl = primaryGun(state);
       if (ctl) snap.ctl = ctl.seat.id;
       if (state.mode === 'training') snap.tr = trainingView(state, state.room.elapsedMs);

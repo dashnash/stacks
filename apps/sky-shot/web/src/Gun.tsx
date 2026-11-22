@@ -6,9 +6,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi, useGameRoom } from '@stacks/web';
-import { native, type MotionSample } from '@stacks/native';
+import { native, NativeError, type MotionSample } from '@stacks/native';
 import { fromEuler } from '../../game/aim';
-import { DEVICE, MAX_SAMPLES_PER_INPUT, sig4, type CalibrationView, type GunInput, type MenuEvent, type Prompt, type ServerEvent, type Snapshot, type Vec3, type WireSample } from '../../game/protocol';
+import { DEVICE, MAX_SAMPLES_PER_INPUT, sig4, type CalibrationView, type GunInput, type MenuEvent, type Prompt, type ServerEvent, type Snapshot, type SnapView, type Vec3, type WireSample } from '../../game/protocol';
 import { DEFAULT_THEME, isThemeChoice, type ThemeChoice } from '../../game/themes';
 import { DEFAULT_TUNING, type Tuning } from '../../game/tuning';
 import { gameName, GameMenu, PhoneSettings } from './Menu';
@@ -50,7 +50,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING);
   // The phone wears the screen's look.
   const [look, setLook] = useState<ThemeChoice>(DEFAULT_THEME);
-  const [hud, setHud] = useState<{ sl: number; rd: number; mode: Snapshot['m']; ph: string; pz: boolean; cal: CalibrationView | null; ctl: string | null; seats: Snapshot['g'] } | null>(null);
+  const [hud, setHud] = useState<{ sl: number; rd: number; mode: Snapshot['m']; ph: string; pz: boolean; cal: CalibrationView | null; sn: SnapView | null; ctl: string | null; seats: Snapshot['g'] } | null>(null);
   const [note, setNote] = useState<string | null>(null);
   /** A choice the screen is asking the controller for. */
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -72,7 +72,15 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
     else if ('prompt' in e) setPrompt(e.prompt);
     else if ('calibrated' in e && (!e.calibrated.seat || mine(e.calibrated.seat))) {
       buzz(() => native.haptics.notification('success'));
-      setNote(e.calibrated.poor ? "Done, but the dots didn't line up well: try Re-calibrate." : e.calibrated.stage === 'init' ? 'Got it. Now with the crosshair.' : 'Calibrated.');
+      setNote(
+        e.calibrated.poor
+          ? e.calibrated.stage === 'snap'
+            ? "Done, but the snap was a bit off: try Re-calibrate."
+            : "Done, but the dots didn't line up well: try Re-calibrate."
+          : e.calibrated.stage === 'init'
+            ? 'Got it. Now with the crosshair.'
+            : 'Calibrated.',
+      );
     } else if ('calibrationFailed' in e && (!e.calibrationFailed.seat || mine(e.calibrationFailed.seat))) {
       buzz(() => native.haptics.notification('error'));
       setNote(e.calibrationFailed.reason);
@@ -158,7 +166,7 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
   useEffect(() => {
     const id = setInterval(() => {
       const s = latest.current;
-      if (s) setHud({ sl: s.sl, rd: s.rd, mode: s.m, ph: s.ph, pz: s.pz, cal: s.cal ?? null, ctl: s.ctl ?? null, seats: s.g });
+      if (s) setHud({ sl: s.sl, rd: s.rd, mode: s.m, ph: s.ph, pz: s.pz, cal: s.cal ?? null, sn: s.sn ?? null, ctl: s.ctl ?? null, seats: s.g });
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -183,6 +191,40 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
     buzz(() => native.haptics.impact('light'));
   };
   const menu = (m: MenuEvent) => sendEvent({ menu: m });
+
+  // Camera calibration: this phone's step, if it's on one.
+  const mySnap = hud?.sn?.guns.find((g) => g.gun === you.current)?.st ?? null;
+  const [snapping, setSnapping] = useState(false);
+  // No camera here (a browser, an older app): straight to the dots, once per step.
+  const sentDots = useRef(false);
+  useEffect(() => {
+    if (mySnap !== 'snap') {
+      sentDots.current = false;
+      return;
+    }
+    if (!live || native.camera.available || sentDots.current) return;
+    sentDots.current = true;
+    sendEvent({ menu: { calDots: true } });
+  }, [mySnap, live, sendEvent]);
+  const snap = async (codes: string[]) => {
+    setSnapping(true);
+    try {
+      const r = await native.camera.locate({ codes, holdMs: 1500, timeoutMs: 10_000, prompt: 'All four corners of the big screen in view, then hold still' });
+      const rays = codes.map((c) => r.found[c]?.centre);
+      if (rays.some((v) => !v)) throw new NativeError('failed', "Didn't see every corner");
+      menu({ snapped: { rays: rays.map((v) => [sig4(v!.x), sig4(v!.y), sig4(v!.z)] as Vec3), att: { roll: r.attitude.roll, pitch: r.attitude.pitch, yaw: r.attitude.yaw } } });
+    } catch (err) {
+      const code = err instanceof NativeError ? err.code : 'failed';
+      if (code === 'cancelled') setNote('Cancelled. Snap again, or use the dots.');
+      else {
+        // Can't see the screen (or can't use the camera): the dots instead.
+        setNote(code === 'forbidden' ? 'No camera access: calibrating with the dots instead.' : "Couldn't find the screen: calibrating with the dots instead.");
+        menu({ calDots: true });
+      }
+    } finally {
+      setSnapping(false);
+    }
+  };
   useEffect(() => {
     if (!note) return;
     const id = setTimeout(() => setNote(null), 3500);
@@ -243,6 +285,47 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
       </div>
     );
 
+  if (mySnap && hud?.sn) {
+    const codes = hud.sn.codes;
+    return (
+      <div className="gun gun-cal" {...dressed}>
+        <div className="gun-top">
+          {chip}
+          <span className="chip">{mySnap === 'snap' ? '1 · Snap' : '2 · Centre tap'}</span>
+        </div>
+        {mySnap === 'snap' ? (
+          <>
+            <p className="gun-hint">Hold your phone up like a camera, from where you'll play, and snap the big screen: all four corners in view.</p>
+            <button type="button" className="trigger" onClick={() => void snap(codes)} disabled={!live || snapping || !native.camera.available}>
+              {snapping ? 'Looking…' : 'Snap the screen'}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="gun-hint">Back to your grip. Put the crosshair on the green dot and tap.</p>
+            <button type="button" className="trigger" onPointerDown={calibrate} disabled={!live} aria-label="On the centre dot">
+              Tap on the dot
+            </button>
+          </>
+        )}
+        {noteLine}
+        <div className="row">
+          {mySnap === 'tap' && (
+            <button type="button" className="link" onClick={() => menu({ calRedo: true })}>
+              Snap again
+            </button>
+          )}
+          <button type="button" className="link" onClick={() => menu({ calDots: true })}>
+            Use dots instead
+          </button>
+          <button type="button" className="link" onClick={() => menu({ calSkip: true })}>
+            Skip
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const cal = hud?.cal;
   if (cal && cal.gun === me) {
     // Calibrating this phone: step 1 points blind, step 2 with the crosshair. The whole screen marks "on the dot".
@@ -299,6 +382,8 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
     );
 
   const driver = !!me && hud?.ctl === me;
+  // Phones still calibrating (camera ones, and the dots on now or waiting): the game starts once they're done.
+  const notReady = (hud?.sn?.guns.length ?? 0) + (hud?.cal ? 1 + (hud.cal.wait ?? 0) : 0);
   const inGame = !!hud && (hud.ph === 'playing' || hud.ph === 'roundEnd');
   if (driver && prompt)
     return (
@@ -335,8 +420,16 @@ export function Gun({ roomId, extraAccel, keyboard = false, autoEnable = false }
             <p className="gun-ready" role="status">
               {gameName(hud.mode)} · {theme.name}
             </p>
-            <button type="button" className="primary big" onClick={() => menu({ start: true })} disabled={!live}>
-              {hud.mode === 'training' ? 'Start training' : hud.ph === 'over' ? 'Play again' : hud.mode === 'range' ? 'Start the Range' : 'Start Round 1'}
+            <button type="button" className="primary big" onClick={() => menu({ start: true })} disabled={!live || notReady > 0}>
+              {notReady > 0
+                ? `Start (${notReady} not ready)`
+                : hud.mode === 'training'
+                  ? 'Start training'
+                  : hud.ph === 'over'
+                    ? 'Play again'
+                    : hud.mode === 'range'
+                      ? 'Start the Range'
+                      : 'Start Round 1'}
             </button>
           </>
         )}
