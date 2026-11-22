@@ -13,6 +13,7 @@
         "auth.google",
         "auth.signedOut",
         "badge.set",
+        "camera.locate",
         "haptics.impact",
         "haptics.notification",
         "haptics.pattern",
@@ -135,6 +136,60 @@
         "count": 3
       },
       "result": {}
+    },
+    "camera.locate": {
+      "doc": "Finds `codes` (QR payloads, e.g. on a big screen) with the back camera and says which way each is from the phone. The app shows its own camera view (with `prompt` and Cancel; the page never sees a frame) and answers once every code has stayed steady for `holdMs` (300-5000, default 1500), or fails with `failed` after `timeoutMs` (2000-30000, default 10000). `cancelled`: Cancel; `forbidden`: camera access is off. Each code's `centre` and four `corners` are unit vectors in the phone's frame (CoreMotion axes: x right edge, y top edge, z out of the screen; the back camera looks along -z), and `attitude` is the motion stream's at that moment, so they combine with its samples. Needs a running motion stream (`motion.start`). Apps that declare \"camera\" (sensitive).",
+      "origins": "app",
+      "capability": "camera",
+      "args": {
+        "codes": [
+          "whee-cal:k3x9:tl",
+          "whee-cal:k3x9:tr",
+          "whee-cal:k3x9:br",
+          "whee-cal:k3x9:bl"
+        ],
+        "holdMs": 1500,
+        "timeoutMs": 10000,
+        "prompt": "Snap the big screen"
+      },
+      "result": {
+        "found": {
+          "whee-cal:k3x9:tl": {
+            "centre": {
+              "x": -0.21,
+              "y": 0.12,
+              "z": -0.97
+            },
+            "corners": [
+              {
+                "x": -0.23,
+                "y": 0.14,
+                "z": -0.96
+              },
+              {
+                "x": -0.19,
+                "y": 0.14,
+                "z": -0.97
+              },
+              {
+                "x": -0.19,
+                "y": 0.1,
+                "z": -0.98
+              },
+              {
+                "x": -0.23,
+                "y": 0.1,
+                "z": -0.97
+              }
+            ]
+          }
+        },
+        "attitude": {
+          "roll": 0.02,
+          "pitch": 0.08,
+          "yaw": -0.4
+        }
+      }
     },
     "haptics.impact": {
       "doc": "A tap you feel (UIImpactFeedbackGenerator). Apps that declare \"haptics\".",

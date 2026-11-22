@@ -57,6 +57,7 @@ final class GameKitArgsTests: XCTestCase {
         XCTAssertEqual(try GameKit.notificationType(args("haptics.notification")), "success")
         XCTAssertEqual(try GameKit.orientation(args("screen.lockOrientation")), "portrait")
         XCTAssertEqual(try GameKit.on(args("screen.immersive")), true)
+        XCTAssertEqual(try CameraKit.locate(args("camera.locate")).codes.count, 4)
     }
 }
 
@@ -96,5 +97,58 @@ final class MotionBatcherTests: XCTestCase {
         XCTAssertEqual(MotionBatcher.num(.infinity), "0")
         XCTAssertEqual(MotionBatcher.num(3), "3")
         XCTAssertEqual(MotionBatcher.num(-1.0), "-1")
+    }
+}
+
+final class CameraKitTests: XCTestCase {
+    func testLocateArgs() throws {
+        XCTAssertEqual(try CameraKit.locate(["codes": .array([.string("a"), .string("b")])]), .init(codes: ["a", "b"], holdMs: 1500, timeoutMs: 10_000, prompt: nil))
+        let long = try CameraKit.locate(["codes": .array([.string("a")]), "holdMs": .number(99_999), "timeoutMs": .number(1), "prompt": .string(String(repeating: "x", count: 500))])
+        XCTAssertEqual(long.holdMs, 5000)
+        XCTAssertEqual(long.timeoutMs, 2000)
+        XCTAssertEqual(long.prompt?.count, 120)
+        XCTAssertThrowsError(try CameraKit.locate([:]))
+        XCTAssertThrowsError(try CameraKit.locate(["codes": .array([])]))
+        XCTAssertThrowsError(try CameraKit.locate(["codes": .array([.string("a"), .string("a")])]))
+        XCTAssertThrowsError(try CameraKit.locate(["codes": .array([.string("")])]))
+        XCTAssertThrowsError(try CameraKit.locate(["codes": .array([.number(1)])]))
+        XCTAssertThrowsError(try CameraKit.locate(["codes": .array(Array(repeating: JSONValue.string("a"), count: 9).enumerated().map { .string("c\($0.offset)") })]))
+    }
+
+    func testRaysLookOutOfTheBackOfThePhone() {
+        let fov = 70 * Double.pi / 180
+        let centre = CameraKit.ray(.init(u: 0.5, v: 0.5), fovLong: fov, aspect: 0.75)
+        XCTAssertEqual(centre.z, -1, accuracy: 1e-12)
+        // The top edge of the image is half the long field of view up, towards the phone's top edge.
+        let top = CameraKit.ray(.init(u: 0.5, v: 1), fovLong: fov, aspect: 0.75)
+        XCTAssertEqual(atan2(top.y, -top.z), fov / 2, accuracy: 1e-9)
+        let right = CameraKit.ray(.init(u: 1, v: 0.5), fovLong: fov, aspect: 0.75)
+        XCTAssertEqual(right.x / -right.z, tan(fov / 2) * 0.75, accuracy: 1e-9)
+        XCTAssertEqual(right.x * right.x + right.y * right.y + right.z * right.z, 1, accuracy: 1e-12)
+    }
+
+    func testTheHoldNeedsEveryCodeSteadyForItsLength() {
+        let s = { (u: Double) in CameraKit.Sighting(centre: .init(u: u, v: 0.5), corners: []) }
+        var hold = CameraKit.Hold(codes: ["a", "b"], holdMs: 1000)
+        XCTAssertFalse(hold.add(t: 0, ["a": s(0.2)]))
+        XCTAssertFalse(hold.add(t: 0.1, ["a": s(0.2), "b": s(0.8)]))
+        XCTAssertFalse(hold.add(t: 0.6, ["a": s(0.205), "b": s(0.8)]))
+        // A jump restarts the hold.
+        XCTAssertFalse(hold.add(t: 0.9, ["a": s(0.3), "b": s(0.8)]))
+        XCTAssertFalse(hold.add(t: 1.5, ["a": s(0.3), "b": s(0.8)]))
+        XCTAssertTrue(hold.add(t: 1.95, ["a": s(0.3), "b": s(0.8)]))
+        XCTAssertEqual(hold.last["b"]?.centre.u, 0.8)
+        // Losing a code restarts it too.
+        XCTAssertFalse(hold.add(t: 2, ["a": s(0.3)]))
+        XCTAssertFalse(hold.add(t: 2.1, ["a": s(0.3), "b": s(0.8)]))
+    }
+
+    func testTheResultHoldsRaysAndTheAttitude() {
+        let found = ["a": CameraKit.Sighting(centre: .init(u: 0.5, v: 0.5), corners: [.init(u: 0.4, v: 0.6), .init(u: 0.6, v: 0.6), .init(u: 0.6, v: 0.4), .init(u: 0.4, v: 0.4)])]
+        let r = CameraKit.result(found, fovLong: 1.2, aspect: 0.75, attitude: (roll: 0, pitch: 0.5, yaw: 0.1))
+        guard case .object(let o) = r, case .object(let f)? = o["found"], case .object(let a)? = f["a"], case .array(let corners)? = a["corners"] else { return XCTFail() }
+        XCTAssertEqual(corners.count, 4)
+        XCTAssertEqual(a["centre"], .object(["x": .number(0), "y": .number(0), "z": .number(-1)]))
+        XCTAssertEqual(o["attitude"], .object(["roll": .number(0), "pitch": .number(0.5), "yaw": .number(0.1)]))
     }
 }

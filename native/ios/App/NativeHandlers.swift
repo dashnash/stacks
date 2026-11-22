@@ -81,7 +81,7 @@ enum NativeHandlers {
             return .object([:])
         }
 
-        // The Game kit (apps that declared "motion", "haptics" or "screen"; checked by the router).
+        // The Game kit (apps that declared "motion", "camera", "haptics" or "screen"; checked by the router).
         router.register("motion.start") { @MainActor [weak shell] args in
             guard let shell else { throw BridgeError(.failed, "The app is closing") }
             return try shell.gameKit.startMotion(try GameKit.motionStart(args))
@@ -89,6 +89,10 @@ enum NativeHandlers {
         router.register("motion.stop") { @MainActor [weak shell] args in
             shell?.gameKit.stopMotion(channel: try GameKit.channel(args))
             return .object([:])
+        }
+        router.register("camera.locate") { @MainActor [weak shell] args in
+            guard let shell else { throw BridgeError(.failed, "The app is closing") }
+            return try await shell.gameKit.locate(try CameraKit.locate(args))
         }
         router.register("haptics.impact") { @MainActor [weak shell] args in
             shell?.gameKit.impact(try GameKit.impactStyle(args))

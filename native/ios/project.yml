@@ -79,6 +79,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Motion games (the Game kit; apps that declare "motion"). Worded for a platform: one string for every app.
         NSMotionUsageDescription: Apps you use in DashyHQ can use motion sensors when you play a motion game.
+        # camera.locate (apps that declare "camera"): the app looks for codes; pages never see the picture.
+        NSCameraUsageDescription: Apps you use in DashyHQ can use the camera to find your screen when you set up a game. They never see the picture.
         StacksRootDomain: $(STACKS_ROOT_DOMAIN)
         StacksOtherRoots: $(STACKS_OTHER_ROOTS)
         StacksPushEnvironment: $(STACKS_APS_ENVIRONMENT)

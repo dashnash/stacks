@@ -26,7 +26,7 @@ const info = await native.call('app.info'); // { version, build, platform, proto
   on the page (`remove()` takes it away); `getNative(globalLike)` builds a client for a given global.
 - `versionAtLeast(native.version, '1.2.0')` when a feature needs a newer app.
 
-## Game kit (manifest `"native": ["motion", "haptics", "screen"]`)
+## Game kit (manifest `"native": ["motion", "camera", "haptics", "screen"]`)
 
 The app answers these only for apps that declare the capability (else `forbidden`); `motion` is a
 sensitive capability (code-owner review). Each has a web fallback, so the same code runs in Safari.
@@ -62,6 +62,26 @@ await native.screen.keepAwake(true);
   throw for lack of support); `keepAwake` uses the Wake Lock API; `lockOrientation` uses
   `screen.orientation.lock` (`unsupported` when refused); `immersive` is `unsupported`.
 - Patterns: at most 32 events within 5 s (`MAX_PATTERN_EVENTS`, `MAX_PATTERN_SECONDS`).
+
+**Camera** (`camera`, sensitive; app only, #167): find QR codes, e.g. ones a big screen shows, and
+learn which way each is from the phone. The app shows its own camera view; the page never sees a frame.
+
+```ts
+if (native.camera.available) {
+  // Start motion first: the answer's attitude is the stream's, in the same reference frame.
+  const { found, attitude } = await native.camera.locate({ codes: ['room:tl', 'room:tr'], holdMs: 1500, timeoutMs: 10_000, prompt: 'Snap the screen' });
+  found['room:tl'].centre;  // a unit vector in the phone's frame (x right edge, y top edge, z out of the screen; the back camera looks along -z)
+  found['room:tl'].corners; // the code's four corners, the same way
+}
+```
+
+- Answers once every code has stayed steady for `holdMs`; throws `unsupported` (a browser, an older
+  app), `forbidden` (not declared, or camera access off), `cancelled` (Cancel, or the page went away)
+  or `failed` (timed out, no motion stream). One at a time.
+- Geometry helpers: `toReference(attitude, v)` / `toDevice(attitude, v)` (CoreMotion's
+  Rz(yaw)·Rx(pitch)·Ry(roll)); `screenPoint(screen, x, y)` and `screenRays(screen, codes, attitude)`
+  build what the camera would see of a pretend screen. `fakeCamera({ locate })` answers `camera.locate`
+  in demos and tests (default: a 30° wide screen straight ahead, the phone facing it).
 
 **Demos and tests**: `fakeMotion({ wobble: true })` is a pretend CoreMotion: `installFakeNative({
 ...motion.handlers, ...fakeGameKit() })`, then `motion.set({ roll, pitch })` tilts it (arrow keys,

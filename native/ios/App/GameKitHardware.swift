@@ -4,7 +4,7 @@ import StacksShellCore
 import UIKit
 import WebKit
 
-/// The Game kit's hardware (native/protocol/v1.json: motion.*, haptics.*, screen.*). The router has
+/// The Game kit's hardware (native/protocol/v1.json: motion.*, camera.locate, haptics.*, screen.*). The router has
 /// already checked that the page's app declared the capability; arguments are checked by
 /// `GameKit` in Core. Everything here is undone by `reset()` when the page goes away.
 @MainActor
@@ -18,6 +18,7 @@ final class GameKitHardware {
     private var streams = 0
     private var engine: CHHapticEngine?
     private var observers: [NSObjectProtocol] = []
+    private var locator: CameraLocator?
 
     init(shell: Shell) {
         self.shell = shell
@@ -84,6 +85,21 @@ final class GameKitHardware {
     fileprivate func flush() {
         guard let channel, let json = batcher.flush(), let webView = shell?.webView else { return }
         webView.evaluateJavaScript(BridgeRouter.emitScript(channel: channel, payloadJSON: json), completionHandler: nil)
+    }
+
+    // MARK: Camera
+
+    /// Finds the page's codes with the camera (`CameraLocator`). The answer's attitude is the running
+    /// motion stream's, so the page can combine the two: no stream, no camera.
+    func locate(_ locate: CameraKit.Locate) async throws -> JSONValue {
+        guard channel != nil else { throw BridgeError(.failed, "Start motion before camera.locate") }
+        guard locator == nil else { throw BridgeError(.failed, "The camera is already looking") }
+        guard let presenter = shell?.presenter else { throw BridgeError(.failed, "Nothing to show the camera on") }
+        defer { locator = nil }
+        return try await CameraLocator.run(locate, on: presenter, attitude: { [weak self] in
+            guard let self, self.channel != nil, let a = self.motion.deviceMotion?.attitude else { return nil }
+            return (roll: a.roll, pitch: a.pitch, yaw: a.yaw)
+        }, started: { [weak self] l in self?.locator = l })
     }
 
     // MARK: Haptics
@@ -161,6 +177,8 @@ final class GameKitHardware {
 
     /// The page went away (a new page, a reload, another app): stop and undo everything.
     func reset() {
+        locator?.cancel("The page went away")
+        locator = nil
         if channel != nil { stopMotion() }
         if shell?.immersive == true { immersive(false) }
         if shell?.orientationMask != shell?.defaultOrientationMask { lockOrientation("any") }

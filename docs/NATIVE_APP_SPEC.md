@@ -373,7 +373,9 @@ await native.gameCenter.submitScore('flips', 4200);
 **Declaring and gating**
 
 - The manifest gains `"native": ["haptics", "motion", "screen", ...]` (`NATIVE_CAPABILITIES` in
-  `@stacks/manifest`; today `haptics`, `motion`, `screen`; later kits add theirs).
+  `@stacks/manifest`; today `camera`, `haptics`, `motion`, `screen`; later kits add theirs).
+  `camera` so far means `camera.locate` only (#167): the shell's own camera view finds QR codes
+  and answers with their directions from the phone; the page never gets a frame.
   For Game Center it also gains `"gameCenter": { "leaderboards": [...], "achievements": [...] }`;
   IDs are namespaced `<slug>.<id>`, and CI creates them in App Store Connect through its API.
 - **Sensitive** = `camera`, `microphone`, `location`, `motion`, plus `needsEmail`.
