@@ -22,6 +22,10 @@ describe('what a push to main deploys (classifyDeploy)', () => {
     expect(isDocsFile('apps/README.md')).toBe(true);
     // tools/new-app copies the template's Markdown into new apps.
     expect(isDocsFile('templates/app/BRIEF.md')).toBe(false);
+    // The portal serves platform/web/public; a package bundle may import its Markdown.
+    expect(isDocsFile('platform/web/public/help.md')).toBe(false);
+    expect(isDocsFile('packages/web/src/strings.md')).toBe(false);
+    expect(isDocsFile('packages/modules/comments/README.md')).toBe(true);
     expect(classifyDeploy(['apps/hello/BRIEF.md'], known)).toEqual({ mode: 'app', app: 'hello', reason: 'only apps/hello/ changed' });
   });
 

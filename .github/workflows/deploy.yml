@@ -15,6 +15,9 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # By hand, on main: deploys everything (a re-run repeats its run's mode). Only push runs count as
+  # the baseline (scripts/deploy-changes.mjs), and the merge train waits only for push runs.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-main

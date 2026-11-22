@@ -111,6 +111,14 @@ export function decide(base, head, config, cwd, unsettled = [], noBaseReason) {
 async function main() {
   const head = git(['rev-parse', 'HEAD']).trim();
   let base = process.argv[2];
+  // Actions → Deploy → Run workflow: the way to redeploy everything (a re-run repeats its mode).
+  if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+    const line = 'Deploying everything: started by hand (Run workflow).';
+    console.log(line);
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'mode=full\napp=\nbase=\n');
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Deploy: full\n\n${line}\n`);
+    return;
+  }
   let source = 'given';
   let unsettled = [];
   let reason;

@@ -49,7 +49,19 @@ export function plan({ portal, apps }, { maintenance = false, sha, appsOnly = fa
   if (maintenance) return checks;
   checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug), appsOnly) });
   const probe = probeApp(apps);
-  if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: (f) => signIn(f, probe.url, portal) });
+  // After an app-only deploy the probe is that app, which may be archived (the portal then refuses
+  // its sign-in): a failure for an app the catalog doesn't list is a warning.
+  const probeRun = appsOnly
+    ? async (f) => {
+        try {
+          return await signIn(f, probe.url, portal);
+        } catch (err) {
+          if (await listedInCatalog(f, portal, probe.slug)) throw err;
+          return { warnings: [`sign-in not checked: ${probe.slug} isn't in the catalog (archived?)`] };
+        }
+      }
+    : (f) => signIn(f, probe.url, portal);
+  if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: probeRun });
   return checks;
 }
 
@@ -95,6 +107,17 @@ async function catalog(f, url, slugs, anyApp = false) {
     return { warnings: missing.length ? [`not in the catalog: ${missing.join(', ')} (archived, or its registry entry broke)`] : [] };
   } else if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
   return { warnings: [] };
+}
+
+/** Whether the public catalog lists `slug` (an unreadable catalog counts as listed: no excuse). */
+async function listedInCatalog(f, portal, slug) {
+  try {
+    const res = await f(`${portal}/api/public/catalog`, { redirect: 'manual' });
+    const body = await res.json();
+    return !Array.isArray(body?.apps) || body.apps.some((a) => a?.slug === slug);
+  } catch {
+    return true;
+  }
 }
 
 /** App login → the platform's /authorize → (signed out) the portal's sign-in page. */

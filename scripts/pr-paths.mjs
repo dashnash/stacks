@@ -76,10 +76,13 @@ export function lockfileChanges(before, after) {
 }
 
 /**
- * Files that never reach a stack: docs/ and Markdown outside an app's folder (an app's own files
- * are its deploy) and outside templates/ (tools/new-app copies those into new apps).
+ * Files that never reach a stack: docs/, package READMEs, and Markdown outside the folders that
+ * build or ship code: an app's folder (its own files are its deploy), templates/ (tools/new-app
+ * copies those into new apps), platform/ (the portal serves its public/) and packages/ (a bundle
+ * may import one).
  */
-export const isDocsFile = (f) => f.startsWith('docs/') || (f.endsWith('.md') && !/^(apps\/[^/]+|templates)\//.test(f));
+export const isDocsFile = (f) =>
+  f.startsWith('docs/') || /^packages\/(modules\/)?[^/]+\/README\.md$/.test(f) || (f.endsWith('.md') && !/^(apps\/[^/]+|templates|platform|packages)\//.test(f));
 
 const SLUG = /^[a-z][a-z0-9-]*[a-z0-9]$/;
 

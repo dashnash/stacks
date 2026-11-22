@@ -150,6 +150,14 @@ describe('smoke check (#100)', () => {
       expect(results[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
     });
 
+    it('only warns when an archived app (not in the catalog) can\'t sign in, and fails a listed one', async () => {
+      const refused = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` }, [`${portal}/authorize?*`]: { status: 404 } };
+      const archived = await runAppOnly({ ...green(), ...refused, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
+      expect(archived[3]).toMatchObject({ ok: true, warnings: [expect.stringContaining("isn't in the catalog")] });
+      const listed = await runAppOnly({ ...green(), ...refused, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'pantry' }] } } });
+      expect(listed[3]).toMatchObject({ ok: false });
+    });
+
     it('still needs a portal: no PortalURL and no --portal fails', () => {
       expect(() => targetsFromOutputs(appOnly)).toThrow(/--portal/);
     });
