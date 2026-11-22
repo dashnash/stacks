@@ -16,7 +16,8 @@ on:
   push:
     branches: [main]
   # By hand, on main: deploys everything. "Re-run failed jobs" keeps a run's mode; "Re-run all jobs" works it out again.
-  # Runs of either event count for the baseline; the merge train waits only for push runs.
+  # Runs of either event count for the baseline; the merge train waits only for push runs, so don't
+  # start one while a push run is queued (it would replace it). On another ref the changes job fails.
   workflow_dispatch:
 
 concurrency:

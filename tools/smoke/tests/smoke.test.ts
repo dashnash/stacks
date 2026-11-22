@@ -123,12 +123,12 @@ describe('smoke check (#100)', () => {
       ]);
     });
 
-    it('accepts a catalog without the one app (it may be archived), never an empty one', async () => {
+    it('fails a catalog without the one app (archived and broken look the same), or an empty one', async () => {
       const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
       const without = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
-      expect(without[2]).toMatchObject({ ok: true, warnings: [expect.stringContaining('not in the catalog: pantry')] });
-      const empty = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [] } } });
-      expect(empty[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
+      expect(without[2]).toMatchObject({ ok: false, error: expect.stringContaining("doesn't list pantry") });
+      const empty = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{}, null] } } });
+      expect(empty[2]).toMatchObject({ ok: false });
     });
 
     it('doesn\'t warn that the portal is on another commit (it wasn\'t deployed), but still checks the app', async () => {
@@ -144,18 +144,10 @@ describe('smoke check (#100)', () => {
       expect(results[1].warnings[0]).toMatch(/mixed versions/);
     });
 
-    it('doesn\'t count malformed catalog entries as apps', async () => {
-      const login = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` } };
-      const results = await runAppOnly({ ...green(), ...login, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{}, null] } } });
-      expect(results[2]).toMatchObject({ ok: false, error: expect.stringContaining('lists no apps') });
-    });
-
-    it('only warns when an archived app (not in the catalog) can\'t sign in, and fails a listed one', async () => {
+    it('fails the one app\'s refused sign-in', async () => {
       const refused = { 'https://pantry.test.example/api/auth/login': { status: 302, location: `${portal}/authorize?app=pantry&state=s` }, [`${portal}/authorize?*`]: { status: 404 } };
-      const archived = await runAppOnly({ ...green(), ...refused, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'hello' }] } } });
-      expect(archived[3]).toMatchObject({ ok: true, warnings: [expect.stringContaining("isn't in the catalog")] });
-      const listed = await runAppOnly({ ...green(), ...refused, [`${portal}/api/public/catalog`]: { status: 200, body: { apps: [{ slug: 'pantry' }] } } });
-      expect(listed[3]).toMatchObject({ ok: false });
+      const r = await runAppOnly({ ...green(), ...refused });
+      expect(r[3]).toMatchObject({ ok: false });
     });
 
     it('still needs a portal: no PortalURL and no --portal fails', () => {

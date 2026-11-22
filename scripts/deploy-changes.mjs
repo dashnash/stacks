@@ -21,7 +21,9 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { classifyDeploy, lockfileChanges } from './pr-paths.mjs';
 
-const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
+// With a `cwd` (tests' fixtures), a hook's GIT_DIR, GIT_INDEX_FILE… mustn't point git elsewhere.
+const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+const git = (args, cwd) => execFileSync('git', args, { cwd, env: cwd ? cleanEnv() : process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
 
 /**
  * From the newest Deploy runs on main, other than this one: `base`, the head commit of the run that
@@ -113,6 +115,8 @@ async function main() {
   let base = process.argv[2];
   // Actions → Deploy → Run workflow: the way to redeploy everything ("Re-run all jobs" works the mode out again).
   if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+    // Elsewhere every deploy job would be skipped and the run would end green, deploying nothing.
+    if (process.env.GITHUB_REF && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error(`Run Deploy on main, not ${process.env.GITHUB_REF}`);
     const line = 'Deploying everything: started by hand (Run workflow).';
     console.log(line);
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'mode=full\napp=\nbase=\n');

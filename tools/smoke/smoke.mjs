@@ -10,8 +10,8 @@
  * environment is in maintenance (stacks.config.json) only the health checks run.
  *
  * `--portal <url>`: the run deployed only apps (deploy.yml's one-app mode), so the outputs have no
- * `PortalURL`: check the portal at this URL instead, and the catalog only for being non-empty (the
- * one app may be archived, which leaves it deployed but out of the catalog).
+ * `PortalURL`: check the portal at this URL instead (no mixed-versions warning for it: it wasn't
+ * deployed), and that the catalog lists the one app.
  *
  * Every `/api/health` names the commit it runs (`build`, #105); the table shows it. With `--sha`
  * (the commit just deployed) a stack on another commit, or one that doesn't say, is a warning, never
@@ -49,19 +49,7 @@ export function plan({ portal, apps }, { maintenance = false, sha, appsOnly = fa
   if (maintenance) return checks;
   checks.push({ name: 'portal /api/public/catalog', run: (f) => catalog(f, `${portal}/api/public/catalog`, apps.map((a) => a.slug), appsOnly) });
   const probe = probeApp(apps);
-  // After an app-only deploy the probe is that app, which may be archived (the portal then refuses
-  // its sign-in): a failure for an app the catalog doesn't list is a warning.
-  const probeRun = appsOnly
-    ? async (f) => {
-        try {
-          return await signIn(f, probe.url, portal);
-        } catch (err) {
-          if (await listedInCatalog(f, portal, probe.slug)) throw err;
-          return { warnings: [`sign-in not checked: ${probe.slug} isn't in the catalog (archived?)`] };
-        }
-      }
-    : (f) => signIn(f, probe.url, portal);
-  if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: probeRun });
+  if (probe) checks.push({ name: `${probe.slug} sign-in redirects to the portal`, run: (f) => signIn(f, probe.url, portal) });
   return checks;
 }
 
@@ -93,31 +81,20 @@ async function health(f, url, sha) {
 /**
  * The catalog must list at least one of the apps just deployed: an empty list means the registry
  * read broke. (Not all of them: an archived app stays deployed but leaves the catalog.) After an
- * app-only deploy (`anyApp`), any listed app will do: the one app may be archived.
+ * app-only deploy (`onlyApp`) it must list that app: archived and a broken registration look the
+ * same from outside, so a missing one fails, and the message says what to do if it's archived.
  */
-async function catalog(f, url, slugs, anyApp = false) {
+async function catalog(f, url, slugs, onlyApp = false) {
   const res = await f(url, { redirect: 'manual' });
   if (res.status !== 200) throw new Error(`${url}: ${res.status}, expected 200`);
   const body = await json(res, url);
   if (!Array.isArray(body?.apps)) throw new Error(`${url}: no "apps" list`);
   const listed = new Set(body.apps.map((a) => a?.slug).filter((s) => typeof s === 'string' && s));
-  if (anyApp) {
-    if (!listed.size) throw new Error(`${url}: lists no apps`);
+  if (onlyApp) {
     const missing = slugs.filter((s) => !listed.has(s));
-    return { warnings: missing.length ? [`not in the catalog: ${missing.join(', ')} (archived, or its registry entry broke)`] : [] };
+    if (missing.length) throw new Error(`${url}: doesn't list ${missing.join(', ')}: its registration broke, or it's archived (then run Deploy by hand on main: a full deploy's smoke check doesn't need it)`);
   } else if (slugs.length && !slugs.some((s) => listed.has(s))) throw new Error(`${url}: lists none of the deployed apps (${slugs.join(', ')})`);
   return { warnings: [] };
-}
-
-/** Whether the public catalog lists `slug` (an unreadable catalog counts as listed: no excuse). */
-async function listedInCatalog(f, portal, slug) {
-  try {
-    const res = await f(`${portal}/api/public/catalog`, { redirect: 'manual' });
-    const body = await res.json();
-    return !Array.isArray(body?.apps) || body.apps.some((a) => a?.slug === slug);
-  } catch {
-    return true;
-  }
 }
 
 /** App login → the platform's /authorize → (signed out) the portal's sign-in page. */
