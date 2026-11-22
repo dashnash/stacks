@@ -42,3 +42,17 @@ by hand.
 
 Label a PR `hold`: `agent-review` turns red; remove it: green again. An app-only PR can't merge
 without your approval. The next multi-PR change goes through the train with you only approving.
+
+## Addendum (2026-11-22): waiters
+
+The owner asked for the train to continue by itself once they approve, without saying "go".
+
+| Topic | Decision |
+| --- | --- |
+| Approval waiter | `node scripts/merge-train.mjs wait-approval <pr>`, started by the session as one background command whenever the next PR waits on the owner. Polls every 30 s (2 min unauthenticated) with the skill's approval rule (owner's latest non-comment review `APPROVED` on the current head). Exits with one line on approval (0), changes requested (2), `hold` (3), PR closed or merged (4), or after ~110 min (6, re-arm) because background commands stop at two hours. |
+| Deploy waiter | `node scripts/merge-train.mjs wait-deploy <sha>` replaces the hand-written loop: the Deploy run for that merge commit, green only if the run succeeded and every smoke-check step did (0), else 5. |
+| Why this way | No webhook, no new permissions: a finished background command wakes the idle session. The waiter only wakes it; every gate is checked again at merge time, and only review state counts, never a comment's text. |
+| Limit | Works only while the session is alive (sessions kept up with Remote Control fit). A closed session still needs the owner to say "go". |
+| Auth | `GITHUB_TOKEN`/`GH_TOKEN`, else `gh auth token`, checked once against `/rate_limit`; unauthenticated (60 requests an hour per IP) otherwise. Rate limits are waited out. Behind a proxy it re-runs itself with `NODE_USE_ENV_PROXY=1`, since Node's fetch ignores `HTTPS_PROXY`. |
+| Owner | `MERGE_TRAIN_OWNER` (default `dashnash`). |
+| Tests | `tools/app-conformance/tests/merge-train.test.ts`: the approval rule, the deploy verdict, polling to approval, giving up, waiting for the right run, rate-limit waits, token checks. |
