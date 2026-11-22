@@ -189,6 +189,10 @@ describe('Monitoring page', () => {
     await screen.findByRole('heading', { name: 'Health' });
     layOutCharts();
     const before = spy.mock.calls.at(-1)!;
+    // The graphs drawn: the last preset answer (a start rounded down to the minute makes the 24h
+    // graph 24h plus up to 59 s, so the expected window comes from its real span).
+    const preset = await spy.mock.results.at(-1)!.value;
+    const span = Date.parse(preset.to) - Date.parse(preset.from);
     expect(before).toEqual(['24h', undefined]);
     const [chart] = charts();
     pointer('pointerDown', chart!, 40);
@@ -200,7 +204,8 @@ describe('Monitoring page', () => {
     // An eighth of the plot (59 of 472 units) of the last 24h: its first 3 hours.
     await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
     const zoom = spy.mock.calls.at(-1)![1]!;
-    expect(zoom.to - zoom.from).toBeCloseTo(3 * 3_600_000, -4);
+    expect(Math.abs(zoom.to - zoom.from - (59 / 472) * span)).toBeLessThan(1000);
+    expect(Math.abs(zoom.from - Date.parse(preset.from))).toBeLessThan(1000);
     expect(await screen.findByText(/^Zoomed:/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'false');
     // The demo answers the window at a finer period (1 min for 3 hours, against 5 for 24h), and the page draws it.
