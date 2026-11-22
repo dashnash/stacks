@@ -17,7 +17,8 @@ const REF = /^[A-Za-z0-9_+/=-]{8}$/;
 const USER_ID = /^u_[A-Za-z0-9_-]{1,64}$/;
 
 type People = Record<string, { name: string; email: string }>;
-type Lookup = { kind: 'ref'; ref: string } | { kind: 'user'; userId: string };
+/** `n` goes up on every look-up, so asking again with the same value runs the query again. */
+type Lookup = ({ kind: 'ref'; ref: string } | { kind: 'user'; userId: string }) & { n?: number };
 
 /** Logs Insights times are UTC `2026-11-21 17:42:42.123`. */
 const parseTs = (ts?: string) => (ts ? Date.parse(`${ts.replace(' ', 'T')}${/[Zz+]/.test(ts.slice(10)) ? '' : 'Z'}`) : NaN);
@@ -78,7 +79,9 @@ function MonitoringPage() {
     return () => clearInterval(id);
   }, [auto]);
 
+  const lookups = useRef(0);
   const open = (l: Lookup) => {
+    l = { ...l, n: ++lookups.current };
     setLookup(l);
     setTimeout(() => lookupRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }), 0);
   };
@@ -131,7 +134,7 @@ function MonitoringPage() {
         </span>
       </div>
 
-      <LookupCard lookup={lookup} onLookup={open} range={range} panelRef={lookupRef} {...links} />
+      <LookupCard lookup={lookup} onLookup={open} range={range} retentionDays={metrics?.logRetentionDays} panelRef={lookupRef} {...links} />
 
       <ErrorNote error={error} className="error" />
       {!metrics && !error && <Spinner />}
@@ -172,7 +175,7 @@ function MonitoringPage() {
 }
 
 export function healthOf(a: AppHealth): { tone: 'bad' | 'warn' | 'ok'; label: string } {
-  if (a.serverErrors + a.unhandled > 0) return { tone: 'bad', label: 'Server errors' };
+  if (Math.max(a.serverErrors, a.unhandled) > 0) return { tone: 'bad', label: 'Server errors' };
   if (a.clientErrors > 0) return { tone: 'warn', label: 'Browser errors' };
   if ((a.p95Ms ?? 0) > 1500) return { tone: 'warn', label: 'Slow' };
   return { tone: 'ok', label: 'Healthy' };
@@ -205,8 +208,9 @@ function HealthTable({ apps, selected, onSelect }: { apps: AppHealth[]; selected
         <tbody>
           {apps.map((a) => {
             const h = healthOf(a);
-            // Every unhandled error is also a 500 request line, so serverErrors already counts it.
-            const server = a.serverErrors;
+            // An unhandled error inside a request is also a 500 request line, so serverErrors counts
+            // it; one outside the router is only an unhandled line. The larger never double counts.
+            const server = Math.max(a.serverErrors, a.unhandled);
             return (
               <tr key={a.app} className={`clickable${selected === a.app ? ' selected' : ''}`} onClick={() => onSelect(a.app)}>
                 <td>
@@ -411,7 +415,7 @@ function QueryTable({ request, range, tick, ...links }: { request: Omit<QueryReq
 
 /* ---------- look up ---------- */
 
-function LookupCard({ lookup, onLookup, range, panelRef, ...links }: { lookup: Lookup | null; onLookup(l: Lookup): void; range: MonitoringRange; panelRef: React.RefObject<HTMLDivElement> } & LinkProps) {
+function LookupCard({ lookup, onLookup, range, retentionDays, panelRef, ...links }: { lookup: Lookup | null; onLookup(l: Lookup): void; range: MonitoringRange; retentionDays?: number; panelRef: React.RefObject<HTMLDivElement> } & LinkProps) {
   const [ref, setRef] = useState('');
   const [user, setUser] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
@@ -456,14 +460,17 @@ function LookupCard({ lookup, onLookup, range, panelRef, ...links }: { lookup: L
         </form>
       </div>
       {invalid && <p className="error">{invalid}</p>}
-      <div ref={panelRef}>{lookup && !invalid && <LookupResult key={`${lookup.kind}:${lookup.kind === 'ref' ? lookup.ref : lookup.userId}:${range}`} lookup={lookup} range={range} {...links} />}</div>
+      <div ref={panelRef}>{lookup && !invalid && <LookupResult key={`${lookup.kind}:${lookup.kind === 'ref' ? lookup.ref : lookup.userId}:${range}:${lookup.n}`} lookup={lookup} range={range} retentionDays={retentionDays} {...links} />}</div>
     </div>
   );
 }
 
-function LookupResult({ lookup, range, ...links }: { lookup: Lookup; range: MonitoringRange } & LinkProps) {
+function LookupResult({ lookup, range, retentionDays, ...links }: { lookup: Lookup; range: MonitoringRange; retentionDays?: number } & LinkProps) {
   const request: QueryRequest = lookup.kind === 'ref' ? { query: 'findByRef', ref: lookup.ref, range } : { query: 'userTrail', userId: lookup.userId, range };
-  const { answer, error, loading } = useQuery(request, [lookup.kind, lookup.kind === 'ref' ? lookup.ref : lookup.userId, range]);
+  const { answer, error, loading } = useQuery(request, [lookup.kind, lookup.kind === 'ref' ? lookup.ref : lookup.userId, range, lookup.n]);
+  // The API never searches past the log retention, so neither does the message.
+  const capped = retentionDays !== undefined && RANGE_MS[range] >= retentionDays * 86_400_000;
+  const span = capped ? `${retentionDays} days (all the logs kept here)` : range;
   let heading: ReactNode;
   if (lookup.kind === 'ref') heading = <>Ref <code>{lookup.ref}</code></>;
   else {
@@ -480,7 +487,7 @@ function LookupResult({ lookup, range, ...links }: { lookup: Lookup; range: Moni
       {error && <ErrorNote error={error} className="error" />}
       {loading && <Spinner />}
       {answer && !loading && !answer.rows.length && (
-        <p className="muted">{lookup.kind === 'ref' ? `No lines with this ref in the last ${range}. Try a longer range.` : `Nothing from this person in the last ${range}.`}</p>
+        <p className="muted">{lookup.kind === 'ref' ? `No lines with this ref in the last ${span}.${capped ? '' : ' Try a longer range.'} Lines can take a minute to arrive; ask again.` : `Nothing from this person in the last ${span}.`}</p>
       )}
       {answer && !loading && answer.limited && (
         <p className="small muted">{lookup.kind === 'user' ? `The latest ${answer.rows.length} lines; older ones are left out.` : `The first ${answer.rows.length} lines.`}</p>

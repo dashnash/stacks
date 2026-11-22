@@ -102,7 +102,10 @@ export class CloudWatchMonitor implements Monitor {
           NextToken: token,
         }),
       );
+      // A SEARCH that failed or was cut short still answers; say so rather than show it as no data.
+      for (const m of res.Messages ?? []) log.warn('GetMetricData message', { code: m.Code, value: m.Value });
       for (const r of res.MetricDataResults ?? []) {
+        if (r.StatusCode && r.StatusCode !== 'Complete' && !(r.StatusCode === 'PartialData' && res.NextToken)) log.warn('GetMetricData result incomplete', { id: r.Id, status: r.StatusCode, messages: r.Messages?.map((m) => m.Value) });
         const id = r.Id ?? '';
         const label = r.Label ?? '';
         const timestamps = (r.Timestamps ?? []).map((t) => t.getTime());

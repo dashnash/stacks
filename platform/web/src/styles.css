@@ -227,3 +227,7 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 @media (max-width: 800px) {
   .mon-graphs, .mon-graphs.three, .mon-lookup-forms { grid-template-columns: 1fr; }
 }
+/* The header can wrap to two rows on phones: the toolbar stops sticking rather than slide under it. */
+@media (max-width: 600px) {
+  .mon-toolbar { position: static; }
+}

@@ -175,7 +175,10 @@ export async function runQuery(api: PortalApi, body: QueryRequest, o: { pollMs?:
   const started = Date.now();
   let res = await api.monitoringQuery(body);
   while ((res.status === 'Running' || res.status === 'Scheduled') && res.queryId) {
-    if (Date.now() - started > (o.maxMs ?? 60_000)) throw new Error('The query took too long; try a shorter range.');
+    if (Date.now() - started > (o.maxMs ?? 60_000)) {
+      void api.stopMonitoringQuery(res.queryId).catch(() => undefined);
+      throw new Error('The query took too long; try a shorter range.');
+    }
     await wait(o.pollMs ?? 1000);
     if (o.signal?.aborted) {
       // Logs Insights runs a limited number of queries at once: stop the one nobody waits for.

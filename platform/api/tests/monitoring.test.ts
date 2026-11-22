@@ -301,7 +301,9 @@ describe('appOfResource', () => {
     expect(appOfResource('prod', 'stacks-prod-app-unknown-Fn', slugs)).toBeUndefined();
     // A 30-character slug cut short in a 64-character generated name.
     const long = 'a-very-long-app-slug-of-thirty';
-    expect(appOfResource('prod', `stacks-prod-app-${long.slice(0, 20)}-ApiHandl-AbC123XyZ`, [...slugs, long])).toBe(long);
+    expect(appOfResource('prod', `stacks-prod-app-${long.slice(0, 20)}-ApiHandl-AbC123XyZ0123456789`, [...slugs, long])).toBe(long);
     expect(appOfResource('prod', 'stacks-prod-app-sk-Fn', slugs)).toBeUndefined();
+    // A retired app's resource is not given to a registered slug that starts the same way.
+    expect(appOfResource('prod', 'stacks-prod-app-hello-ApiHandler1A2B3C4D-AbCdEf', ['hello-world'])).toBeUndefined();
   });
 });

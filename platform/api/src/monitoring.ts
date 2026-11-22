@@ -126,7 +126,8 @@ export function appOfResource(tag: string, name: string, slugs: string[]): strin
   const whole = [...slugs].sort((a, b) => b.length - a.length).find((s) => rest.startsWith(`${s}-`));
   if (whole) return whole;
   // Generated names are cut at 64 characters, which can cut a long slug: the longest piece before a
-  // `-` that starts exactly one slug.
+  // `-` that starts exactly one slug. Only for names that were cut; a shorter one is another app's.
+  if (name.length < 60) return undefined;
   for (let k = rest.lastIndexOf('-'); k >= 3; k = rest.lastIndexOf('-', k - 1)) {
     const matches = slugs.filter((s) => s.startsWith(rest.slice(0, k)));
     if (matches.length === 1) return matches[0];

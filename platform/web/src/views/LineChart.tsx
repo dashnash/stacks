@@ -82,8 +82,8 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
               {xLabel(from + f * span)}
             </text>
           ))}
-          {series.map((s) => (
-            <g key={s.label}>
+          {series.map((s, i) => (
+            <g key={i}>
               <path d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeDasharray={s.dashed ? '4 3' : undefined} />
               {lonely(s.points).map(([t, v]) => (
                 <circle key={t} className="chart-dot" cx={sx(t)} cy={sy(v)} r={2.5} fill={s.color} />
@@ -106,8 +106,8 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
             .join(' · ')}${unit ? ` ${unit}` : ''}`}
       </div>
       <div className="chart-legend">
-        {series.map((s) => (
-          <span key={s.label}>
+        {series.map((s, i) => (
+          <span key={i}>
             <span className={`swatch${s.dashed ? ' dashed' : ''}`} style={s.dashed ? { borderColor: s.color } : { background: s.color }} />
             {s.label}
           </span>

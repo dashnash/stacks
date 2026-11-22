@@ -89,6 +89,22 @@ describe('Monitoring page', () => {
     expect(screen.getByRole('textbox', { name: /Someone sent you a ref/ })).toHaveValue(DEMO_REF);
   });
 
+  it('asks again when the same ref is looked up again', async () => {
+    const api = renderPortal();
+    const spy = vi.spyOn(api, 'monitoringQuery');
+    await signInAs('Dash Nash');
+    window.location.hash = '#/admin/monitoring';
+    await screen.findByRole('heading', { name: 'Health' });
+    await userEvent.type(screen.getByRole('textbox', { name: /Someone sent you a ref/ }), DEMO_REF);
+    const finds = () => spy.mock.calls.filter(([b]) => b.query === 'findByRef').length;
+    await userEvent.click(screen.getByRole('button', { name: 'Find by ref' }));
+    await screen.findByRole('heading', { name: `Ref ${DEMO_REF}` });
+    await waitFor(() => expect(finds()).toBeGreaterThan(0));
+    const first = finds();
+    await userEvent.click(screen.getByRole('button', { name: 'Find by ref' }));
+    await waitFor(() => expect(finds()).toBeGreaterThan(first));
+  });
+
   it('opens and closes a row\'s stack trace on click', async () => {
     await openMonitoring();
     const table = await screen.findByRole('table', { name: 'browserErrors' });
@@ -167,12 +183,18 @@ describe('helpers', () => {
     expect(poll).not.toHaveBeenCalled();
     // …and stops the query on the server, which runs only so many at once.
     expect(stop).toHaveBeenCalledWith('q');
+    // A query that runs past the limit is stopped too.
+    const slowStop = vi.fn(async () => undefined);
+    const slow = { monitoringQuery: vi.fn(async () => answers[0]), monitoringQueryResult: vi.fn(async () => answers[0]), stopMonitoringQuery: slowStop } as unknown as PortalApi;
+    await expect(runQuery(slow, { query: 'latestErrors', range: '24h' }, { pollMs: 1, maxMs: 5 })).rejects.toThrow(/too long/);
+    expect(slowStop).toHaveBeenCalledWith('q');
   });
 
   it('marks health red for server errors, amber for browser errors or slowness', () => {
     const a = { app: 'x', requests: 10, serverErrors: 0, unhandled: 0, clientErrors: 0, p95Ms: 200 };
     expect(healthOf(a).tone).toBe('ok');
     expect(healthOf({ ...a, unhandled: 1 }).tone).toBe('bad');
+    expect(healthOf({ ...a, serverErrors: 1 }).tone).toBe('bad');
     expect(healthOf({ ...a, clientErrors: 2 }).tone).toBe('warn');
     expect(healthOf({ ...a, p95Ms: 1600 }).tone).toBe('warn');
   });
