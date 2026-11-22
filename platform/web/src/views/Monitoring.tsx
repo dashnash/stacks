@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode }
 import { ErrorNote, Spinner } from '@stacks/web';
 import { runQuery, type AppHealth, type LogRow, type MonitoringMetrics, type MonitoringRange, type QueryAnswer, type QueryRequest } from '../api';
 import { usePortal } from '../portal';
-import { LineChart } from './LineChart';
+import { createHoverSync, LineChart, type HoverSync } from './LineChart';
 
 /*
  * The Monitoring page (#81, docs/specs/81-admin-monitoring.md), platform admins only: the
@@ -13,6 +13,29 @@ const RANGES: MonitoringRange[] = ['1h', '24h', '7d', '30d'];
 const RANGE_MS: Record<MonitoringRange, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 };
 const PALETTE = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
 export const AUTO_REFRESH_MS = 60_000;
+/** A drag shorter than this zooms to this much around its middle (the API's floor is 5 minutes). */
+const MIN_ZOOM_MS = 10 * 60_000;
+type Zoom = { from: number; to: number };
+
+/** The window a drag across a graph asks for: at least 10 minutes, never past now. */
+export function zoomWindow(from: number, to: number, now: number): Zoom {
+  if (to - from < MIN_ZOOM_MS) {
+    const mid = (from + to) / 2;
+    from = mid - MIN_ZOOM_MS / 2;
+    to = mid + MIN_ZOOM_MS / 2;
+  }
+  if (to > now) {
+    from -= to - now;
+    to = now;
+  }
+  return { from: Math.round(from), to: Math.round(to) };
+}
+const zoomLabel = (z: Zoom) => {
+  const sameDay = new Date(z.from).toDateString() === new Date(z.to).toDateString();
+  const day = { month: 'short', day: 'numeric' } as const;
+  const time = { hour: '2-digit', minute: '2-digit' } as const;
+  return `${new Date(z.from).toLocaleString(undefined, { ...day, ...time })} – ${new Date(z.to).toLocaleString(undefined, sameDay ? time : { ...day, ...time })}`;
+};
 const REF = /^[A-Za-z0-9_+/=-]{8}$/;
 const USER_ID = /^u_[A-Za-z0-9_-]{1,64}$/;
 
@@ -43,6 +66,8 @@ export function Monitoring() {
 function MonitoringPage() {
   const { api } = usePortal();
   const [range, setRange] = useState<MonitoringRange>('24h');
+  const [zoom, setZoom] = useState<Zoom | null>(null);
+  const [hover] = useState(createHoverSync);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
   const [tick, setTick] = useState(0);
@@ -57,7 +82,7 @@ function MonitoringPage() {
     let live = true;
     setLoading(true);
     api
-      .monitoringMetrics(range)
+      .monitoringMetrics(range, zoom ?? undefined)
       .then((m) => {
         if (!live) return;
         setMetrics(m);
@@ -69,7 +94,7 @@ function MonitoringPage() {
     return () => {
       live = false;
     };
-  }, [api, range, tick]);
+  }, [api, range, zoom, tick]);
 
   useEffect(() => {
     if (!auto) return;
@@ -89,6 +114,7 @@ function MonitoringPage() {
   const colorOf = (a: string | null, i: number) => (a && apps.includes(a) ? PALETTE[apps.indexOf(a) % PALETTE.length]! : PALETTE[i % PALETTE.length]!);
   const links = { onRef: (ref: string) => open({ kind: 'ref', ref }), onUser: (userId: string) => open({ kind: 'user', userId }) };
   const shared = { range, tick, ...links };
+  const graphProps = { app, colorOf, hover, onZoom: (from: number, to: number) => setZoom(zoomWindow(from, to, Date.now())) };
 
   return (
     <section className="monitoring">
@@ -109,11 +135,27 @@ function MonitoringPage() {
       <div className="mon-toolbar" role="toolbar" aria-label="Monitoring controls">
         <div className="chips tight" role="group" aria-label="Time range">
           {RANGES.map((r) => (
-            <button key={r} type="button" aria-pressed={r === range} onClick={() => setRange(r)}>
+            <button
+              key={r}
+              type="button"
+              aria-pressed={r === range && !zoom}
+              onClick={() => {
+                setRange(r);
+                setZoom(null);
+              }}
+            >
               {r}
             </button>
           ))}
         </div>
+        {zoom && (
+          <span className="zoom-chip" title={`Graphs and health cover this window; the tables still cover the last ${range}.`}>
+            Zoomed: {zoomLabel(zoom)}
+            <button type="button" className="button secondary small" onClick={() => setZoom(null)}>
+              Reset zoom
+            </button>
+          </span>
+        )}
         <select aria-label="App" value={app} onChange={(e) => setApp(e.target.value)}>
           <option value="">All apps</option>
           {apps.map((a) => (
@@ -145,9 +187,12 @@ function MonitoringPage() {
           <p className="small muted mon-note">Click an app to show only it below. Red: a server error in the range. Amber: browser errors, or p95 over 1,500 ms.</p>
 
           <h2>Requests and errors per app</h2>
-          <Graphs metrics={metrics} ids={['requests', 'serverErrors', 'clientErrors', 'p95']} app={app} colorOf={colorOf} className="mon-graphs" />
+          <p className="small muted mon-note">
+            Drag across a graph to zoom in{zoom ? `; the tables below still cover the last ${range}` : ''}.
+          </p>
+          <Graphs metrics={metrics} ids={['requests', 'serverErrors', 'clientErrors', 'p95']} {...graphProps} className="mon-graphs" />
           <h2>AWS: Lambda and DynamoDB</h2>
-          <Graphs metrics={metrics} ids={['lambdaErrors', 'lambdaP95', 'ddbThrottles']} app={app} colorOf={colorOf} className="mon-graphs three" aws />
+          <Graphs metrics={metrics} ids={['lambdaErrors', 'lambdaP95', 'ddbThrottles']} {...graphProps} className="mon-graphs three" aws />
         </>
       )}
 
@@ -168,7 +213,7 @@ function MonitoringPage() {
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
             ? `Tables cover the last ${metrics.logRetentionDays} days: apps keep their logs that long. Graphs go back further; the platform's older logs are in CloudWatch.`
             : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
-          {range === '30d' && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
+          {(zoom ? Date.now() - zoom.from > 14 * 86_400_000 : range === '30d') && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
         </p>
       )}
     </section>
@@ -237,7 +282,7 @@ function HealthTable({ apps, selected, onSelect }: { apps: AppHealth[]; selected
   );
 }
 
-function Graphs({ metrics, ids, app, colorOf, className, aws = false }: { metrics: MonitoringMetrics; ids: string[]; app: string; colorOf(app: string | null, i: number): string; className: string; aws?: boolean }) {
+function Graphs({ metrics, ids, app, colorOf, className, hover, onZoom, aws = false }: { metrics: MonitoringMetrics; ids: string[]; app: string; colorOf(app: string | null, i: number): string; className: string; hover: HoverSync; onZoom(from: number, to: number): void; aws?: boolean }) {
   const from = Date.parse(metrics.from);
   const to = Date.parse(metrics.to);
   return (
@@ -255,7 +300,7 @@ function Graphs({ metrics, ids, app, colorOf, className, aws = false }: { metric
             points: s.points,
             dashed: s.label.endsWith(' unhandled') || s.label.endsWith(' throttles'),
           }));
-        return <LineChart key={id} title={g.title} unit={g.unit === 'ms' ? 'ms' : undefined} series={series} from={from} to={to} periodMs={metrics.periodSeconds * 1000} />;
+        return <LineChart key={id} title={g.title} unit={g.unit === 'ms' ? 'ms' : undefined} series={series} from={from} to={to} periodMs={metrics.periodSeconds * 1000} sync={hover} onZoom={onZoom} />;
       })}
     </div>
   );

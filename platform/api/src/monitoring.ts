@@ -58,6 +58,37 @@ export interface Monitor {
   waitMs?: number;
 }
 
+const DAY_MS = 86_400_000;
+/** The shortest zoomed window the metrics route serves. */
+export const MIN_WINDOW_MS = 5 * 60_000;
+const PERIODS = [60, 300, 900, 3_600, 10_800];
+
+/**
+ * The graph period for a window: the finest that keeps a line under 360 points (the presets get
+ * 60 s, 5 min, 1 h and 3 h). CloudWatch keeps 1-minute points 15 days and 5-minute points 63 days,
+ * and refuses a finer period for a window starting before that.
+ */
+export function periodFor(ms: number, startAgoMs: number): number {
+  const floor = startAgoMs > 63 * DAY_MS ? 3_600 : startAgoMs > 15 * DAY_MS ? 300 : 60;
+  return PERIODS.find((p) => p >= floor && ms / 1000 / p <= 360) ?? PERIODS.at(-1)!;
+}
+
+const EPOCH_MS = /^\d{1,15}$/;
+/**
+ * A zoomed window (`from` and `to`, epoch ms), or null when neither is given. `to` is cut at now; the
+ * window is at least 5 minutes and starts at most 31 days ago (30d plus slack for a page left open).
+ */
+export function parseWindow(fromParam: unknown, toParam: unknown, now: Date): { start: Date; end: Date } | null {
+  if ((fromParam === undefined || fromParam === '') && (toParam === undefined || toParam === '')) return null;
+  if (typeof fromParam !== 'string' || typeof toParam !== 'string' || !EPOCH_MS.test(fromParam) || !EPOCH_MS.test(toParam))
+    throw badRequest('"from" and "to" must both be epoch milliseconds');
+  const start = Number(fromParam);
+  const end = Math.min(Number(toParam), now.getTime());
+  if (end - start < MIN_WINDOW_MS) throw badRequest('"from" must be at least 5 minutes before "to" and before now');
+  if (start < now.getTime() - 31 * DAY_MS) throw badRequest('"from" can go back at most 31 days');
+  return { start: new Date(start), end: new Date(end) };
+}
+
 export const parseRange = (value: unknown): MonitoringRange => {
   if (value === undefined || value === null || value === '') return '24h';
   if (typeof value === 'string' && Object.hasOwn(MONITORING_RANGES, value)) return value as MonitoringRange;
@@ -144,13 +175,21 @@ export function appOfResource(tag: string, name: string, slugs: string[]): strin
   return undefined;
 }
 
-export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown, slugs: string[]) {
+/**
+ * `params.range` is a preset; `params.from` and `params.to` (epoch ms, both or neither) zoom to a
+ * window instead, as dragging across a graph does: the answer's `range` is then `custom`.
+ */
+export async function monitoringMetrics(deps: PlatformDeps, params: { range?: unknown; from?: unknown; to?: unknown }, slugs: string[]) {
   const { monitor, tag } = monitorOf(deps);
-  const range = parseRange(rangeParam);
-  const { ms, periodSeconds } = MONITORING_RANGES[range];
-  const end = deps.now();
-  const start = new Date(end.getTime() - ms);
-  const totalPeriod = Math.ceil(ms / 1000 / 60) * 60;
+  const now = deps.now();
+  const window = parseWindow(params.from, params.to, now);
+  const range: MonitoringRange | 'custom' = window ? 'custom' : parseRange(params.range);
+  const end = window ? window.end : now;
+  const start = window ? window.start : new Date(now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms);
+  const ms = end.getTime() - start.getTime();
+  const periodSeconds = window ? periodFor(ms, now.getTime() - start.getTime()) : MONITORING_RANGES[range as MonitoringRange].periodSeconds;
+  // One bucket for the whole window, a multiple of the period (CloudWatch's rule for older starts).
+  const totalPeriod = Math.ceil(ms / 1000 / periodSeconds) * periodSeconds;
   const queries: MetricQuery[] = [
     ...GRAPHS.flatMap((g) => g.queries.map((q) => ({ id: q.id, label: q.label, expression: q.build(tag, periodSeconds) }))),
     ...TOTALS.map((q) => ({ id: q.id, label: q.label, expression: q.build(tag, totalPeriod) })),

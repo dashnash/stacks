@@ -106,6 +106,42 @@ describe('GET /admin/monitoring/metrics', () => {
     expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN, query: { range: 'toString' } })).status).toBe(400);
   });
 
+  it('zooms to a from/to window with a finer period, cutting "to" at now', async () => {
+    const h = setup();
+    const now = Date.parse('2026-03-01T00:00:00Z');
+    h.deps.now = () => new Date(now);
+    const ask = (from: number, to: number) => h.call('GET', '/admin/monitoring/metrics', { as: ADMIN, query: { range: '7d', from: String(from), to: String(to) } });
+    for (const [hours, period] of [[3, 60], [10, 300], [48, 900], [7 * 24, 3600]] as const) {
+      const res = await ask(now - hours * 3_600_000 - 60_000, now - 60_000);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ range: 'custom', periodSeconds: period, from: new Date(now - hours * 3_600_000 - 60_000).toISOString() });
+      const q = h.calls.metrics.at(-1)!;
+      expect(q.queries.find((x) => x.id === 'requests')!.expression).toContain(`'Sum', ${period})`);
+      expect(q.end.getTime() - q.start.getTime()).toBe(hours * 3_600_000);
+      // The total is one bucket, a whole number of periods.
+      expect(Number(/(\d+)\)$/.exec(q.queries.find((x) => x.id === 'tRequests')!.expression)![1]) % period).toBe(0);
+    }
+    const future = await ask(now - 3_600_000, now + 3_600_000);
+    expect(future.body.to).toBe(new Date(now).toISOString());
+    // CloudWatch has no 1-minute points older than 15 days.
+    expect((await ask(now - 20 * 86_400_000, now - 20 * 86_400_000 + 3_600_000)).body.periodSeconds).toBe(300);
+  });
+
+  it('refuses a bad, too short or too old window', async () => {
+    const h = setup();
+    const now = Date.parse('2026-03-01T00:00:00Z');
+    h.deps.now = () => new Date(now);
+    const ask = (query: Record<string, string>) => h.call('GET', '/admin/monitoring/metrics', { as: ADMIN, query });
+    expect((await ask({ from: String(now - 3_600_000) })).status).toBe(400);
+    expect((await ask({ from: 'yesterday', to: String(now) })).status).toBe(400);
+    expect((await ask({ from: String(now - 3_600_000), to: '1.5' })).status).toBe(400);
+    expect((await ask({ from: String(now - 60_000), to: String(now) })).status).toBe(400);
+    expect((await ask({ from: String(now - 3_600_000), to: String(now - 7_200_000) })).status).toBe(400);
+    expect((await ask({ from: String(now + 3_600_000), to: String(now + 7_200_000) })).status).toBe(400);
+    expect((await ask({ from: String(now - 40 * 86_400_000), to: String(now - 39 * 86_400_000) })).status).toBe(400);
+    expect(h.calls.metrics).toHaveLength(0);
+  });
+
   it('turns results into the health table and graphs', async () => {
     const t = Date.parse('2026-03-01T00:00:00Z');
     const h = setup({

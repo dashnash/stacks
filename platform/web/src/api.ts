@@ -111,7 +111,9 @@ export function createPortalApi(client: Client = createClient()) {
       const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
       return client.get<{ events: AuditEvent[]; nextBefore: string | null }>(`/admin/audit${qs ? `?${qs}` : ''}`);
     },
-    monitoringMetrics: (range: MonitoringRange) => client.get<MonitoringMetrics>(`/admin/monitoring/metrics?range=${range}`),
+    /** A preset range, or a zoomed window (epoch ms) that replaces it. */
+    monitoringMetrics: (range: MonitoringRange, window?: { from: number; to: number }) =>
+      client.get<MonitoringMetrics>(`/admin/monitoring/metrics?range=${range}${window ? `&from=${Math.round(window.from)}&to=${Math.round(window.to)}` : ''}`),
     monitoringQuery: (body: QueryRequest) => client.post<QueryAnswer>('/admin/monitoring/query', body),
     monitoringQueryResult: (queryId: string) => client.get<QueryAnswer>(`/admin/monitoring/query/${encodeURIComponent(queryId)}`),
     stopMonitoringQuery: (queryId: string) => client.del(`/admin/monitoring/query/${encodeURIComponent(queryId)}`),
@@ -141,7 +143,8 @@ export interface MonitoringGraph {
 }
 export interface MonitoringMetrics {
   env: string;
-  range: MonitoringRange;
+  /** `custom` for a zoomed window. */
+  range: MonitoringRange | 'custom';
   from: string;
   to: string;
   periodSeconds: number;

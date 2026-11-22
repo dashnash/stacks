@@ -222,6 +222,9 @@ input, select { background: var(--surface); border: 1px solid var(--line); borde
 .chart-grid { stroke: var(--line); stroke-width: 1; }
 .chart-axis { fill: var(--muted); font-size: 10px; }
 .chart-hover { stroke: var(--muted); stroke-dasharray: 3 3; }
+.chart svg.zoomable { cursor: crosshair; touch-action: pan-y; user-select: none; }
+.chart-select { fill: var(--accent); fill-opacity: 0.15; stroke: var(--accent); stroke-opacity: 0.5; }
+.zoom-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.85rem; }
 .chart-readout { min-height: 1.2em; margin-top: 2px; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 0.8rem; color: var(--muted); }
 @media (max-width: 800px) {
