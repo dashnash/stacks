@@ -38,7 +38,10 @@ CDK building blocks. App folders contain no infra code: `infra/bin/stacks.ts` cr
   `ServerErrors`, `UnhandledErrors`, `ClientErrors`, `DurationMs` to `Stacks/<tag>` with dimension
   `app` (patterns in `API_METRIC_FILTERS`; they read `$.message.<field>`, the names `@stacks/api`
   logs). `PlatformStack` adds `Monitoring`: the one dashboard `stacks-<tag>` and six saved queries
-  (`SAVED_QUERIES`) over the log groups of `appSlugs`. No alarms, no SNS.
+  (`SAVED_QUERIES`) over the log groups of `appSlugs`. No alarms, no SNS. The names, `SAVED_QUERIES`
+  and the `SEARCH` builders live in `@stacks/manifest/monitoring` (re-exported here) so the portal's
+  Monitoring page (#81) runs the same queries; the platform Lambda may `GetMetricData` and start
+  Logs Insights queries on `/stacks/<tag>/*` only.
 - `LegacyRedirectStack` (`stacks-<env>-legacy-redirect`, only with `legacyRedirects`): per old root a
   CloudFront distribution on `<old>` + `*.<old>`, or only `<label>.<old>` per label in its `hosts` (max 10) (own certificate and records in the old zone) whose
   function (`legacyRedirectCode(old, new)`) 301s to the same label + path + query on the new root

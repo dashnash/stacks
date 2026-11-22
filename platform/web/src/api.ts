@@ -111,6 +111,71 @@ export function createPortalApi(client: Client = createClient()) {
       const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
       return client.get<{ events: AuditEvent[]; nextBefore: string | null }>(`/admin/audit${qs ? `?${qs}` : ''}`);
     },
+    monitoringMetrics: (range: MonitoringRange) => client.get<MonitoringMetrics>(`/admin/monitoring/metrics?range=${range}`),
+    monitoringQuery: (body: QueryRequest) => client.post<QueryAnswer>('/admin/monitoring/query', body),
+    monitoringQueryResult: (queryId: string) => client.get<QueryAnswer>(`/admin/monitoring/query/${encodeURIComponent(queryId)}`),
   };
 }
 export type PortalApi = ReturnType<typeof createPortalApi>;
+
+/* ---------- Monitoring (#81) ---------- */
+
+export type MonitoringRange = '1h' | '24h' | '7d' | '30d';
+export type MonitoringQueryId = 'latestErrors' | 'slowestRequests' | 'browserErrors' | 'findByRef' | 'userTrail' | 'appRequests';
+
+export interface AppHealth {
+  app: string;
+  requests: number;
+  serverErrors: number;
+  unhandled: number;
+  clientErrors: number;
+  p95Ms: number | null;
+}
+export interface MonitoringGraph {
+  id: string;
+  title: string;
+  unit: 'count' | 'ms';
+  /** `app` is the app the line belongs to (null for an AWS resource of no app). Points: [epoch ms, value]. */
+  series: { label: string; app: string | null; points: [number, number][] }[];
+}
+export interface MonitoringMetrics {
+  env: string;
+  range: MonitoringRange;
+  from: string;
+  to: string;
+  periodSeconds: number;
+  logRetentionDays: number;
+  consoleUrl: string;
+  apps: AppHealth[];
+  graphs: MonitoringGraph[];
+}
+/** A Logs Insights row with `message.` dropped: `ts`, `app`, `type`, `route`, `ref`, `userId`, `error`, `stack`, … */
+export type LogRow = Record<string, string | undefined>;
+export interface QueryAnswer {
+  queryId: string | null;
+  status: string;
+  rows?: LogRow[];
+  people?: Record<string, { name: string; email: string }>;
+}
+export interface QueryRequest {
+  query: MonitoringQueryId;
+  range: MonitoringRange;
+  ref?: string;
+  userId?: string;
+  app?: string;
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Starts a saved query and polls until it is done (at most a minute). */
+export async function runQuery(api: PortalApi, body: QueryRequest, o: { pollMs?: number; maxMs?: number } = {}): Promise<Required<Pick<QueryAnswer, 'rows' | 'people'>> & QueryAnswer> {
+  const started = Date.now();
+  let res = await api.monitoringQuery(body);
+  while ((res.status === 'Running' || res.status === 'Scheduled') && res.queryId) {
+    if (Date.now() - started > (o.maxMs ?? 60_000)) throw new Error('The query took too long; try a shorter range.');
+    await wait(o.pollMs ?? 1000);
+    res = await api.monitoringQueryResult(res.queryId);
+  }
+  if (res.status !== 'Complete') throw new Error(`The query ended ${res.status.toLowerCase()}; try again.`);
+  return { ...res, rows: res.rows ?? [], people: res.people ?? {} };
+}

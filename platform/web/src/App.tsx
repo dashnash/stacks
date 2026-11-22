@@ -5,6 +5,7 @@ import { AppPage } from './views/AppPage';
 import { AppVersion } from './views/AppVersion';
 import { AuditLog } from './views/AuditLog';
 import { Catalog } from './views/Catalog';
+import { Monitoring } from './views/Monitoring';
 import { Notifications } from './views/Notifications';
 import { Profile } from './views/Profile';
 import { PushPrompt } from './views/PushPrompt';
@@ -32,8 +33,13 @@ function Header() {
           Apps
         </a>
         {manages && (
-          <a href="#/admin/access" aria-current={route.path.startsWith('/admin') ? 'page' : undefined}>
+          <a href="#/admin/access" aria-current={route.path.startsWith('/admin') && route.path !== '/admin/monitoring' ? 'page' : undefined}>
             Access <Badge count={me.pendingRequests} label="pending requests" />
+          </a>
+        )}
+        {me?.user.isPlatformAdmin && (
+          <a href="#/admin/monitoring" aria-current={route.path === '/admin/monitoring' ? 'page' : undefined}>
+            Monitoring
           </a>
         )}
         <AccountMenuView
@@ -76,6 +82,7 @@ export function App() {
   else if (path === '/profile') view = status === 'signedIn' ? <Profile from={query.from} /> : <SignIn />;
   else if (path === '/notifications') view = status === 'signedIn' ? <Notifications from={query.from} /> : <SignIn />;
   else if (path === '/admin/access') view = status === 'signedIn' ? <AccessGrid initialApp={query.app} /> : <SignIn />;
+  else if (path === '/admin/monitoring') view = status === 'signedIn' ? <Monitoring /> : <SignIn />;
   else if (path === '/admin/audit') view = status === 'signedIn' ? <AuditLog initialApp={query.app} /> : <SignIn />;
   else
     view = (

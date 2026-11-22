@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import type { Construct } from 'constructs';
+import { appMetricSearch, awsMetricSearch, dashboardName, logGroupName, metricNamespace, queryText, SAVED_QUERIES } from '@stacks/manifest/monitoring';
 
 /*
  * Monitoring (docs/PLATFORM_SPEC.md "Monitoring", docs/DEBUGGING.md): named log groups, metric
@@ -12,14 +13,7 @@ import type { Construct } from 'constructs';
  * `message`; every pattern and query below reads `message.<field>`.
  */
 
-/** `/stacks/<tag>/<slug>/api`, `/stacks/<tag>/<slug>/realtime-authorizer`; the platform's slug is `platform`. */
-export const logGroupName = (tag: string, slug: string, kind: 'api' | 'realtime-authorizer' | 'game-server' = 'api') => `/stacks/${tag}/${slug}/${kind}`;
-
-/** The CloudWatch namespace of an environment's metrics: `Stacks/prod`, `Stacks/test`. */
-export const metricNamespace = (tag: string) => `Stacks/${tag}`;
-
-/** The one dashboard of an environment: `stacks-prod`, `stacks-test`. */
-export const dashboardName = (tag: string) => `stacks-${tag}`;
+export { dashboardName, logGroupName, metricNamespace, SAVED_QUERIES } from '@stacks/manifest/monitoring';
 
 /** The metric filters every API log group gets: name, pattern and what each match adds. */
 export const API_METRIC_FILTERS: { id: string; metricName: string; pattern: string; value: string; unit?: cloudwatch.Unit }[] = [
@@ -48,66 +42,6 @@ export function addApiMetricFilters(scope: Construct, logGroup: logs.ILogGroup, 
   }
 }
 
-/** The saved Logs Insights queries (and the dashboard's log tables). Placeholders in CAPITALS are edited before running. */
-export const SAVED_QUERIES = {
-  findByRef: {
-    name: 'Find by ref',
-    query: [
-      'fields @timestamp, message.type, message.app, message.method, message.route, message.status, message.durationMs, message.userId, message.message, message.error.name, message.error.message, message.error.stack',
-      'filter message.ref = "PASTE-REF"',
-      'sort @timestamp asc',
-      'limit 200',
-    ],
-  },
-  latestErrors: {
-    name: 'Latest errors',
-    query: [
-      'fields @timestamp, message.app, message.type, message.ref, message.route, message.userId, coalesce(message.error.message, message.message) as error',
-      'filter message.type in ["error", "client-error"]',
-      'sort @timestamp desc',
-      'limit 50',
-    ],
-  },
-  browserErrors: {
-    name: 'Browser errors',
-    query: [
-      'fields @timestamp, message.app, message.userId, message.clientBuild, message.source, message.path, message.message, message.stack',
-      'filter message.type = "client-error"',
-      'sort @timestamp desc',
-      'limit 100',
-    ],
-  },
-  slowestRequests: {
-    name: 'Slowest requests',
-    query: [
-      'fields @timestamp, message.app, message.method, message.route, message.status, message.durationMs, message.ref, message.userId',
-      'filter message.type = "request"',
-      'sort message.durationMs desc',
-      'limit 50',
-    ],
-  },
-  userTrail: {
-    name: "One user's trail",
-    query: [
-      'fields @timestamp, message.app, message.type, message.method, message.route, message.status, message.durationMs, message.ref, message.message',
-      'filter message.userId = "u_PASTE-USER-ID"',
-      'sort @timestamp asc',
-      'limit 500',
-    ],
-  },
-  appRequests: {
-    name: "One app's requests",
-    query: [
-      'fields @timestamp, message.method, message.route, message.status, message.durationMs, message.userId, message.ref',
-      'filter message.type = "request" and message.app = "APP-SLUG"',
-      'sort @timestamp desc',
-      'limit 200',
-    ],
-  },
-} as const;
-
-const queryText = (lines: readonly string[]) => lines.join('\n| ');
-
 export interface MonitoringProps {
   /** `prod` or `test`. */
   tag: string;
@@ -131,12 +65,9 @@ export class Monitoring {
     const logGroupNames = [logGroupName(tag, 'platform'), ...[...new Set(props.appSlugs)].sort().map((slug) => logGroupName(tag, slug))];
     const period = cdk.Duration.minutes(5);
     // SEARCH, so an app that starts logging shows up with no platform deploy.
-    const search = (schema: string, terms: string, stat: string) =>
-      new cloudwatch.MathExpression({ expression: `SEARCH('{${schema}} ${terms}', '${stat}', ${period.toSeconds()})`, usingMetrics: {}, label: '', period });
-    const ours = (metric: string, stat = 'Sum') => search(`${metricNamespace(tag)},app`, `MetricName="${metric}"`, stat);
-    // AWS's own metrics have no Stacks dimension; stack names (`stacks-<tag>-…`) start every
-    // function and table name, so the search asks for both words.
-    const aws = (schema: string, metric: string, stat = 'Sum') => search(schema, `MetricName="${metric}" stacks ${tag}`, stat);
+    const expr = (expression: string) => new cloudwatch.MathExpression({ expression, usingMetrics: {}, label: '', period });
+    const ours = (metric: string, stat = 'Sum') => expr(appMetricSearch(tag, metric, stat, period.toSeconds()));
+    const aws = (schema: string, metric: string, stat = 'Sum') => expr(awsMetricSearch(tag, schema, metric, stat, period.toSeconds()));
     const graph = (title: string, left: cloudwatch.IMetric[], width = 6) => new cloudwatch.GraphWidget({ title, left, width, height: 6, leftYAxis: { min: 0 } });
     const table = (q: { name: string; query: readonly string[] }, height: number) =>
       new cloudwatch.LogQueryWidget({ title: q.name, logGroupNames, queryString: queryText(q.query), view: cloudwatch.LogQueryVisualizationType.TABLE, width: 24, height });

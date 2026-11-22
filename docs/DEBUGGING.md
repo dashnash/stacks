@@ -1,12 +1,20 @@
 # Debugging a live app
 
-How to go from "something broke" to the request and the stack trace. Everything is in the AWS
-console under **CloudWatch** (us-east-1). Nothing alerts you: you look when someone tells you.
+How to go from "something broke" to the request and the stack trace. Start on the portal's
+**Monitoring** page (platform admins only); everything is also in the AWS console under
+**CloudWatch** (us-east-1). Nothing alerts you: you look when someone tells you.
 What is logged, and what never is, is in `docs/PLATFORM_SPEC.md` ("Monitoring"). A deploy that
 failed or left stacks on different commits: [ROLLBACK.md](ROLLBACK.md).
 
 ## Where to look
 
+- **Monitoring page** (the everyday view): `https://auth.dashnash.ninja/#/admin/monitoring`
+  (staging: `auth.test.dashnash.ninja`), tab **Monitoring** in the portal header. Health per app, the
+  dashboard's graphs, Latest errors, Browser errors and Slowest requests. Paste a ref into **Find by
+  ref**, or click any ref or person in a table to see that request or that person's trail; people
+  show by name. Pick an app (or click its row) to see only it. Each portal shows its own environment.
+  "Open in CloudWatch" goes to the console dashboard below. The console steps that follow work the
+  same way and are the fallback (and the place for queries of your own).
 - **Dashboard**: CloudWatch → Dashboards → `stacks-prod` or `stacks-test`. Per app: requests,
   server errors, browser errors, p95 duration. Below: Lambda and DynamoDB health, then two tables,
   **Latest errors** and **Slowest requests**.

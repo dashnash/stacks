@@ -6,7 +6,7 @@ import { DynamoStore } from '@stacks/api/lambda';
 import { createApnsSender, type ApnsKey } from './apns';
 import { createAppleVerifier } from './apple';
 import { createPlatformApp } from './app';
-import { SsmAppRegistry } from './aws';
+import { CloudWatchMonitor, SsmAppRegistry } from './aws';
 import { createGoogleVerifier } from './google';
 
 function env(name: string): string {
@@ -15,7 +15,8 @@ function env(name: string): string {
   return value;
 }
 
-const registry = new SsmAppRegistry(env('STACKS_ENV_TAG'));
+const envTag = env('STACKS_ENV_TAG');
+const registry = new SsmAppRegistry(envTag);
 const rootDomain = env('STACKS_ROOT_DOMAIN');
 
 const app = createPlatformApp({
@@ -29,12 +30,14 @@ const app = createPlatformApp({
     minShellVersion: process.env.MIN_SHELL_VERSION || '1.0.0',
     iosBundleId: process.env.IOS_BUNDLE_ID || undefined,
     appleServicesId: process.env.APPLE_SERVICES_ID || undefined,
+    envTag,
   },
   // Tokens from the iOS app are addressed to its bundle ID; from the portal's Apple JS, to the Services ID.
   verifyApple: (credential) => (appleVerifier ??= createAppleVerifier([process.env.IOS_BUNDLE_ID, process.env.APPLE_SERVICES_ID].filter((a): a is string => !!a)))(credential),
   push: createApnsSender({ key: apnsKey }),
   registry,
   appSessions: registry,
+  monitor: new CloudWatchMonitor(envTag),
   verifyGoogle: (credential) => verify(credential),
   now: () => new Date(),
   newId: () => randomUUID(),

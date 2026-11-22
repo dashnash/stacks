@@ -5,7 +5,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppManifest } from '@stacks/manifest';
-import { API_BURST_LIMIT, API_RATE_LIMIT, AppStack, BACKUP_PLAN_NAME, PLATFORM_ROUTE_THROTTLES, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, CONTENT_NONCURRENT_DAYS, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
+import { API_BURST_LIMIT, API_RATE_LIMIT, AppStack, CiStack, BACKUP_PLAN_NAME, PLATFORM_ROUTE_THROTTLES, BACKUP_RETENTION_DAYS, BACKUP_VAULT_NAME, CONTENT_NONCURRENT_DAYS, PlatformStack, PORTAL_CSP, portalRouterCode, type EnvConfig } from '../src/index';
 
 const env: EnvConfig = { rootDomain: 'test.example.com', hostedZoneId: 'Z123', hostedZoneName: 'example.com', googleClientId: 'gid', platformAdmins: ['root@x.dev', 'two@x.dev'] };
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -103,6 +103,23 @@ describe('PlatformStack', () => {
     expect(policies).toContain(':parameter/stacks/test/secrets/platform/*');
     expect(policies).toContain('ssm.us-east-1.amazonaws.com');
     expect(JSON.stringify(t.findResources('AWS::SSM::Parameter'))).not.toContain('/secrets/');
+  });
+
+  it('lets the Lambda read metrics and query only this environment\'s log groups, for the Monitoring page (#81)', () => {
+    const statements = Object.values(synth().findResources('AWS::IAM::Policy')).flatMap((p) => p.Properties.PolicyDocument.Statement as { Sid?: string; Action: string | string[]; Resource: unknown }[]);
+    const bySid = (sid: string) => statements.find((s) => s.Sid === sid)!;
+    expect(bySid('MonitoringMetrics')).toMatchObject({ Action: 'cloudwatch:GetMetricData', Resource: '*' });
+    expect(bySid('MonitoringQueryResults')).toMatchObject({ Action: ['logs:GetQueryResults', 'logs:StopQuery', 'logs:DescribeLogGroups'], Resource: '*' });
+    const start = bySid('MonitoringStartQuery');
+    expect(start.Action).toBe('logs:StartQuery');
+    expect(JSON.stringify(start.Resource)).toContain(':log-group:/stacks/test/*');
+    // Nothing else may start a query, on any resource.
+    expect(statements.filter((s) => [s.Action].flat().some((a) => a === 'logs:StartQuery' || a === 'logs:*'))).toEqual([start]);
+    // Staging roles carry the boundary, so it must allow the metrics call too.
+    const ci = Template.fromStack(new CiStack(new cdk.App(), 'stacks-ci', { githubRepo: 'dashnash/stacks', region: 'us-east-1' }));
+    const boundary = Object.values(ci.findResources('AWS::IAM::ManagedPolicy')).find((p) => p.Properties.ManagedPolicyName === 'stacks-test-boundary')!;
+    const runtime = (boundary.Properties.PolicyDocument.Statement as { Sid: string; Action: string[] }[]).find((s) => s.Sid === 'AppRuntime')!;
+    expect(runtime.Action).toEqual(expect.arrayContaining(['cloudwatch:GetMetricData', 'logs:*']));
   });
 
   it('works without a hosted zone (CloudFront domain, no certificate)', () => {

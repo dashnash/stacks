@@ -89,3 +89,9 @@ Specs: `docs/specs/` (order in `docs/specs/README.md`). Only three of the seven 
 ## #105 Rollback and inventory ([spec](specs/105-rollback-and-manual-state.md))
 
 - [ ] Read `docs/ROLLBACK.md` and the inventory in `docs/SETUP.md` §0, and fill in where you keep each source value.
+
+## #81 Monitoring page ([spec](specs/81-admin-monitoring.md))
+
+- [ ] Redeploy the CI stack so the staging boundary allows `cloudwatch:GetMetricData`: `cd infra && npx cdk deploy -c ci=true stacks-ci`. Until then the staging page's graphs say CloudWatch didn't answer (the tables work). Production needs nothing.
+- [ ] After deploy: open `auth.dashnash.ninja` → **Monitoring**; the 24h graphs match the `stacks-prod` dashboard; paste a recent ref into Find by ref.
+- [ ] Sign in once as someone who is not a platform admin: no Monitoring tab, and `#/admin/monitoring` says "Platform admins only".

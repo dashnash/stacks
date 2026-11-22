@@ -59,6 +59,7 @@ Every decision below was made in the brainstorm on 2026-11-08; the build agent t
 | Book Club | Migrates as app #1 with its data; current members and roles pre-loaded into the grid; members sign in once more |
 | Audience | Different groups per app, up to a few dozen users at first |
 | Monitoring (#75, 2026-11-14) | Troubleshooting first, pull only: structured JSON logs with a request ref, browser errors captured by `@stacks/web`, one CloudWatch dashboard per environment and saved Logs Insights queries. AWS-native only; no alerts, no vendor, no tracing ("Monitoring") |
+| Monitoring page (#81, 2026-11-21) | Reverses #75's "no portal page": the portal has `/admin/monitoring` for platform admins only, a native page (the Platform API reads `GetMetricData` and Logs Insights; no iframe, no CSP change, no chart library). Each portal shows its own environment; the client names one of the saved queries plus a validated ref, user id or app, never query text. Names are filled in at read time, logs stay id-only. The CloudWatch dashboards and saved queries stay as the fallback ("Monitoring", `docs/specs/81-admin-monitoring.md`) |
 | Realtime (#51, 2026-11-11) | `realtime` module: one AppSync Event API per app that turns it on (managed fan-out, no idle cost, ~$1 per million events). Server and client publish, channels declared with guards, short-lived HMAC tokens checked by a Lambda authorizer. Game input goes over WebRTC data channels (#44); realtime only carries their setup |
 | Game servers (#44, 2026-11-14) | `gameServer` module: server-authoritative rooms, one on-demand arm64 Fargate task per room on a shared VPC with public subnets (no NAT, no load balancer, no warm pool), players connected over WebRTC data channels to the task's public IP; the `realtime` module only signals. Peer hosting (players connected to each other, one of them the host) was considered and rejected: no authority, host migration, and worse NAT traversal. Rooms run a pinned public Node image; the app's game is one bundled file (a CDK file asset, like Lambda code) the task fetches from S3 through a link the API signs, so no per-app image is built, shipped or stored. (First shipped as a per-app image tarball; dropped on 2026-11-15 because every deploy downloaded ~200 MB of images on the runners.) |
 | Seats per device (#131, 2026-11-20) | A room seat is keyed by (user, device), not by user: `PLAYER#<seatId>`, seat id = the user id for the `default` device (so games and SDKs from before are unchanged), else `<userId>~<device>`. The ticket carries the device; takeover is per seat. A special "display" role was considered and rejected: the game decides what each seat does. Answers still go to the user's channel (the channel guard is per user); the client's `sid` tells their connections apart. One person holds at most 4 seats (API-enforced, so labels can't fill a room); a game's `maxSeatsPerUser` lowers it. A room keeps the runtime it started with, so a room started before the deploy that brings devices treats one person's devices as one seat until it ends. |
@@ -156,7 +157,7 @@ App sessions are not in the platform table: each lives in its app's own table (`
 3. **Private app**: signed-out and ungranted visitors see the public pages and a **Request access** button. A request creates a `PENDING` grant and raises the approvers' badge.
 4. **Approvers** are users holding a role the manifest marks `canManageAccess`. They approve, change roles or revoke, from the app's own admin page or the central grid. Both write the same grant.
 5. The **creator** gets the manifest's `topRole` when the app is first registered. An app must always keep at least one holder of `topRole`.
-6. The **platform super-admin** (`PLATFORM_ADMINS` config, like Book Club's `OWNER_EMAILS`) can edit any cell, archive apps, and see the full audit feed.
+6. The **platform super-admin** (`PLATFORM_ADMINS` config, like Book Club's `OWNER_EMAILS`) can edit any cell, archive apps, see the full audit feed, and open the Monitoring page (`/admin/monitoring`, #81).
 7. Revoking a grant ends that user's app sessions for that app immediately.
 8. **Blocking**: approvers (and the super-admin) can set a cell to `BLOCKED`, from the grid or the
    app's own access page. A blocked person has no role and keeps none of their sessions; a public app
@@ -341,6 +342,21 @@ emails the first production platform admin at 80% of actual and 100% of forecast
   Browser errors, Slowest requests, One user's trail, One app's requests. The log tables and the
   saved queries list each app's API log group by name (CloudWatch cannot select log groups by
   prefix there), so a new app joins them on the next platform deploy.
+- **Portal page** (#81): `auth.<domain>/#/admin/monitoring`, platform admins only (API 403 for
+  anyone else, no tab). Each portal shows its own environment: a per-app health table (requests,
+  server and browser errors, p95, a red/amber/green dot), the dashboard's seven graphs, the Latest
+  errors, Browser errors and Slowest requests tables, Find by ref, One user's trail and, with an app
+  selected, One app's requests; ranges 1h/24h/7d/30d, Refresh plus an optional 60 s auto refresh.
+  The Platform API reads CloudWatch (`GET /api/admin/monitoring/metrics`, `POST
+  /api/admin/monitoring/query` + `GET …/query/:id`): `GetMetricData` with the same `SEARCH`
+  expressions, and Logs Insights over the environment's `/stacks/<tag>/*/api` log groups found with
+  `DescribeLogGroups` (so a new app shows up with no platform deploy). The client sends a saved-query
+  name and a validated ref (8 letters/digits), user id or app slug, never query text; queries never
+  reach past the log retention. User ids in the answer are resolved to names and emails from the
+  platform table at read time; nothing new is logged. IAM: `logs:StartQuery` only on
+  `/stacks/<tag>/*`; `GetMetricData` has no resource scoping, so staging could read production's
+  metric numbers (counts and durations only). Names and queries shared with the infra live in
+  `@stacks/manifest/monitoring`.
 - **No tracing** (X-Ray) and **no alerts** (alarms, SNS, push, email). How to use all of it:
   `docs/DEBUGGING.md`.
 
