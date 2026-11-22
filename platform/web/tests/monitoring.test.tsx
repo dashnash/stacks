@@ -335,6 +335,32 @@ describe('helpers', () => {
     expect(screen.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('keeps a zoom that has loaded when a later refresh fails, showing the error', async () => {
+    const api = renderPortal();
+    await signInAs('Dash Nash');
+    await userEvent.click(screen.getByRole('link', { name: 'Monitoring' }));
+    await screen.findByRole('heading', { name: 'Health' });
+    layOutCharts();
+    const spy = vi.spyOn(api, 'monitoringMetrics');
+    const [chart] = charts();
+    pointer('pointerDown', chart!, 40);
+    pointer('pointerUp', chart!, 99);
+    await waitFor(() => expect(spy.mock.calls.at(-1)![1]).toBeDefined());
+    await spy.mock.results.at(-1)!.value;
+    spy.mockRejectedValueOnce(new Error('Network down'));
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText(/Network down/)).toBeInTheDocument();
+    expect(screen.getByText(/^Zoomed:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't zoom/)).toBeNull();
+  });
+
+  it('shows no readout on a graph without data', () => {
+    const sync = createHoverSync();
+    const { container } = render(<LineChart title="Empty" from={0} to={3_600_000} periodMs={60_000} sync={sync} series={[]} />);
+    act(() => sync.set(60_000));
+    expect(container.querySelector('.chart-readout')!.textContent).toBe('');
+  });
+
   it('shares the hover time between charts given one sync, and keeps it inside each range', () => {
     const sync = createHoverSync();
     const { container } = render(

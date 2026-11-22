@@ -139,6 +139,7 @@ describe('GET /admin/monitoring/metrics', () => {
     expect((await ask({ from: String(now - 3_600_000), to: String(now - 7_200_000) })).status).toBe(400);
     expect((await ask({ from: String(now + 3_600_000), to: String(now + 7_200_000) })).status).toBe(400);
     expect((await ask({ from: String(now - 40 * 86_400_000), to: String(now - 39 * 86_400_000) })).status).toBe(400);
+    expect((await ask({ range: 'toString', from: String(now - 3_600_000), to: String(now) })).status).toBe(400);
     expect(h.calls.metrics).toHaveLength(0);
   });
 

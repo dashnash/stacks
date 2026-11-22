@@ -66,6 +66,8 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
   const shared = useSyncExternalStore(store.subscribe, store.get);
   const hover = shared !== null && shared >= from && shared <= to ? shared : null;
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  /** The pointer is on this chart: only its readout is announced (the others follow silently). */
+  const [pointing, setPointing] = useState(false);
   const span = Math.max(1, to - from);
   const max = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1]))));
   const sx = (t: number) => L + ((t - from) / span) * (W - L - R);
@@ -101,6 +103,7 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
     const t = timeAt(e);
     if (t === null) return;
     store.set(t);
+    setPointing(true);
     if (drag) setDrag({ a: drag.a, b: t });
   };
   const onDown = (e: React.PointerEvent) => {
@@ -136,7 +139,10 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
           onPointerDown={onDown}
           onPointerUp={onUp}
           onPointerCancel={() => setDrag(null)}
-          onPointerLeave={() => !drag && store.set(null)}
+          onPointerLeave={() => {
+            setPointing(false);
+            if (!drag) store.set(null);
+          }}
         >
           {[0, max / 2, max].map((v) => (
             <g key={v}>
@@ -166,8 +172,9 @@ export function LineChart({ title, unit, series, from, to, periodMs, sync, onZoo
       ) : (
         <p className="muted pad">No data in this range</p>
       )}
-      <div className="chart-readout" aria-live="polite">
+      <div className="chart-readout" aria-live={pointing ? 'polite' : 'off'}>
         {hover !== null &&
+          series.length > 0 &&
           `${new Date(hover).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${series
             .map((s) => {
               const v = nearest(s.points, hover);

@@ -64,9 +64,10 @@ export const MIN_WINDOW_MS = 5 * 60_000;
 const PERIODS = [60, 300, 900, 3_600, 10_800];
 
 /**
- * The graph period for a window: the finest that keeps a line under 360 points (the presets get
- * 60 s, 5 min, 1 h and 3 h). CloudWatch keeps 1-minute points 15 days and 5-minute points 63 days,
- * and refuses a finer period for a window starting before that.
+ * The graph period for a window: the finest that keeps a line at most 360 points long (the presets
+ * get 60 s, 5 min, 1 h and 3 h). CloudWatch keeps 1-minute points 15 days and 5-minute points 63
+ * days, and refuses a finer period for a window starting before that. (Windows start at most 31
+ * days ago today; the 63-day floor is there in case that limit grows.)
  */
 export function periodFor(ms: number, startAgoMs: number): number {
   const floor = startAgoMs > 63 * DAY_MS ? 3_600 : startAgoMs > 15 * DAY_MS ? 300 : 60;
@@ -183,7 +184,9 @@ export async function monitoringMetrics(deps: PlatformDeps, params: { range?: un
   const { monitor, tag } = monitorOf(deps);
   const now = deps.now();
   const window = parseWindow(params.from, params.to, now);
-  const range: MonitoringRange | 'custom' = window ? 'custom' : parseRange(params.range);
+  // `range` is checked even when a window replaces it, so a bad one is always a 400.
+  const preset = parseRange(params.range);
+  const range: MonitoringRange | 'custom' = window ? 'custom' : preset;
   const end = window ? window.end : now;
   const start = window ? window.start : new Date(now.getTime() - MONITORING_RANGES[range as MonitoringRange].ms);
   const ms = end.getTime() - start.getTime();

@@ -81,6 +81,8 @@ function MonitoringPage() {
   /** Why the last zoom fell back to the preset (an error, or an API that can't zoom yet). */
   const [zoomFailed, setZoomFailed] = useState<string | null>(null);
   const [hover] = useState(createHoverSync);
+  /** The zoom whose window has loaded once: after that, a failed refresh is an ordinary error. */
+  const loadedZoom = useRef<Zoom | null>(null);
   const [app, setApp] = useState('');
   const [auto, setAuto] = useState(false);
   const [tick, setTick] = useState(0);
@@ -103,6 +105,7 @@ function MonitoringPage() {
           setZoom(null);
           setZoomFailed("This Platform API can't zoom yet; showing the preset.");
         }
+        loadedZoom.current = zoom;
         setMetrics(m);
         setError(null);
         setUpdated(new Date());
@@ -110,7 +113,7 @@ function MonitoringPage() {
       .catch((err: Error) => {
         if (!live) return;
         // A failed zoom goes back to the preset rather than leave "Zoomed" over the old graphs.
-        if (zoom) {
+        if (zoom && loadedZoom.current !== zoom) {
           setZoom(null);
           setZoomFailed(`Couldn't zoom: ${err.message}. Showing the preset.`);
         } else setError(err);
@@ -249,7 +252,7 @@ function MonitoringPage() {
           {RANGE_MS[range] > metrics.logRetentionDays * 86_400_000
             ? `Tables cover the last ${metrics.logRetentionDays} days: apps keep their logs that long. Graphs go back further; the platform's older logs are in CloudWatch.`
             : 'Each table shows the first rows of its saved query (50 to 200): errors newest first, slowest requests slowest first.'}
-          {(zoom ? Date.now() - zoom.from > 14 * 86_400_000 : range === '30d') && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
+          {(zoom ? Date.parse(metrics.to) - zoom.from > 14 * 86_400_000 : range === '30d') && ' Health and graphs show zero for an app that reported nothing in the last two weeks (a CloudWatch search limit).'}
         </p>
       )}
     </section>
