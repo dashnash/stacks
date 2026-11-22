@@ -74,13 +74,14 @@ set when the label belongs to an app (`stacks-<tag>-app-<slug>-…` → `<slug>`
 Body: `{ query, range, ref?, userId?, app? }`, where `query` is `latestErrors`, `slowestRequests`,
 `browserErrors`, `findByRef`, `userTrail` or `appRequests`.
 
-- `ref` must match `/^[A-Za-z0-9]{8}$/` (required for `findByRef`); `userId` `/^u_[A-Za-z0-9_-]{1,64}$/`
+- `ref` must match `/^[A-Za-z0-9_+/=-]{8}$/` (API Gateway request ids are base64-like) (required for `findByRef`); `userId` `/^u_[A-Za-z0-9_-]{1,64}$/`
   (required for `userTrail`); `app` must be `platform` or a registered slug (required for
   `appRequests`, optional filter on the others). Anything else is 400.
 - The API substitutes the value into the saved query (`PASTE-REF`, `u_PASTE-USER-ID`, `APP-SLUG`);
   the optional `app` filter adds `| filter message.app = "<slug>"`.
 - `StartQuery` over the listed log groups with the range (clamped to the retention), then polls
-  `GetQueryResults` for up to 8 s. Answer: `{ queryId, status: "Running" | "Complete" | "Failed" | …, rows?, people? }`.
+  `GetQueryResults` once (holding the request open would inflate the platform's own `DurationMs` and
+  Slowest requests). Answer: `{ queryId, status: "Running" | "Complete" | "Failed" | …, rows?, people? }`.
 
 ### `GET /api/admin/monitoring/query/:queryId`
 

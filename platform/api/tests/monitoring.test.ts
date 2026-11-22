@@ -98,6 +98,7 @@ describe('GET /admin/monitoring/metrics', () => {
     const h = setup();
     expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN })).body.range).toBe('24h');
     expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN, query: { range: '2y' } })).status).toBe(400);
+    expect((await h.call('GET', '/admin/monitoring/metrics', { as: ADMIN, query: { range: 'toString' } })).status).toBe(400);
   });
 
   it('turns results into the health table and graphs', async () => {
@@ -112,7 +113,7 @@ describe('GET /admin/monitoring/metrics', () => {
         { id: 'tRequests', label: 'club', timestamps: [t], values: [10] },
         { id: 'tServerErrors', label: 'club', timestamps: [t], values: [2] },
         { id: 'tUnhandled', label: 'club', timestamps: [t], values: [1] },
-        { id: 'tP95', label: 'club', timestamps: [t, t + 1], values: [180.4, 240.6] },
+        { id: 'tP95', label: 'club', timestamps: [t, t + 1], values: [240.6, 2400] },
         { id: 'tRequests', label: 'platform', timestamps: [t], values: [3] },
         // An app no longer registered: not offered (the query route would refuse it).
         { id: 'tRequests', label: 'retired', timestamps: [t], values: [7] },
@@ -149,6 +150,8 @@ describe('POST /admin/monitoring/query', () => {
     const cases: [Record<string, string>, string][] = [
       [{ query: 'latestErrors' }, queryText(SAVED_QUERIES.latestErrors.query)],
       [{ query: 'findByRef', ref: '3f9A2c1b' }, queryText(SAVED_QUERIES.findByRef.query).replace('PASTE-REF', '3f9A2c1b')],
+      // API Gateway request ids are base64-like, so a ref can hold - _ + / =.
+      [{ query: 'findByRef', ref: 'Ld-6z+/=' }, queryText(SAVED_QUERIES.findByRef.query).replace('PASTE-REF', 'Ld-6z+/=')],
       [{ query: 'userTrail', userId: 'u_abc123' }, queryText(SAVED_QUERIES.userTrail.query).replace('u_PASTE-USER-ID', 'u_abc123')],
       [{ query: 'appRequests', app: 'club' }, queryText(SAVED_QUERIES.appRequests.query).replace('APP-SLUG', 'club')],
     ];
@@ -179,6 +182,8 @@ describe('POST /admin/monitoring/query', () => {
       { query: 'findByRef' },
       { query: 'findByRef', ref: '3f9a2c1' },
       { query: 'findByRef', ref: '3f9a2c1b" or 1=1' },
+      { query: 'findByRef', ref: 'Ld-6zi"|' },
+      { query: 'latestErrors', range: 'toString' },
       { query: 'findByRef', ref: 12345678 },
       { query: 'userTrail', userId: 'ana@example.com' },
       { query: 'userTrail', userId: 'u_x"| filter 1' },
@@ -227,6 +232,7 @@ describe('POST /admin/monitoring/query', () => {
 
   it('hands back the query id while it is still running, and GET polls it', async () => {
     const h = setup({ status: ['Running', 'Complete'], rows: [{ 'message.route': '/api/me' }] });
+    h.monitor.waitMs = undefined; // the default: one look, then the client polls
     const start = await h.call('POST', '/admin/monitoring/query', { as: ADMIN, body: { query: 'latestErrors' } });
     expect(start.body).toEqual({ queryId: QID, status: 'Running' });
     const poll = await h.call('GET', `/admin/monitoring/query/${QID}`, { as: ADMIN });

@@ -1,5 +1,5 @@
 import { badRequest, HttpError, log } from '@stacks/api';
-import { appMetricSearch, awsMetricSearch, dashboardName, queryText, SAVED_QUERIES, type SavedQueryId } from '@stacks/manifest/monitoring';
+import { apiLogRetentionDays, appMetricSearch, awsMetricSearch, dashboardName, queryText, SAVED_QUERIES, type SavedQueryId } from '@stacks/manifest/monitoring';
 import { shownName, type PlatformDeps } from './model';
 import { getUserRecord } from './core';
 
@@ -17,8 +17,8 @@ export const MONITORING_RANGES: Record<MonitoringRange, { ms: number; periodSeco
   '30d': { ms: 30 * 86_400_000, periodSeconds: 10_800 },
 };
 
-/** API log retention (`packages/infra`): logs older than this are gone, so queries never ask for them. */
-export const logRetentionDays = (tag: string) => (tag === 'prod' ? 30 : 7);
+/** API log retention (set by the app stacks): logs older than this are gone, so queries never ask for them. */
+export const logRetentionDays = apiLogRetentionDays;
 
 export interface MetricQuery {
   /** Lower-case first letter, letters, digits and `_` (CloudWatch's rule). */
@@ -44,13 +44,17 @@ export interface Monitor {
   startQuery(q: { logGroupNames: string[]; queryString: string; start: Date; end: Date }): Promise<string>;
   /** Rows keep Logs Insights' field names (`@timestamp`, `message.route`, …). */
   getQueryResults(queryId: string): Promise<{ status: QueryStatus; rows: Record<string, string>[] }>;
-  /** How long `POST /query` waits for a result before handing back the id (default 8 s). */
+  /**
+   * How long `POST /query` keeps polling before handing back the id (default 0: one look, then the
+   * client polls). Holding the request open would show up in the platform's own `DurationMs` and
+   * Slowest requests.
+   */
   waitMs?: number;
 }
 
 export const parseRange = (value: unknown): MonitoringRange => {
   if (value === undefined || value === null || value === '') return '24h';
-  if (typeof value === 'string' && value in MONITORING_RANGES) return value as MonitoringRange;
+  if (typeof value === 'string' && Object.hasOwn(MONITORING_RANGES, value)) return value as MonitoringRange;
   throw badRequest('"range" must be 1h, 24h, 7d or 30d');
 };
 
@@ -152,14 +156,16 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
   }));
 
   const sum = (id: string, app: string) => byId(id).filter((r) => r.label === app).reduce((s, r) => s + r.values.reduce((a, b) => a + b, 0), 0);
-  const max = (id: string, app: string) => {
-    const v = byId(id).filter((r) => r.label === app).flatMap((r) => r.values);
-    return v.length ? Math.round(Math.max(...v)) : null;
+  // p95 over the whole range: the first bucket. CloudWatch rounds the start down, so a second,
+  // tiny bucket at the end can follow; its p95 says little and must not win.
+  const first = (id: string, app: string) => {
+    const v = byId(id).find((r) => r.label === app && r.values.length)?.values[0];
+    return v === undefined ? null : Math.round(v);
   };
   // Only apps the query route accepts: metrics of an app no longer registered stay in the graphs.
   const apps = [...new Set(known)]
     .sort((a, b) => (a === 'platform' ? -1 : b === 'platform' ? 1 : a.localeCompare(b)))
-    .map((app) => ({ app, requests: sum('tRequests', app), serverErrors: sum('tServerErrors', app), unhandled: sum('tUnhandled', app), clientErrors: sum('tClientErrors', app), p95Ms: max('tP95', app) }));
+    .map((app) => ({ app, requests: sum('tRequests', app), serverErrors: sum('tServerErrors', app), unhandled: sum('tUnhandled', app), clientErrors: sum('tClientErrors', app), p95Ms: first('tP95', app) }));
 
   return {
     env: tag,
@@ -176,7 +182,8 @@ export async function monitoringMetrics(deps: PlatformDeps, rangeParam: unknown,
 
 /* ---------- log queries ---------- */
 
-export const REF = /^[A-Za-z0-9]{8}$/;
+/** The first 8 characters of an API Gateway request id (base64-like: letters, digits, `-_+/=`). */
+export const REF = /^[A-Za-z0-9_+/=-]{8}$/;
 export const LOG_USER_ID = /^u_[A-Za-z0-9_-]{1,64}$/;
 export const QUERY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -227,7 +234,7 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   const ref = str('ref');
   const userId = str('userId');
   const app = str('app');
-  if (query === 'findByRef' ? !ref || !REF.test(ref) : ref !== undefined) throw badRequest('"ref" is 8 letters and digits, only for findByRef');
+  if (query === 'findByRef' ? !ref || !REF.test(ref) : ref !== undefined) throw badRequest('"ref" is the 8 characters of a ref, only for findByRef');
   if (query === 'userTrail' ? !userId || !LOG_USER_ID.test(userId) : userId !== undefined) throw badRequest('"userId" is a u_… id, only for userTrail');
   if (query === 'appRequests' ? !app : false) throw badRequest('"app" is required for appRequests');
   if (app !== undefined && app !== 'platform' && !slugs.includes(app)) throw badRequest('"app" must be platform or a registered app');
@@ -239,7 +246,7 @@ export async function startMonitoringQuery(deps: PlatformDeps, body: Record<stri
   if (!logGroupNames.length) return { queryId: null, status: 'Complete' as const, rows: [], people: {} };
   const queryId = await monitor.startQuery({ logGroupNames, queryString: buildQuery(query, { ref, userId, app }), start, end }).catch(upstream);
 
-  const deadline = Date.now() + (monitor.waitMs ?? 8_000);
+  const deadline = Date.now() + (monitor.waitMs ?? 0);
   for (;;) {
     const res = await monitor.getQueryResults(queryId).catch(upstream);
     if ((res.status !== 'Running' && res.status !== 'Scheduled') || Date.now() >= deadline) return answer(deps, queryId, res);

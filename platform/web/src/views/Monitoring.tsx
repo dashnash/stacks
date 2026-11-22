@@ -13,7 +13,7 @@ const RANGES: MonitoringRange[] = ['1h', '24h', '7d', '30d'];
 const RANGE_MS: Record<MonitoringRange, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 };
 const PALETTE = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
 export const AUTO_REFRESH_MS = 60_000;
-const REF = /^[A-Za-z0-9]{8}$/;
+const REF = /^[A-Za-z0-9_+/=-]{8}$/;
 const USER_ID = /^u_[A-Za-z0-9_-]{1,64}$/;
 
 type People = Record<string, { name: string; email: string }>;
@@ -242,7 +242,14 @@ function Graphs({ metrics, ids, app, colorOf, className, aws = false }: { metric
         if (!g) return null;
         const series = g.series
           .filter((s) => !app || s.app === app)
-          .map((s, i) => ({ label: aws ? shortResource(s.label, metrics.env) : s.label, color: colorOf(s.app, i), points: s.points, dashed: s.label.endsWith(' unhandled') }));
+          // App graphs: one color per app (the same in every graph), unhandled dashed. AWS graphs can
+          // hold several lines per app (functions, errors and throttles): a color per line, throttles dashed.
+          .map((s, i) => ({
+            label: aws ? shortResource(s.label, metrics.env) : s.label,
+            color: aws ? PALETTE[i % PALETTE.length]! : colorOf(s.app, i),
+            points: s.points,
+            dashed: s.label.endsWith(' unhandled') || s.label.endsWith(' throttles'),
+          }));
         return <LineChart key={id} title={g.title} unit={g.unit === 'ms' ? 'ms' : undefined} series={series} from={from} to={to} periodMs={metrics.periodSeconds * 1000} />;
       })}
     </div>
@@ -269,14 +276,13 @@ function useQuery(request: QueryRequest | null, deps: unknown[]) {
   const [state, setState] = useState<{ answer: (QueryAnswer & { rows: LogRow[]; people: People }) | null; error: Error | null; loading: boolean }>({ answer: null, error: null, loading: !!request });
   useEffect(() => {
     if (!request) return;
-    let live = true;
+    // Aborting stops the polling when the range, app or page changes (the query itself is short).
+    const abort = new AbortController();
     setState((s) => ({ ...s, loading: true }));
-    runQuery(api, request)
-      .then((answer) => live && setState({ answer, error: null, loading: false }))
-      .catch((error: Error) => live && setState({ answer: null, error, loading: false }));
-    return () => {
-      live = false;
-    };
+    runQuery(api, request, { signal: abort.signal })
+      .then((answer) => !abort.signal.aborted && setState({ answer, error: null, loading: false }))
+      .catch((error: Error) => !abort.signal.aborted && setState({ answer: null, error, loading: false }));
+    return () => abort.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, ...deps]);
   return state;
@@ -412,7 +418,7 @@ function LookupCard({ lookup, onLookup, range, panelRef, ...links }: { lookup: L
   const submitRef = (e: FormEvent) => {
     e.preventDefault();
     const v = ref.trim();
-    if (!REF.test(v)) return setInvalid('A ref is 8 letters and digits, like 3f9a2c1b. Paste it rather than retyping: refs are case-sensitive.');
+    if (!REF.test(v)) return setInvalid('A ref is 8 characters, like 3f9a2c1b or Ld-6ziNZ. Paste it rather than retyping: refs are case-sensitive.');
     onLookup({ kind: 'ref', ref: v });
   };
   const submitUser = (e: FormEvent) => {

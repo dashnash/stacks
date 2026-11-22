@@ -351,7 +351,7 @@ emails the first production platform admin at 80% of actual and 100% of forecast
   /api/admin/monitoring/query` + `GET …/query/:id`): `GetMetricData` with the same `SEARCH`
   expressions, and Logs Insights over the environment's `/stacks/<tag>/*/api` log groups found with
   `DescribeLogGroups` (so a new app shows up with no platform deploy). The client sends a saved-query
-  name and a validated ref (8 letters/digits), user id or app slug, never query text; queries never
+  name and a validated ref (8 characters of the request id), user id or app slug, never query text; queries never
   reach past the log retention. User ids in the answer are resolved to names and emails from the
   platform table at read time; nothing new is logged. IAM: `logs:StartQuery` only on
   `/stacks/<tag>/*`; `GetMetricData` has no resource scoping, so staging could read production's

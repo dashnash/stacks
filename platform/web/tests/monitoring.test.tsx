@@ -89,7 +89,7 @@ describe('Monitoring page', () => {
     await openMonitoring();
     await userEvent.type(screen.getByRole('textbox', { name: /Someone sent you a ref/ }), 'nope');
     await userEvent.click(screen.getByRole('button', { name: 'Find by ref' }));
-    expect(screen.getByText(/A ref is 8 letters and digits/)).toBeInTheDocument();
+    expect(screen.getByText(/A ref is 8 characters/)).toBeInTheDocument();
   });
 
   it("shows a person's trail with their name when you click them", async () => {
@@ -142,6 +142,13 @@ describe('helpers', () => {
     expect((await runQuery(api, { query: 'latestErrors', range: '24h' }, { pollMs: 1 })).rows).toEqual([{ route: '/api/me' }]);
     const failed = { monitoringQuery: vi.fn(async () => ({ queryId: 'q', status: 'Failed' })) } as unknown as PortalApi;
     await expect(runQuery(failed, { query: 'latestErrors', range: '24h' })).rejects.toThrow(/ended failed/);
+    // Aborted (range or page changed): stops polling.
+    const stopped = new AbortController();
+    stopped.abort();
+    const poll = vi.fn(async () => answers[1]);
+    const running = { monitoringQuery: vi.fn(async () => answers[0]), monitoringQueryResult: poll } as unknown as PortalApi;
+    await expect(runQuery(running, { query: 'latestErrors', range: '24h' }, { pollMs: 1, signal: stopped.signal })).rejects.toThrow('Stopped');
+    expect(poll).not.toHaveBeenCalled();
   });
 
   it('marks health red for server errors, amber for browser errors or slowness', () => {

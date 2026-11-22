@@ -10,6 +10,12 @@
 /** `/stacks/<tag>/<slug>/api`, `/stacks/<tag>/<slug>/realtime-authorizer`; the platform's slug is `platform`. */
 export const logGroupName = (tag: string, slug: string, kind: 'api' | 'realtime-authorizer' | 'game-server' = 'api') => `/stacks/${tag}/${slug}/${kind}`;
 
+/**
+ * How many days an app's API log group keeps lines (1 month on production, 1 week on staging): the
+ * app stacks set it, and the Monitoring page never queries further back.
+ */
+export const apiLogRetentionDays = (tag: string): 7 | 30 => (tag === 'prod' ? 30 : 7);
+
 /** The CloudWatch namespace of an environment's metrics: `Stacks/prod`, `Stacks/test`. */
 export const metricNamespace = (tag: string) => `Stacks/${tag}`;
 

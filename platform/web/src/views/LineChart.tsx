@@ -99,7 +99,10 @@ export function LineChart({ title, unit, series, from, to, periodMs }: { title: 
       <div className="chart-readout" aria-live="polite">
         {hover !== null &&
           `${new Date(hover).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${series
-            .map((s) => `${s.label} ${nearest(s.points, hover) ?? '–'}`)
+            .map((s) => {
+              const v = nearest(s.points, hover);
+              return `${s.label} ${v === null ? '–' : Math.round(v * 10) / 10}`;
+            })
             .join(' · ')}${unit ? ` ${unit}` : ''}`}
       </div>
       <div className="chart-legend">
