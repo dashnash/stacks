@@ -1029,3 +1029,48 @@ tr.current td {
   justify-content: space-between;
   align-items: center;
 }
+
+/* Camera calibration (#167): the codes at the window's corners, on a light ground the camera reads well. */
+.snap-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.snap-layer.on {
+  background: #f4f1fa;
+  color: #170d33;
+}
+.snap-layer .overlay {
+  pointer-events: auto;
+}
+.snap-layer.on .overlay.snap-card {
+  background: #fff;
+  color: #170d33;
+  box-shadow: none;
+}
+.snap-layer.on .muted {
+  color: #4a3d66;
+}
+.snap-code {
+  position: absolute;
+  background: #fff;
+}
+.snap-code .qr {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+.snap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+/* The centre tap: keep the dot clear. */
+.snap-layer:not(.on) .overlay.snap-card {
+  top: auto;
+  bottom: 8%;
+  transform: translateX(-50%);
+}

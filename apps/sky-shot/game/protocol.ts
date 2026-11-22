@@ -71,7 +71,11 @@ export type MenuEvent =
   /** Start the current step over, from dot 1. */
   | { calRedo: true }
   /** Skip the rest of this phone's calibration. */
-  | { calSkip: true };
+  | { calSkip: true }
+  /** The camera found the screen's codes (`game/snap.ts`): the screen's size from here; the centre tap comes next. */
+  | { snapped: { rays: Vec3[]; att: { roll: number; pitch: number; yaw: number } } }
+  /** No camera (or it couldn't see the screen): calibrate with the dots instead. */
+  | { calDots: true };
 
 /** Events a gun sends. `t` on the sender's clock. */
 /** `calibrate` during a 5-point calibration marks the current dot; otherwise it makes the current pose the centre. */
@@ -146,7 +150,7 @@ export type ServerEvent =
   | { tuning: { tuning: Tuning; id: string } }
   | { stats: Record<string, ConfigStats> }
   /** A 5-point calibration finished: the fit, already applied. `poor`: the points didn't line up well. */
-  | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean; seat?: string; stage?: CalStage } }
+  | { calibrated: { gain: number; ratioY: number; offsetX: number; offsetY: number; error: number; poor: boolean; seat?: string; stage?: CalStage | 'snap' } }
   | { calibrationFailed: { reason: string; seat?: string } }
 
   /** A training run finished and was fitted. */
@@ -219,6 +223,11 @@ export interface GunView {
 }
 
 /** What every seat gets each tick (kept well under 1 KB). */
+export interface SnapView {
+  codes: string[];
+  guns: { gun: string; st: 'snap' | 'tap' }[];
+}
+
 export interface Snapshot {
   ph: Phase;
   m: GameMode;
@@ -238,6 +247,8 @@ export interface Snapshot {
   /** Screen only: latency now, and the first gun's motion (for the panel's graphs). */
   lat?: Latency & { lag: number };
   cal?: CalibrationView;
+  /** Camera calibrations on: the codes the screen shows (top left, top right, bottom right, bottom left) and each phone's step. */
+  sn?: SnapView;
   /** The seat whose menu drives the game (the first phone), if a phone is paired. */
   ctl?: string;
   tr?: TrainingView;
@@ -279,6 +290,8 @@ export interface ShotRecord {
   window: WindowSample[];
   /** The look the screen drew (`themeTag`); absent in shots saved before themes. */
   theme?: string;
+  /** The quiet correction from near misses in effect for this shot (absent when none). */
+  nudge?: { dx: number; dy: number; gain: number };
 }
 
 /** What the room records when it ends (and the app API copies). */

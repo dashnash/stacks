@@ -2,7 +2,8 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemo, DemoApp, type Demo } from '@stacks/demo';
-import { fakeGameKit, fakeMotion, installFakeNative } from '@stacks/native';
+import { fakeCamera, fakeGameKit, fakeMotion, installFakeNative, screenRays } from '@stacks/native';
+import { codeSpots } from '../game/snap';
 import { useHashRoute } from '@stacks/web';
 import { personas } from '../api/demo-data';
 import { manifest } from '../api/manifest';
@@ -305,6 +306,49 @@ describe('Whee: calibration on connect', () => {
     const panel = screen.getByRole('complementary', { name: 'Tuning' });
     await waitFor(() => expect(within(panel).getByRole('slider', { name: /^Turn gain/ })).not.toHaveValue('1.6'), T);
   }, 40_000);
+});
+
+describe('Whee: camera calibration', () => {
+  it('a phone with a camera snaps the screen (codes at its corners), then one centre tap', async () => {
+    fake?.remove();
+    const camera = fakeCamera({
+      locate: ({ codes }) => {
+        const spots = codeSpots(window.innerWidth / window.innerHeight);
+        return screenRays(
+          { yaw: 0, pitch: 0, widthRad: 0.55, aspect: window.innerWidth / window.innerHeight },
+          codes.map((code, i) => ({ code, x: spots[i]![0], y: spots[i]![1] })),
+          { roll: 0, pitch: Math.PI / 2, yaw: 0 },
+        );
+      },
+    });
+    fake = installFakeNative({ ...motion.handlers, ...camera.handlers, ...fakeGameKit() });
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    const phone = await screen.findByTestId('phone');
+    const layer = await screen.findByRole('dialog', { name: 'Calibrating with the camera' }, T);
+    expect(within(layer).getAllByRole('img', { name: /^Calibration code \d of 4$/ })).toHaveLength(4);
+    expect(within(layer).getByText('Player 1 · Snap the screen')).toBeInTheDocument();
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Snap the screen' }, T));
+    expect(camera.calls[0]!.codes).toHaveLength(4);
+    expect(await within(phone).findByText('2 · Centre tap', {}, T)).toBeInTheDocument();
+    await waitFor(() => expect(within(layer).getByText('Player 1 · Centre tap')).toBeInTheDocument(), T);
+    // Snap again goes back; then the tap.
+    await userEvent.click(within(phone).getByRole('button', { name: 'Snap again' }));
+    await userEvent.click(await within(phone).findByRole('button', { name: 'Snap the screen' }, T));
+    await new Promise((r) => setTimeout(r, 300));
+    await userEvent.pointer({ keys: '[MouseLeft>]', target: await within(phone).findByRole('button', { name: 'On the centre dot' }, T) });
+    await userEvent.pointer({ keys: '[/MouseLeft]' });
+    expect(await within(phone).findByText('Calibrated.', {}, T)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Calibrating with the camera' })).toBeNull(), T);
+    expect(await within(phone).findByRole('button', { name: 'Start Round 1' }, T)).toBeEnabled();
+  }, 30_000);
+
+  it('a phone without one goes straight to the dots', async () => {
+    await renderDemo(MAX, true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    expect(await screen.findByRole('dialog', { name: 'Calibrating' }, T)).toHaveTextContent('Step 1 of 2 · Initialize');
+    expect(screen.queryByRole('dialog', { name: 'Calibrating with the camera' })).toBeNull();
+  });
 });
 
 describe('Whee: the controller', () => {

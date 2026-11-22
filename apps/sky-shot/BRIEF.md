@@ -59,10 +59,16 @@ a cut-paper night sky (dusk or indigo).
   choice is on the controller (Play again, Start training, the training result and the blind pick: the screen
   puts them to the phone as prompts). The desktop only exits: Esc (in a game it asks first; a second Esc
   exits). The phone can exit too, after a confirm. L and the tuning panel (T) stay on the desktop.
-- As a shooter every phone calibrates when it connects, one phone at a time: step 1, Initialize (five dots,
-  no crosshair: where the phone points), then step 2, Calibrate (five dots with the live crosshair). Re-calibrate
-  (in the phone's menu) repeats step 2. The first phone's fit is the room's tuning and is saved as my
-  default; a second phone keeps its own.
+- As a shooter every phone calibrates when it connects. With the camera (the Stacks app, #167): I hold the
+  phone up and snap the screen, which shows four codes at its corners, then aim at the centre dot in my own
+  grip and tap once. That sets the absolute gain and vertical gain for this screen and seat; mouse-like aim
+  keeps my saved feel. Every phone snaps at once, and the game starts when all are done. Without a camera (a
+  browser, an older app, no access, the screen not found): the dots, one phone at a time: step 1, Initialize
+  (five dots, no crosshair: where the phone points), then step 2, Calibrate (five dots with the live
+  crosshair). Re-calibrate (in the phone's menu) snaps again, or repeats step 2 with the dots. The first
+  phone's fit is the room's tuning and is saved as my default; a second phone keeps its own.
+- As a shooter my aim corrects itself quietly while I play: a near miss (within 1.5 hitbox radii) nudges the
+  offset (absolute) or the gain (mouse-like) a little, within caps, and calibrating again starts it over.
 - As a shooter I swap the look mid-round from the phone (the Look chip) without pausing: the game is the same
   in every look. The phone's Pause opens the menu; switching game there ends the round
   (its score is saved) and starts the new one.

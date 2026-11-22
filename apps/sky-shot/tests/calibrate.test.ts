@@ -109,6 +109,10 @@ describe('5-point calibration in a room', () => {
     t.run(200);
     t.screen.event({ calibrate: 'points' });
     t.run(50);
+    // No camera on this phone: the dots.
+    expect(t.screen.state!.sn).toEqual({ codes: expect.any(Array), guns: [{ gun: t.phone.id, st: 'snap' }] });
+    t.phone.event({ menu: { calDots: true } });
+    t.run(50);
     expect(t.screen.state!.cal).toEqual({ i: 0, pts: CAL_POINTS, gun: t.phone.id, st: 'fine', wait: 0 });
     for (const [k, p] of CAL_POINTS.entries()) {
       t.point(poseFor(p, 1.2, 0.9, 0, 0, PISTOL));
@@ -141,6 +145,7 @@ describe('5-point calibration in a room', () => {
     const t = setup();
     t.run(100);
     t.screen.event({ calibrate: 'points' });
+    t.phone.event({ menu: { calDots: true } });
     t.run(50);
     expect(t.screen.state!.cal).toBeTruthy();
     t.screen.event({ calibrate: 'cancel' });
@@ -191,10 +196,14 @@ describe('calibration on connect, and the controller menu', () => {
     const t = room();
     const ann = t.add(ANN, 'gun');
     t.run(100);
+    ann.p.event({ menu: { calDots: true } });
+    t.run(50);
     expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'init', i: 0, wait: 0 });
     expect(t.screen.state!.ctl).toBe(ann.p.id);
     const bob = t.add(BOB, 'gun-2');
     t.run(100);
+    bob.p.event({ menu: { calDots: true } });
+    t.run(50);
     // Bob waits his turn.
     expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'init', wait: 1 });
     t.fiveDots(ann, 1.2);
@@ -230,6 +239,8 @@ describe('calibration on connect, and the controller menu', () => {
     const t = room();
     const ann = t.add(ANN, 'gun');
     t.run(100);
+    ann.p.event({ menu: { calDots: true } });
+    t.run(50);
     // Barely moving: the same step again.
     for (let i = 0; i < 5; i++) {
       ann.p.event({ shot: { t: t.g.now / 1000 } });
@@ -249,6 +260,7 @@ describe('calibration on connect, and the controller menu', () => {
     t.run(50);
     expect(t.screen.state!.cal).toBeUndefined();
     ann.p.event({ menu: { recalibrate: true } });
+    ann.p.event({ menu: { calDots: true } });
     t.run(50);
     expect(t.screen.state!.cal).toMatchObject({ gun: ann.p.id, st: 'fine', i: 0 });
   });

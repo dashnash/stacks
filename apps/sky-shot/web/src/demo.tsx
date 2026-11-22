@@ -1,9 +1,10 @@
 import { StrictMode, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createDemo, DemoApp } from '@stacks/demo';
-import { fakeGameKit, fakeMotion, installFakeNative } from '@stacks/native';
+import { fakeCamera, fakeGameKit, fakeMotion, installFakeNative, screenRays } from '@stacks/native';
 import { useApi, useHashRoute, useStacks } from '@stacks/web';
 import type { Vec3 } from '../../game/protocol';
+import { codeSpots } from '../../game/snap';
 import { isThemeChoice, THEME_PALETTES, type ThemeChoice } from '../../game/themes';
 import { App, demoOptions } from './demo/setup';
 import { Gun } from './Gun';
@@ -17,7 +18,20 @@ import './styles.css';
  * on its own when left alone, so screenshots move.
  */
 const motion = fakeMotion({ wobble: true });
-installFakeNative({ ...motion.handlers, ...fakeGameKit() });
+// The pretend camera sees the screen straight ahead, 30° wide, with the codes where the screen draws them.
+const camera = fakeCamera({
+  locate: async ({ codes }) => {
+    await new Promise((r) => setTimeout(r, 800));
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const spots = codeSpots(aspect);
+    return screenRays(
+      { yaw: 0, pitch: 0, widthRad: Math.PI / 6, aspect },
+      codes.map((code, i) => ({ code, x: spots[i]?.[0] ?? 0.5, y: spots[i]?.[1] ?? 0.5 })),
+      { roll: 0, pitch: Math.PI / 2, yaw: 0 },
+    );
+  },
+});
+installFakeNative({ ...motion.handlers, ...camera.handlers, ...fakeGameKit() });
 const pose = { roll: 0, pitch: 0, yaw: 0 };
 const aim = (change: Partial<typeof pose>) => {
   Object.assign(pose, change);

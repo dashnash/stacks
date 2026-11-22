@@ -173,8 +173,8 @@ describe('training in a room', () => {
     expect(screen.state!.tr).toMatchObject({ k: 'ready', n: 16 });
     screen.event({ start: true });
     phone.run(200);
-    // The game's calibration runs first, both passes; skipping it (or finishing it) starts the script.
-    expect(screen.state!.cal).toMatchObject({ gun: phone.seat.id, st: 'init' });
+    // The game's calibration runs first (the camera, or the dots); skipping it (or finishing it) starts the script.
+    expect(screen.state!.sn).toMatchObject({ guns: [{ gun: phone.seat.id, st: 'snap' }] });
     expect(screen.state!.tr!.k).toBe('ready');
     phone.seat.event({ menu: { calSkip: true } });
     phone.run(70_000);
