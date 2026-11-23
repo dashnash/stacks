@@ -9,15 +9,15 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@aws-sdk/client-cloudwatch": "^3.1164.0",
-    "@aws-sdk/client-cloudwatch-logs": "^3.1164.0",
-    "@aws-sdk/client-dynamodb": "^3.700.0",
-    "@aws-sdk/client-secrets-manager": "^3.700.0",
-    "@aws-sdk/client-ssm": "^3.700.0",
-    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@aws-sdk/client-cloudwatch": "^3.1173.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1173.0",
+    "@aws-sdk/client-dynamodb": "^3.1173.0",
+    "@aws-sdk/client-secrets-manager": "^3.1173.0",
+    "@aws-sdk/client-ssm": "^3.1173.0",
+    "@aws-sdk/lib-dynamodb": "^3.1173.0",
     "@stacks/api": "*",
     "@stacks/manifest": "*",
-    "jose": "^6.2.0"
+    "jose": "^6.2.18"
   },
   "devDependencies": {
     "@stacks/testing": "*",
