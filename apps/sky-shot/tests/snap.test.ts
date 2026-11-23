@@ -4,7 +4,8 @@ import { screenPoint, screenRays, type PretendScreen } from '@stacks/native';
 import { fromEuler } from '../game/aim';
 import type { Quat, ServerEvent, Snapshot, Vec3, WireSample } from '../game/protocol';
 import { skyShot } from '../game/server';
-import { codePayloads, codeSpots, fitSnap, NO_NUDGE, nudge, NUDGE_MAX_GAIN, NUDGE_MAX_OFFSET, readSnapped, withNudge, type Snapped } from '../game/snap';
+import { CODE_MARGIN, codePayloads, codeSize, codeSpots, fitSnap, NO_NUDGE, nudge, NUDGE_MAX_GAIN, NUDGE_MAX_OFFSET, readSnapped, withNudge, type Snapped } from '../game/snap';
+import { encodeQr } from '../web/src/qr';
 import { DEFAULT_TUNING } from '../game/tuning';
 
 const ASPECT = 16 / 9;
@@ -234,5 +235,20 @@ describe('the quiet correction from near misses', () => {
     expect(t.offsetY).toBeCloseTo(DEFAULT_TUNING.offsetY - 0.02, 9);
     expect(t.sensitivity).toBeCloseTo(DEFAULT_TUNING.sensitivity * 0.9, 9);
     expect(withNudge(DEFAULT_TUNING, null)).toBe(DEFAULT_TUNING);
+  });
+});
+
+describe('the snap codes', () => {
+  it('are version 1 codes (the biggest modules) for any room nonce', () => {
+    for (const code of codePayloads('zzzzzz')) expect(encodeQr(code).version).toBe(1);
+  });
+
+  it('are as big as fits: 30% of the height on a wide screen, two still fit side by side on a narrow one', () => {
+    expect(codeSize(16 / 9)).toBe(0.3);
+    for (const aspect of [0.5, 0.75, 1]) {
+      expect(2 * (codeSize(aspect) + CODE_MARGIN)).toBeLessThan(aspect);
+      const [tl, tr] = codeSpots(aspect);
+      expect((tr![0] - tl![0]) * aspect).toBeGreaterThan(codeSize(aspect));
+    }
   });
 });
